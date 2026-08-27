@@ -126,11 +126,17 @@ checkboxes.** They'll drift; HANDOFF.md is maintained to stay accurate.
       called for — that's real remaining work, tracked in HANDOFF.md's
       "next steps," not done. Don't mark the claimable-balance piece
       complete just because this checkbox is checked.
-- [ ] **Week 3–4**: Claimable-balance-with-expiry for the advance tranches
-      (the piece pulled out of the bullet above), second-signer checkpoint
-      logic already exists but isn't gated the way this originally assumed
-      — see HANDOFF.md's design-decisions section for the actual auth model
-      that got built instead, and why.
+- [x] **Week 3–4**: Claimable-balance-with-expiry for the advance tranches.
+      **Done.** `claim_advance_1/2` (cooperative-gated) pay within the
+      window; `reclaim_advance_1/2` (buyer-gated) return funds once it
+      lapses; `settle` refuses to run until both tranches are resolved
+      one way or the other. This last part exists because self-audit
+      caught a real fairness bug in the first draft — see HANDOFF.md's
+      design-decisions section, it's worth reading even if you're not
+      touching this contract, as an example of the kind of thing to
+      watch for elsewhere. 24/24 tests passing, verified live on testnet
+      including the negative case (an on-chain rejection, not just a
+      local one).
 - [ ] **Week 4–5**: Allocation ledger, built correctly the first time —
       **salted hash per member, not raw identifiers** (PRD §4.8, corrected
       in v0.6 after an NDPA compliance finding in §16.1). Decide the salting
