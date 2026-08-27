@@ -16,10 +16,19 @@ Pre-validation. Nothing here is built yet. See `ROADMAP.md` for what happens fir
 and in what order, and Open Questions in the PRD (§12) for what has to be resolved
 before this can move past testnet.
 
+## Repositories
+
+The Soroban contract lives in its own repo — separate audit trail and release
+cadence from application code. This repo is everything else.
+
+| Repo | Contents |
+|---|---|
+| [`HarvestLock-Contracts`](https://github.com/agrisettle/HarvestLock-Contracts) | Soroban escrow contract (Rust) — the state machine in PRD §4.8 |
+| `harvestlock` *(this repo)* | API, both frontends, docs, roadmap |
+
 ## Repository layout
 
 ```
-contracts/    Soroban escrow contract (Rust) — the state machine in PRD §4.8
 api/          HarvestLock API (TypeScript/Node) — contracts, allocation, vouchers, attestation intake
 coop-pwa/     Cooperative-facing PWA (React/Vite) — offline-tolerant, phone-auth
 buyer-app/    Buyer/off-taker web app — desktop, eventual ERP integration
@@ -31,6 +40,11 @@ requires it, TypeScript everywhere else for a two-person team, Postgres for app 
 and the NDPA-compliant off-chain identity map, SDP deployed (never forked) for
 farmer payouts, SMS-only for farmers — no app, because seasonal usage (PRD §13, P3)
 means nobody will install or retain one.
+
+## Organization
+
+Part of [agrisettle](https://github.com/agrisettle) — settlement infrastructure
+for agricultural commodity trade, of which HarvestLock is the first product.
 
 ## License
 
