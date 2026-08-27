@@ -25,8 +25,10 @@ Phase 0 Week 1 can start clean.
 - [ ] **Create the GitHub organization.** GitHub's API has no endpoint for
       this — it has to go through the web signup flow (plan selection).
       Go to `github.com/organizations/new`, choose the **Free** plan, name it
-      `harvestlock` (confirmed available as of this writing). Takes about
-      2 minutes.
+      `agrisettle` (confirmed available as of this writing). The product
+      itself stays named HarvestLock — the org is the broader umbrella
+      (PRD Phase 3/4 already plans lending and insurance work beyond this
+      one product). Takes about 2 minutes.
 - [ ] Once the org exists, create the repo under it and push this scaffold —
       see the exact command at the bottom of this file.
 - [ ] **Submit the SEC comment.** PRD §4.5 — the comment window on Nigeria's
@@ -306,7 +308,7 @@ cd /path/to/HarvestLock
 git init
 git add -A
 git commit -m "chore: scaffold repo, seed roadmap and PRD pointer"
-gh repo create harvestlock/harvestlock --public --source=. --remote=origin --push
+gh repo create agrisettle/harvestlock --public --source=. --remote=origin --push
 ```
 
 Replace `--public` with `--private` if you'd rather the repo not be visible
