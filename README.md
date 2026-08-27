@@ -12,9 +12,10 @@ harvest. Each member farmer's share is recorded on chain at lock-in.
 
 ## Status
 
-Pre-validation. Nothing here is built yet. See `ROADMAP.md` for what happens first
-and in what order, and Open Questions in the PRD (§12) for what has to be resolved
-before this can move past testnet.
+Pre-validation. The public site (`site/`) is built; the API and both product
+frontends are not. See `ROADMAP.md` for what happens first and in what order,
+and Open Questions in the PRD (§12) for what has to be resolved before this
+can move past testnet.
 
 ## Repositories
 
@@ -24,11 +25,12 @@ cadence from application code. This repo is everything else.
 | Repo | Contents |
 |---|---|
 | [`HarvestLock-Contracts`](https://github.com/agrisettle/HarvestLock-Contracts) | Soroban escrow contract (Rust) — the state machine in PRD §4.8 |
-| `harvestlock` *(this repo)* | API, both frontends, docs, roadmap |
+| `harvestlock` *(this repo)* | Public site, API, both product frontends, docs, roadmap |
 
 ## Repository layout
 
 ```
+site/         Public site (React/Vite) — the project's public face, not a logged-in product surface
 api/          HarvestLock API (TypeScript/Node) — contracts, allocation, vouchers, attestation intake
 coop-pwa/     Cooperative-facing PWA (React/Vite) — offline-tolerant, phone-auth
 buyer-app/    Buyer/off-taker web app — desktop, eventual ERP integration

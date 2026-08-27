@@ -1,0 +1,93 @@
+.status-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: clamp(28px, 5vw, 64px);
+  margin-bottom: clamp(40px, 6vw, 64px);
+}
+
+.status-col-title {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 500;
+  color: var(--gold);
+  margin-bottom: 1.2rem;
+}
+
+.status-col-title--next {
+  color: var(--bone-faint);
+}
+
+.status-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.status-list li {
+  position: relative;
+  padding-left: 1.5em;
+  font-size: 0.98rem;
+  color: var(--bone-dim);
+  line-height: 1.5;
+}
+
+.status-list li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.55em;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--gold);
+}
+
+.status-list--next li::before {
+  background: transparent;
+  border: 1px solid var(--bone-faint);
+}
+
+.status-links {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  background: var(--void-line-soft);
+  border: 1px solid var(--void-line-soft);
+}
+
+.status-link {
+  background: var(--void);
+  padding: 20px 22px;
+  text-decoration: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  transition: background 0.25s var(--ease);
+}
+
+.status-link:hover {
+  background: var(--void-raised);
+}
+
+.status-link-label {
+  font-size: 0.78rem;
+  color: var(--bone-faint);
+}
+
+.status-link-value {
+  font-size: 0.88rem;
+  color: var(--gold-bright);
+  word-break: break-word;
+}
+
+@media (max-width: 720px) {
+  .status-grid,
+  .status-links {
+    grid-template-columns: 1fr;
+  }
+}

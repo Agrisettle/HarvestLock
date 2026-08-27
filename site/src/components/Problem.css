@@ -1,0 +1,39 @@
+.problem-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1px;
+  background: var(--void-line-soft);
+  border: 1px solid var(--void-line-soft);
+}
+
+.problem-card {
+  background: var(--void);
+  padding: clamp(28px, 3.4vw, 42px);
+  transition: background 0.3s var(--ease);
+}
+
+.problem-card:hover {
+  background: var(--void-raised);
+}
+
+.problem-n {
+  display: block;
+  font-size: 0.82rem;
+  color: var(--bone-faint);
+  margin-bottom: 1.1rem;
+}
+
+.problem-card h3 {
+  margin-bottom: 0.7rem;
+}
+
+.problem-card p {
+  color: var(--bone-dim);
+  font-size: 0.98rem;
+}
+
+@media (max-width: 720px) {
+  .problem-grid {
+    grid-template-columns: 1fr;
+  }
+}

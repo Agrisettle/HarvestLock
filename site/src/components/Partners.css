@@ -1,0 +1,36 @@
+.partners-card {
+  position: relative;
+  background: var(--void-raised);
+  border: 1px solid var(--void-line);
+  border-radius: 6px;
+  padding: clamp(36px, 6vw, 72px);
+  overflow: hidden;
+}
+
+.partners-mark {
+  position: absolute;
+  right: -6%;
+  bottom: -18%;
+  width: 340px;
+  opacity: 0.08;
+  pointer-events: none;
+}
+
+.partners-content {
+  position: relative;
+  max-width: 42rem;
+}
+
+.partners-content h2 {
+  margin-bottom: 1.1rem;
+}
+
+.partners-content .lede {
+  margin-bottom: 2.2rem;
+}
+
+.partners-cta {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}

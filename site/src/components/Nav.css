@@ -1,0 +1,67 @@
+.nav {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: rgba(11, 18, 15, 0.72);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--void-line-soft);
+}
+
+.nav-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 68px;
+}
+
+.nav-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  text-decoration: none;
+  font-family: var(--display);
+  font-size: 1.15rem;
+  font-weight: 500;
+  color: var(--bone);
+  letter-spacing: -0.01em;
+}
+
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: clamp(16px, 2.6vw, 34px);
+  font-size: 0.92rem;
+}
+
+.nav-links a {
+  text-decoration: none;
+  color: var(--bone-dim);
+  transition: color 0.2s var(--ease);
+}
+
+.nav-links a:hover {
+  color: var(--gold-bright);
+}
+
+.nav-github {
+  border: 1px solid var(--void-line);
+  padding: 0.5em 1em;
+  border-radius: 3px;
+  color: var(--bone) !important;
+}
+
+.nav-github:hover {
+  border-color: var(--gold);
+  color: var(--gold-bright) !important;
+}
+
+@media (max-width: 640px) {
+  .nav-links {
+    gap: 14px;
+    font-size: 0.82rem;
+  }
+  .nav-brand span {
+    display: none;
+  }
+}
