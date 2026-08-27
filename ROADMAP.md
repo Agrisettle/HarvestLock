@@ -107,18 +107,30 @@ This does not wait on Track A's outcome (PRD §17.3) — it's needed whichever
 counterparty type you land on, and a deployed testnet contract is what
 reaches **Builder tier** for Instawards eligibility.
 
-- [ ] **Week 1**: Toolchain. `rustup`, `soroban-cli` (now folded into
-      `stellar-cli` — check current naming), a funded testnet account via
-      friendbot. Get `stellar contract build` producing a trivial no-op WASM
-      before writing real logic.
-- [ ] **Week 1–2**: Contract skeleton. The state machine from PRD §4.8 as an
-      enum: `Draft → Locked → Advance1_Released → Checkpoint_Passed →
-      Advance2_Released → Delivered → Settled`, with `Cancelled`,
-      `Defaulted`, `Disputed` exits. One passing test that takes a contract
-      from `Draft` to `Locked` and releases the first advance tranche as a
-      claimable balance. Nothing else yet.
-- [ ] **Week 3–4**: Second advance tranche on checkpoint attestation. Same
-      claimable-balance mechanism, second signer required.
+**Live status lives in [`HarvestLock-Contracts/HANDOFF.md`](https://github.com/agrisettle/HarvestLock-Contracts/blob/main/HANDOFF.md)
+— check that file for the current as-built state, not just these
+checkboxes.** They'll drift; HANDOFF.md is maintained to stay accurate.
+
+- [x] **Week 1**: Toolchain. Rust already present; `stellar-cli` install via
+      `cargo install` **failed on this machine** (needs `dlltool.exe` /
+      MinGW binutils, not installed, and not worth chasing) — worked around
+      by grabbing the prebuilt `x86_64-pc-windows-msvc` binary from the
+      GitHub release instead. `stellar contract build` producing real WASM
+      confirmed working. Testnet identities generated and funded.
+- [x] **Week 1–2, and further**: Contract skeleton went beyond the minimum
+      here — the **full happy-path state machine is implemented** (`Draft`
+      through `Settled`, all 7 states), not just `Draft → Locked →
+      Advance1Released`. 9 tests passing. **But** the advance tranches are
+      plain immediate transfers once the state-guard permits them, **not**
+      the claimable-balance-with-expiry mechanic this bullet originally
+      called for — that's real remaining work, tracked in HANDOFF.md's
+      "next steps," not done. Don't mark the claimable-balance piece
+      complete just because this checkbox is checked.
+- [ ] **Week 3–4**: Claimable-balance-with-expiry for the advance tranches
+      (the piece pulled out of the bullet above), second-signer checkpoint
+      logic already exists but isn't gated the way this originally assumed
+      — see HANDOFF.md's design-decisions section for the actual auth model
+      that got built instead, and why.
 - [ ] **Week 4–5**: Allocation ledger, built correctly the first time —
       **salted hash per member, not raw identifiers** (PRD §4.8, corrected
       in v0.6 after an NDPA compliance finding in §16.1). Decide the salting
@@ -191,15 +203,21 @@ funding gate, not just an internal milestone — target them explicitly.
 
 ### MVP tranche (SCF: 20%)
 
-- [ ] Track B's escrow contract, deployed and exercised on testnet (should
-      already be substantially done from Phase 0).
+- [x] Track B's escrow contract, deployed and exercised on testnet. **Done**
+      — happy path only (no claimable-balance expiry, no allocation ledger,
+      no real attestation-driven settlement yet; see
+      [`HarvestLock-Contracts/HANDOFF.md`](https://github.com/agrisettle/HarvestLock-Contracts/blob/main/HANDOFF.md)
+      for exactly what that means). Contract address in that file's
+      "Verified on testnet" section — treat it as a validation artifact,
+      redeploy fresh rather than building on top of that specific instance.
 - [ ] Minimal TypeScript API: create a contract instance, lock it in,
       trigger the two advance tranches, trigger settlement. No auth, no UI
       polish, no multi-tenant anything — one hardcoded counterparty pair,
       one flow, end to end.
 - [ ] This is the point at which you have a "deployed contract or working
-      MVP" — check whether that's sufficient for Builder tier / Instawards
-      eligibility and apply if so (PRD §11).
+      MVP" — **this condition is arguably already met**; check whether
+      that's sufficient for Builder tier / Instawards eligibility and apply
+      if so (PRD §11), rather than waiting for the API too.
 
 ### Testnet tranche (SCF: 30%)
 
