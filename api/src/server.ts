@@ -25,6 +25,13 @@ const NO_ARG_METHODS = new Set([
   "reclaim_advance_2",
   "confirm_delivery",
   "settle",
+  // Needs TWO signatures on the same submitted envelope (buyer AND
+  // cooperative — see lib.rs's cancel()), not one. The generic build/
+  // submit flow already supports this: the caller signs the XDR from
+  // /tx/cancel with the first party's wallet, then signs that *same*
+  // signed envelope again with the second party's before POSTing it to
+  // /transactions/submit — nothing method-specific needed here.
+  "cancel",
 ]);
 
 /** bigint doesn't survive JSON.stringify — stringify it explicitly at the HTTP boundary. */
