@@ -46,6 +46,20 @@ function serializeCommitment(c: Commitment) {
   };
 }
 
+// lib.rs enforces no floor/ceiling on claim_window_secs (contracts
+// HANDOFF.md item 5: "as much a business decision as a technical one" —
+// deliberately left as an API-level check, not a protocol invariant).
+// 1 hour floor: short enough to not stall a real commitment, long enough
+// that a genuinely inattentive cooperative isn't set up to fail by a
+// window that closes before anyone could reasonably notice it opened.
+// 90-day ceiling: generous relative to the mid-season-checkpoint cadence
+// PRD §7 describes; mainly a guard against a fat-fingered value locking
+// funds in an open-ended limbo. Both are engineering defaults, not
+// values anyone has validated against real cooperative behavior yet --
+// revisit once there's a real pilot to observe.
+const MIN_CLAIM_WINDOW_SECS = 3600;
+const MAX_CLAIM_WINDOW_SECS = 60 * 60 * 24 * 90;
+
 interface InitializeBody {
   buyer: string;
   cooperative: string;
@@ -79,9 +93,17 @@ export function buildServer() {
 
   app.post<{ Params: { contractId: string }; Body: InitializeBody }>(
     "/commitments/:contractId/tx/initialize",
-    async (req) => {
+    async (req, reply) => {
       const { contractId } = req.params;
       const b = req.body;
+
+      const claimWindowSecs = Number(b.claimWindowSecs);
+      if (claimWindowSecs < MIN_CLAIM_WINDOW_SECS || claimWindowSecs > MAX_CLAIM_WINDOW_SECS) {
+        return reply.code(400).send({
+          error: `claimWindowSecs must be between ${MIN_CLAIM_WINDOW_SECS} and ${MAX_CLAIM_WINDOW_SECS} seconds, got ${b.claimWindowSecs}`,
+        });
+      }
+
       const xdr = await buildInvokeTransaction({
         contractId,
         method: "initialize",
