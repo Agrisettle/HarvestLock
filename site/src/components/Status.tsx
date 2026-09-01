@@ -1,21 +1,28 @@
 import { Reveal } from "./Reveal";
+import { useLiveStatus } from "../hooks/useLiveStatus";
 import "./Status.css";
+
+const REFERENCE_CONTRACT_ID = "CDVF6UVJOLF3OHCFSYSJ72RMG2T6DUQ42VRJ6IHL6MVEFDYEBZ3KTFK4";
 
 const shipped = [
   "Full escrow state machine, Draft through Settled",
   "Claim/reclaim-with-expiry for both advance tranches",
+  "Mutual cancellation, buyer- and cooperative-co-signed",
   "Warehouse-operator-gated attestation steps",
-  "24/24 tests passing, deployed and exercised live on testnet",
+  "30/30 tests passing, deployed and exercised live on testnet",
+  "API: full lifecycle, testnet-verified, powers the badge below",
 ];
 
 const next = [
   "Per-member allocation ledger (salted, not raw identifiers)",
   "Settlement against a real warehouse receipt, not a boolean gate",
   "Buyer-position assignability",
-  "Cancellation, dispute, and default paths",
+  "Buyer default and dispute paths",
 ];
 
 export function Status() {
+  const liveStatus = useLiveStatus(REFERENCE_CONTRACT_ID);
+
   return (
     <section id="status">
       <div className="wrap">
@@ -73,7 +80,10 @@ export function Status() {
             rel="noreferrer"
           >
             <span className="status-link-label">Testnet contract</span>
-            <span className="mono status-link-value">CDVF6U…FK4</span>
+            <span className="mono status-link-value">
+              CDVF6U…FK4
+              {liveStatus && <span className="status-live-badge">{liveStatus}</span>}
+            </span>
           </a>
         </Reveal>
       </div>

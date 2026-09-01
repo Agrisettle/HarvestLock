@@ -85,6 +85,19 @@
   word-break: break-word;
 }
 
+.status-live-badge {
+  display: inline-block;
+  margin-left: 0.6em;
+  padding: 2px 8px;
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--bone);
+  background: var(--pine-soft);
+  border: 1px solid var(--pine);
+  border-radius: 999px;
+}
+
 @media (max-width: 720px) {
   .status-grid,
   .status-links {
