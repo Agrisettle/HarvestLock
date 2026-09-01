@@ -8,7 +8,7 @@ Not GitHub issues yet — this is the shared reference we work from directly bef
 
 ## Contracts (`HarvestLock-Contracts`)
 
-Current state: happy-path state machine + claimable-balance-with-expiry, 24/24 tests, testnet-verified twice. Next, in priority order (matches the contracts repo's own `HANDOFF.md`):
+Current state: happy-path state machine + claimable-balance-with-expiry + mutual cancellation, 30/30 tests, testnet-verified three times. Next, in priority order (matches the contracts repo's own `HANDOFF.md`):
 
 - [ ] **Allocation ledger** — per-member salted-hash entries, stored on-chain, with the identity mapping kept in an off-chain store (API's Postgres, once it exists) so it's actually erasable per NDPA s.34 (PRD §16.1). Decide the salt scheme (per-contract, never a bare phone-number hash) before writing any code — this is a compliance-load-bearing decision, not just an implementation detail.
   - Sub-task: contract-side — add member entries + share bps to `Commitment`, or a separate storage-mapped structure if instance storage gets too large for many members.
@@ -16,7 +16,7 @@ Current state: happy-path state machine + claimable-balance-with-expiry, 24/24 t
 - [ ] **Real attestation-driven settlement** — replace `confirm_delivery`'s boolean gate with something that takes delivered quantity/grade and applies the PRD §7 shortfall/grade adjustment schedule. Depends on deciding the on-chain data shape for an attestation (just numbers signed by the warehouse operator, most likely — no oracle needed for this part).
 - [ ] **Oracle staleness handling** — PRD §16.3. Currently unbuilt: no NGN/oracle conversion exists at all yet (§4.2 is entirely deferred). This becomes real once denomination work starts; not urgent before that.
 - [ ] **Assignability** — buyer position transfer with cooperative consent, recorded on-chain. Deliberately not a market (no order book/listing) — a novation, not a trade.
-- [ ] **Cancellation / mutual unwind** — PRD §7's defined unwind: advance settled per agreed schedule, remaining escrow returned, no penalty, logged. `Status::Cancelled` already exists in the enum; no function transitions into it yet.
+- [x] **Cancellation / mutual unwind** — PRD §7's defined unwind: advance settled per agreed schedule, remaining escrow returned, no penalty, logged. Built 1 Sept 2026 as `cancel()`: buyer+cooperative co-signed, reachable Draft through Advance2Released. 30/30 unit tests, plus live-testnet-verified with two genuinely different signers via `api/test/helpers.ts` — see `HarvestLock-Contracts/HANDOFF.md`. A real frontend UX for triggering it is a separate, still-open item — see `api/HANDOFF.md`'s "Next steps."
 - [ ] **Buyer default / side-selling forfeiture paths** — `Status::Defaulted`, `Status::Disputed` similarly unbuilt.
 - [ ] **`claim_window_secs` minimum/maximum** — currently unenforced; a careless or adversarial buyer could set an absurdly short window. Needs a decision on whether this is a contract-level floor or an API-level validation before submission (leaning API-level, since "reasonable" is a business call, not a protocol invariant) — see contracts HANDOFF.md item 5.
 
@@ -26,12 +26,13 @@ Target shape per PRD §17: TypeScript/Node, Postgres, talks to the deployed Soro
 
 - [x] **Project scaffold** — package.json, TypeScript config, Fastify (chosen over a heavier framework, matching this project's bias against unnecessary dependencies).
 - [x] **Postgres schema, v1** — `commitments` table (migration `001_init.sql`), mirrors on-chain state, cached from chain reads, not the source of truth. `allocation_members` deliberately **not** added yet — see below, this needs a decision first, not just a table.
-- [x] **Stellar SDK connection layer** — `src/stellar/{client,deploy,tx}.ts`. Covers reads (`get_status`, `get_commitment`) and every write (`initialize` plus every no-arg lifecycle method — `lock`/`release_advance_*`/`claim_advance_*`/`reclaim_advance_*`/`mark_checkpoint`/`confirm_delivery`/`settle`, generically, since only `initialize` takes arguments). Breadth achieved: every contract function is reachable.
+- [x] **Stellar SDK connection layer** — `src/stellar/{client,deploy,tx}.ts`. Covers reads (`get_status`, `get_commitment`) and every write (`initialize` plus every no-arg lifecycle method — `lock`/`release_advance_*`/`claim_advance_*`/`reclaim_advance_*`/`mark_checkpoint`/`confirm_delivery`/`settle`/`cancel`, generically, since only `initialize` takes arguments). Breadth achieved: every contract function is reachable. `cancel` needed a genuinely different signing path (two-party Soroban auth) — see `api/test/helpers.ts`.
 - [x] **REST endpoints** wrapping the above — `src/server.ts`. Deploy, build-tx-per-method, generic signed-submit, live read, cached list. No auth, and the data model doesn't assume a single user (see `api/README.md`).
-- [x] **Tests against testnet** — `api/test/stellar.test.ts`, not mocked, plus a full HTTP-layer walk (deploy → initialize → lock) run by hand against the live server on 1 Sept 2026 and confirmed via a fresh chain read (`status: Locked`).
-- [x] **`api/README.md` and `api/HANDOFF.md`** — both written 1 Sept 2026, describing what's real, what's deferred, and why (build-unsigned/client-signs/submit architecture, deploy-vs-initialize split, cache-refresh-on-read model).
+- [x] **Tests against testnet** — `api/test/stellar.test.ts`, not mocked: SDK-level lifecycle (deploy → initialize → lock), a full HTTP-layer walk run by hand on 1 Sept 2026, and a genuine two-different-signer `cancel` call, all confirmed via fresh chain reads.
+- [x] **`api/README.md` and `api/HANDOFF.md`** — both written 1 Sept 2026, describing what's real, what's deferred, and why (build-unsigned/client-signs/submit architecture, deploy-vs-initialize split, cache-refresh-on-read model, the `cancel` multi-party exception).
 - [ ] **`allocation_members` table + off-chain identity map** — still blocked on the same salt-scheme decision as the contracts-side allocation ledger (see above); don't build one side without the other, the schemes need to match.
 - [ ] **A real "create commitment" UX flow** — today it's three API calls plus a client-side wallet signature in the middle; no frontend has exercised this yet. First real user of it will surface whatever's awkward about the three-call shape.
+- [ ] **A real multi-party signing UX for `cancel`** — the API/SDK mechanism is proven; nothing coordinates two separate wallets producing one signed envelope yet. See `api/HANDOFF.md`'s "What's deliberately deferred."
 
 ## `coop-pwa/` — read-only dashboard built and browser-verified; write/auth/offline still ahead
 
