@@ -6,7 +6,8 @@ Component-scoped handoff, same structure as `HarvestLock-Contracts/HANDOFF.md`. 
 
 - **Read path**: `getStatus`/`getCommitment` (`src/stellar/client.ts`) simulate against the live contract, no mocks. Tested in `test/stellar.test.ts` against a known deployed instance.
 - **Deploy path**: `deployContractInstance` (`src/stellar/deploy.ts`) deploys a fresh, uninitialized escrow WASM instance, deployer-paid. Tested against live testnet — confirms the new instance really is an uninitialized copy of *this* contract (asserts `NotInitialized`, not just "some contract exists").
-- **Write path**: `buildInvokeTransaction`/`submitSignedTransaction` (`src/stellar/tx.ts`) are generic — they work for `initialize` and every no-arg lifecycle method identically, because only `initialize` takes arguments (checked directly against `lib.rs`). Tested end to end: deploy → build `initialize` XDR → sign → submit → read back `Draft` with the right fields.
+- **Write path**: `buildInvokeTransaction`/`submitSignedTransaction` (`src/stellar/tx.ts`) are generic — they work for `initialize` and every no-arg lifecycle method identically, because only `initialize` takes arguments (checked directly against `lib.rs`). Tested end to end: deploy → build `initialize` XDR → sign → submit → read back `Draft` with the right fields. **Except `cancel`** — see below, it needs a genuinely different signing path.
+- **`cancel`** (mutual unwind, requires both buyer's and cooperative's auth): wired into the same `/tx/:method` route as every other no-arg method, but the generic single-signer build/submit flow does **not** correctly handle it — see `api/test/helpers.ts`'s `submitMultiPartyCall` for the real mechanism (per-entry `authorizeEntry()`, not `Transaction.sign()` per party) and `HarvestLock-Contracts/HANDOFF.md`'s "Verified on testnet" section for the two false starts that preceded finding it. Verified live with two genuinely different, freshly-funded signers.
 - **HTTP layer** (`src/server.ts`): wraps all of the above as Fastify routes. Verified by hand, live, through the running server (not just the SDK layer in isolation) on 1 Sept 2026 — deploy → initialize → lock walked end to end over real HTTP calls against real testnet, contract observed reaching `Locked`. See `api/README.md` for the endpoint list.
 - **CORS** (`@fastify/cors`, `origin: true`): added after `coop-pwa`'s first real-browser check against this API failed silently — `curl` doesn't enforce CORS, so every prior HTTP-layer test here missed it. A live browser is the only thing that actually catches this class of bug; keep checking frontends in a real browser, not just against `curl`/Node scripts.
 - **Postgres cache** (`src/db/commitments.ts`, migration `001_init.sql`): `commitments` table, upserted from live chain reads on every `GET /commitments/:contractId` and on `POST /transactions/submit` when `refreshContractId` is passed. `GET /commitments` lists the cache — the only way to list at all, since the chain has no such query.
@@ -18,6 +19,7 @@ Component-scoped handoff, same structure as `HarvestLock-Contracts/HANDOFF.md`. 
 - **No background cache refresher** — `GET /commitments` can go stale for a contract nobody has read via `GET /commitments/:contractId` recently, since the cache only refreshes on read or on this API's own writes. Fine for now (no real users yet); revisit once something else can also mutate a contract without going through this API.
 - **Auth/sessions** — none. Matches PRD's MVP framing (no auth, no multi-tenant), but the data model doesn't assume a single user, so this can be layered on later.
 - **Voucher issuance/redemption, warehouse receipt attestation intake, SDP integration** — mentioned in the original `api/README.md` placeholder as eventual scope; nothing built.
+- **A real multi-party signing UX for `cancel`** — the API builds the unsigned tx correctly and `/transactions/submit` will accept a correctly multi-signed envelope, but nothing coordinates two *separate* wallets/devices producing one. `test/helpers.ts` proves the mechanism works when one script holds both keys; a real "cooperative approves a buyer-initiated cancellation" flow needs either a server-side in-flight-transaction store (buyer submits their half, cooperative fetches and completes it later) or a client-side hand-off (QR code / shared link carrying the partially-authorized XDR). Neither exists. Don't build a "Cancel" button in `coop-pwa`/`buyer-app` before deciding which.
 
 ## Design decisions and why
 
@@ -36,8 +38,8 @@ During `coop-pwa`'s browser check, one `GET /commitments/:contractId` call faile
 ## Next steps, in priority order
 
 1. Allocation-ledger schema + salt-scheme decision (blocks `allocation_members`, blocks a real off-chain identity map).
-2. `coop-pwa` read-only dashboard against `GET /commitments/:contractId` — this is now genuinely unblocked.
+2. Decide the multi-party signing UX for `cancel` (see above) before building it into either frontend.
 3. A background cache-refresh job, once there's a real reason to care about `GET /commitments` freshness beyond what's already been read.
 
 ---
-*Last updated: 1 Sept 2026 — core lifecycle (deploy/initialize/lock/claim/reclaim/checkpoint/confirm/settle) built and testnet-verified at both the SDK-wrapper and HTTP layers.*
+*Last updated: 1 Sept 2026 — core lifecycle (deploy/initialize/lock/claim/reclaim/checkpoint/confirm/settle) built and testnet-verified at both the SDK-wrapper and HTTP layers. `cancel` added and verified live with two genuinely different signers (see `test/helpers.ts`) — the one method needing real multi-party Soroban auth, and the one place the generic single-signer build/submit design doesn't just work unchanged.*
