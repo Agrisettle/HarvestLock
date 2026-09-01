@@ -52,7 +52,7 @@ Target shape per PRD §17: TypeScript/Node, Postgres, talks to the deployed Soro
 - [ ] Wordmark lockup (icon + "Agrisettle" text) for use in docs/README headers — mentioned as a quick follow-up in `BRANDING.md`, never built.
 - [x] Accessibility pass beyond the contrast check already done: skip-to-content link and a real `:focus-visible` style added 1 Sept 2026 (neither existed — no `:focus` rule anywhere), verified in a real browser including the "activating the skip link needs `tabIndex={-1}` on the target, not just the anchor" gotcha. `aria-hidden` on the decorative mark SVGs checked — was already correct, nothing to fix.
 - [x] Open Graph image — added 1 Sept 2026 (`site/public/og-image.png`, on-brand, regeneratable from `site/og-image-source.html`). Uses a relative path since there's no deployed domain yet; fix to absolute once there is one.
-- [ ] Once the API exists: a small "live" indicator on the Status section pulling real current testnet contract state instead of the hand-written numbers baked in at build time — nice-to-have, not urgent. **The API now exists** (see above) — this is genuinely unblocked, next up.
+- [x] Live indicator on the Status section — done 1 Sept 2026, `useLiveStatus` hook + a badge on the "Testnet contract" link, opt-in via `VITE_API_URL` (unset by default, gracefully renders nothing rather than erroring — there's no deployed public API yet). Verified in a real browser both with and without the env var set.
 
 ---
 
