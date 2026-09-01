@@ -19,7 +19,7 @@ This file covers the whole project. The Soroban contract has its own, more detai
 |---|---|---|
 | `HarvestLock-Contracts` (separate repo) | **Real, tested, testnet-verified.** Happy-path state machine + claimable-balance-with-expiry, 24/24 tests passing. | See its own HANDOFF.md for exactly what's built vs. deliberately deferred (allocation ledger, cancellation/dispute paths, real attestation-driven settlement). |
 | `site/` | **Real, built, deployed-ready.** Public marketing/credibility site. | Not a logged-in product surface — see `site/README.md`. |
-| `api/` | **Scaffolding only as of Day 1 of the sprint** — check the date below against `SPRINT.md`'s day-by-day to know how far this has actually gotten. | Talks to the deployed testnet contract via `@stellar/stellar-sdk`. Postgres for app state and the off-chain identity map (PRD §16.1). |
+| `api/` | **Real, tested, testnet-verified for the core lifecycle.** Fastify server; deploy, initialize, and every no-arg lifecycle method (lock, claim/reclaim, checkpoint, confirm, settle) all build/submit end to end against live testnet, HTTP-tested, not just unit-tested. | Build-unsigned/client-signs/submit architecture — see `api/README.md`. Postgres mirrors chain state (`commitments` table); allocation ledger and identity map (PRD §16.1) not started. |
 | `coop-pwa/` | **Not started.** | React/Vite, phone-auth, offline-tolerant. Do not build a logged-in app experience for individual farmers — PRD §13 (P3) and §16.1 rule that out; farmers get SMS only. |
 | `buyer-app/` | **Not started.** | Desktop-first web app. |
 | `docs/` | PRD lives here now (`docs/PRD.md`), not behind an external link. | If you're about to link the PRD from anywhere, link this file, not an artifact URL — that was a real bug fixed on 1 Sept 2026, don't reintroduce it. |
@@ -37,6 +37,8 @@ The `gh` CLI's active account on this development machine has silently switched 
 - `stellar-cli` must be the prebuilt MSVC binary from GitHub releases on this machine, not `cargo install` — the default Rust host toolchain here is `windows-gnu` and lacks `dlltool.exe`. Full detail in the contracts repo's HANDOFF.md.
 - If you're testing scroll/UI behavior on `site/` with a headless browser, use real simulated input (Playwright's `page.mouse.wheel()`), not `window.scrollTo()` in a loop — the site sets `scroll-behavior: smooth`, which turns programmatic scrolls into animated, self-interrupting ones and produces flaky false alarms. Documented in `site/README.md`.
 - Windows/WSL git boundary: committing from native Git Bash then pushing via `wsl git push` (or vice versa) can produce false "modified" diffs that are pure CRLF/LF noise. Run `git diff` before trusting a "changes not staged" warning — if every line shows as removed-and-readded with identical content, it's line-endings, not real changes, and safe to discard with `git checkout -- <file>`.
+- `@stellar/stellar-sdk`'s `scValToNative` resolves a payload-less Rust enum variant (e.g. `Status::Draft`) into a **one-element array** (`['Draft']`), not a bare string — a real bug in `api/src/stellar/client.ts` shipped with a comment claiming the opposite until `npm test` caught it against the live contract. Unwrap it (see `unwrapStatus` in that file) rather than casting past it.
+- Running a dev server with `&` inside a single Bash-tool call doesn't survive past that call on this machine — the child gets orphaned/killed when the tool call's own shell exits. Use the tool's own `run_in_background` on the server-start command itself (not wrapped with other commands), then hit it from separate calls.
 
 ## Next steps
 
@@ -47,4 +49,4 @@ Check `SPRINT.md`'s day-by-day checklist first — it's the live tracker for thi
 Read in the order listed at the top of this file. Then run whatever tests exist for the component you're about to touch, before changing anything, to confirm your starting point matches what this file claims. If it doesn't match, trust the code and test output over this document, and fix this file before doing anything else — don't silently build on a wrong assumption.
 
 ---
-*Last updated: 1 Sept 2026, sprint day 1 — SPRINT.md and this file created; CI and CONTRIBUTING.md in progress; API scaffold starting.*
+*Last updated: 1 Sept 2026, sprint day 1 — API's core lifecycle (deploy, initialize, lock, claim/reclaim, checkpoint, confirm, settle) built and verified end to end against live testnet via the actual HTTP server, not just the SDK wrapper. Postgres cache wired in. `coop-pwa`/`buyer-app` remain not started; both are blocked on this API existing, which as of tonight it does for the core lifecycle.*

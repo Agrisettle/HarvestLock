@@ -1,0 +1,63 @@
+name: api
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "api/**"
+      - ".github/workflows/api.yml"
+  pull_request:
+    paths:
+      - "api/**"
+      - ".github/workflows/api.yml"
+
+# Live-testnet integration tests (`npm test`, api/test/stellar.test.ts)
+# intentionally do NOT run here. They need a funded DEPLOYER_SECRET_KEY as
+# a repo secret, and wiring a real key into a workflow that can be
+# triggered by pull_request (including from forks) is a security-surface
+# decision that hasn't been made yet — not an oversight. Until it is,
+# `npm test` stays a local/manual check; see api/README.md and
+# api/HANDOFF.md. This job covers everything that doesn't need the key.
+
+jobs:
+  build:
+    name: typecheck + build + migrate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: harvestlock
+          POSTGRES_DB: harvestlock
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://postgres:harvestlock@localhost:5432/harvestlock
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: api/package-lock.json
+
+      - name: npm ci
+        run: npm ci
+
+      - name: typecheck
+        run: npm run typecheck
+
+      - name: build
+        run: npm run build
+
+      - name: migrate (proves the schema is actually valid SQL)
+        run: npm run migrate

@@ -20,25 +20,27 @@ Current state: happy-path state machine + claimable-balance-with-expiry, 24/24 t
 - [ ] **Buyer default / side-selling forfeiture paths** — `Status::Defaulted`, `Status::Disputed` similarly unbuilt.
 - [ ] **`claim_window_secs` minimum/maximum** — currently unenforced; a careless or adversarial buyer could set an absurdly short window. Needs a decision on whether this is a contract-level floor or an API-level validation before submission (leaning API-level, since "reasonable" is a business call, not a protocol invariant) — see contracts HANDOFF.md item 5.
 
-## API (`api/`) — where today's build effort is going
+## API (`api/`) — core lifecycle real and testnet-verified; identity/ledger work still ahead
 
-Nothing exists yet. Target shape per PRD §17: TypeScript/Node, Postgres, talks to the deployed Soroban contract via `@stellar/stellar-sdk`, deploys SDP for farmer payouts (later, not week 1).
+Target shape per PRD §17: TypeScript/Node, Postgres, talks to the deployed Soroban contract via `@stellar/stellar-sdk`, deploys SDP for farmer payouts (later, not week 1).
 
-- [ ] **Project scaffold** — package.json, TypeScript config, a real (not toy) project layout. Decide the framework now rather than drifting into one: recommend a minimal one (Fastify or plain `node:http` + a router) over a heavy framework, matching this project's general bias against unnecessary dependencies.
-- [ ] **Postgres schema, v1** — at minimum: `commitments` (mirrors on-chain state for fast reads — contract address, status, parties, amounts, cached from chain, not the source of truth), `allocation_members` (the off-chain identity map — real identifier ↔ salted hash, wipeable independent of on-chain state, per NDPA). Write the schema as versioned migrations from day one, not a single `schema.sql` someone has to hand-diff later.
-- [ ] **Stellar SDK connection layer** — a thin, tested wrapper around `@stellar/stellar-sdk` for reading contract state (`get_status`, `get_commitment`) and building/submitting the invoke transactions for `initialize`/`lock`/`release_advance_*`/`claim_advance_*`/`reclaim_advance_*`/`mark_checkpoint`/`confirm_delivery`/`settle`. This is the piece that unlocks both frontends — prioritize breadth (cover every contract function) over polish.
-- [ ] **REST (or equivalent) endpoints** wrapping the above — one per contract function, plus read endpoints for status/commitment. Auth is out of scope for v1 (matches PRD's "no auth, no multi-tenant" MVP-tranche framing) — but don't build something that *can't* have auth added later; avoid baking "there is exactly one user" assumptions into the data model.
-- [ ] **Tests against testnet** — not mocked. Same discipline as the contracts repo: a test that actually invokes the deployed contract and checks the result, not just that a function was called with the right arguments.
-- [ ] **`api/README.md` and `api/HANDOFF.md`** — written as the API is built, not after. Follow the same structure as the contracts repo's HANDOFF.md (what's real, what's deliberately deferred, design decisions and why).
+- [x] **Project scaffold** — package.json, TypeScript config, Fastify (chosen over a heavier framework, matching this project's bias against unnecessary dependencies).
+- [x] **Postgres schema, v1** — `commitments` table (migration `001_init.sql`), mirrors on-chain state, cached from chain reads, not the source of truth. `allocation_members` deliberately **not** added yet — see below, this needs a decision first, not just a table.
+- [x] **Stellar SDK connection layer** — `src/stellar/{client,deploy,tx}.ts`. Covers reads (`get_status`, `get_commitment`) and every write (`initialize` plus every no-arg lifecycle method — `lock`/`release_advance_*`/`claim_advance_*`/`reclaim_advance_*`/`mark_checkpoint`/`confirm_delivery`/`settle`, generically, since only `initialize` takes arguments). Breadth achieved: every contract function is reachable.
+- [x] **REST endpoints** wrapping the above — `src/server.ts`. Deploy, build-tx-per-method, generic signed-submit, live read, cached list. No auth, and the data model doesn't assume a single user (see `api/README.md`).
+- [x] **Tests against testnet** — `api/test/stellar.test.ts`, not mocked, plus a full HTTP-layer walk (deploy → initialize → lock) run by hand against the live server on 1 Sept 2026 and confirmed via a fresh chain read (`status: Locked`).
+- [x] **`api/README.md` and `api/HANDOFF.md`** — both written 1 Sept 2026, describing what's real, what's deferred, and why (build-unsigned/client-signs/submit architecture, deploy-vs-initialize split, cache-refresh-on-read model).
+- [ ] **`allocation_members` table + off-chain identity map** — still blocked on the same salt-scheme decision as the contracts-side allocation ledger (see above); don't build one side without the other, the schemes need to match.
+- [ ] **A real "create commitment" UX flow** — today it's three API calls plus a client-side wallet signature in the middle; no frontend has exercised this yet. First real user of it will surface whatever's awkward about the three-call shape.
 
-## `coop-pwa/` — blocked on API's contract-status + claim/checkpoint endpoints existing
+## `coop-pwa/` — was blocked on the API existing; it now does (see above), so this is unblocked
 
 - [ ] Read-only dashboard: show a commitment's current status, the state-machine position, advance-tranche claim windows and deadlines.
 - [ ] Phone-based auth flow — no seed phrases surfaced to cooperative users (PRD §4.6). Needs the API's identity/session model decided first.
 - [ ] Claim-advance action (write, not just read) — once the read-only slice is proven, wire up `claim_advance_1`/`claim_advance_2` calls through the API.
 - [ ] Offline-tolerant queue for the depot connectivity-loss case (PRD §7/§16.3) — service worker + IndexedDB, deliberately deferred until the online path works first.
 
-## `buyer-app/` — blocked on the same API endpoints, desktop-first
+## `buyer-app/` — was blocked on the same API endpoints, desktop-first; also unblocked now
 
 - [ ] Read-only dashboard: same information as coop-pwa's, buyer-facing framing (what they've locked, what's pending, settlement status).
 - [ ] Lock/settle actions once read-only is proven.
