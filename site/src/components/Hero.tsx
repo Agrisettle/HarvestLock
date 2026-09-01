@@ -36,7 +36,7 @@ export function Hero() {
           </a>
           <a
             className="btn btn-ghost"
-            href="https://claude.ai/code/artifact/c9a2f2a6-b9f2-4218-b4e8-60651ddfbb5d"
+            href="https://github.com/agrisettle/harvestlock/blob/main/docs/PRD.md"
             target="_blank"
             rel="noreferrer"
           >

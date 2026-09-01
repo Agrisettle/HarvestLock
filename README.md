@@ -6,7 +6,7 @@ releases against an independent warehouse operator's grading receipt, not agains
 either party's say-so. A capped, tranched advance reaches the cooperative before
 harvest. Each member farmer's share is recorded on chain at lock-in.
 
-**Full PRD (living document, v0.7+):** https://claude.ai/code/artifact/c9a2f2a6-b9f2-4218-b4e8-60651ddfbb5d
+**Full PRD:** [`docs/PRD.md`](./docs/PRD.md) — currently v0.7
 
 **Roadmap:** [`ROADMAP.md`](./ROADMAP.md)
 
