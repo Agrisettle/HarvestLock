@@ -1,0 +1,40 @@
+name: coop-pwa
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "coop-pwa/**"
+      - ".github/workflows/coop-pwa.yml"
+  pull_request:
+    paths:
+      - "coop-pwa/**"
+      - ".github/workflows/coop-pwa.yml"
+
+jobs:
+  build:
+    name: typecheck + lint + build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: coop-pwa
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: coop-pwa/package-lock.json
+
+      - name: npm ci
+        run: npm ci
+
+      - name: typecheck
+        run: npx tsc -b --noEmit
+
+      - name: lint
+        run: npm run lint
+
+      - name: build
+        run: npm run build
