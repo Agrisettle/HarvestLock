@@ -6,6 +6,7 @@ import {
   xdr,
 } from "@stellar/stellar-sdk";
 import { server, networkPassphrase } from "./rpc.js";
+import { withRetry } from "./retry.js";
 
 /**
  * Every write in this API follows the same shape: build an unsigned
@@ -25,7 +26,9 @@ export async function buildInvokeTransaction(opts: {
   args?: xdr.ScVal[];
   sourcePublicKey: string;
 }): Promise<string> {
-  const account = await server.getAccount(opts.sourcePublicKey);
+  // Retried — see client.ts's simulateRead for why (real, observed
+  // transient RPC failures, not speculative hardening).
+  const account = await withRetry(() => server.getAccount(opts.sourcePublicKey));
   const contract = new Contract(opts.contractId);
 
   const tx = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase })
@@ -33,7 +36,7 @@ export async function buildInvokeTransaction(opts: {
     .setTimeout(60)
     .build();
 
-  const sim = await server.simulateTransaction(tx);
+  const sim = await withRetry(() => server.simulateTransaction(tx));
   if (rpc.Api.isSimulationError(sim)) {
     throw new Error(`simulation failed for ${opts.method}: ${sim.error}`);
   }
@@ -60,12 +63,20 @@ export async function submitSignedTransaction(signedXdr: string): Promise<Submit
 
   // Soroban RPC's getTransaction is eventually-consistent after send —
   // poll until it leaves NOT_FOUND, same pattern stellar-cli itself uses.
+  // A transient throw mid-poll (a bare `fetch failed` hit this exact call
+  // while building cancel()'s test coverage) is treated the same as
+  // NOT_FOUND — keep polling within the same timeout — rather than
+  // aborting the whole wait over one blip.
   const started = Date.now();
   const timeoutMs = 30_000;
-  let result: rpc.Api.GetTransactionResponse;
+  let result: rpc.Api.GetTransactionResponse | undefined;
   for (;;) {
-    result = await server.getTransaction(hash);
-    if (result.status !== rpc.Api.GetTransactionStatus.NOT_FOUND) break;
+    try {
+      result = await server.getTransaction(hash);
+      if (result.status !== rpc.Api.GetTransactionStatus.NOT_FOUND) break;
+    } catch {
+      // fall through to the timeout check / sleep below and retry
+    }
     if (Date.now() - started > timeoutMs) {
       throw new Error(`timed out waiting for transaction ${hash} to be included`);
     }

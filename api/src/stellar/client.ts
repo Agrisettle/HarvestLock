@@ -7,6 +7,7 @@ import {
   rpc,
 } from "@stellar/stellar-sdk";
 import { server, networkPassphrase } from "./rpc.js";
+import { withRetry } from "./retry.js";
 
 /**
  * Every read in this module works by *simulating* a contract invocation —
@@ -27,7 +28,14 @@ function readerKeypair(): Keypair {
 
 async function simulateRead(contractId: string, method: string) {
   const reader = readerKeypair();
-  const account = await server.getAccount(reader.publicKey());
+  // Retried, not the checks below: both of these are real network calls
+  // that have been observed to throw transiently on this RPC (a stale
+  // "Account not found" read right after a successful transaction, and a
+  // bare fetch failure) — see api/HANDOFF.md's "Known testnet flakiness"
+  // and src/stellar/retry.ts. A *legitimate* simulation error (e.g. the
+  // contract genuinely isn't initialized) comes back as a normal return
+  // value, not a throw, so it's never accidentally retried here.
+  const account = await withRetry(() => server.getAccount(reader.publicKey()));
   const contract = new Contract(contractId);
 
   const tx = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase })
@@ -35,7 +43,7 @@ async function simulateRead(contractId: string, method: string) {
     .setTimeout(30)
     .build();
 
-  const sim = await server.simulateTransaction(tx);
+  const sim = await withRetry(() => server.simulateTransaction(tx));
 
   if (rpc.Api.isSimulationError(sim)) {
     throw new Error(`contract simulation failed for ${method}: ${sim.error}`);
