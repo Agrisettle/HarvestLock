@@ -40,9 +40,9 @@ Target shape per PRD §17: TypeScript/Node, Postgres, talks to the deployed Soro
 - [ ] Claim-advance action (write, not just read) — once the read-only slice is proven, wire up `claim_advance_1`/`claim_advance_2` calls through the API.
 - [ ] Offline-tolerant queue for the depot connectivity-loss case (PRD §7/§16.3) — service worker + IndexedDB, deliberately deferred until the online path works first.
 
-## `buyer-app/` — was blocked on the same API endpoints, desktop-first; also unblocked now
+## `buyer-app/` — read-only dashboard built and browser-verified; write/ERP still ahead
 
-- [ ] Read-only dashboard: same information as coop-pwa's, buyer-facing framing (what they've locked, what's pending, settlement status).
+- [x] Read-only dashboard: same information as coop-pwa's, buyer-facing framing (what they've locked, what's pending, settlement status). Built and browser-checked 1 Sept 2026 — see `buyer-app/README.md`.
 - [ ] Lock/settle actions once read-only is proven.
 - [ ] ERP integration — explicitly out of scope until there's a real off-taker to integrate with (PRD §16.2); don't build this speculatively.
 
