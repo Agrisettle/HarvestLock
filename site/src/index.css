@@ -62,6 +62,37 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* On-brand focus ring — the default browser outline is invisible or low-
+   contrast against --void in some browsers, and nothing here overrode it
+   with anything better until now. :focus-visible, not :focus, so a mouse
+   click doesn't get a ring a keyboard tab already needs. */
+:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+.skip-link {
+  position: absolute;
+  top: -100%;
+  left: 16px;
+  z-index: 100;
+  background: var(--gold);
+  color: var(--void);
+  font-family: var(--body);
+  font-weight: 600;
+  font-size: 15px;
+  padding: 10px 18px;
+  border-radius: 6px;
+  text-decoration: none;
+  transition: top 0.15s var(--ease);
+}
+
+.skip-link:focus-visible {
+  top: 16px;
+  outline-color: var(--void);
+}
+
 #root {
   min-height: 100svh;
   overflow-x: hidden;
