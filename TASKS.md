@@ -18,7 +18,7 @@ Current state: happy-path state machine + claimable-balance-with-expiry + mutual
 - [ ] **Assignability** — buyer position transfer with cooperative consent, recorded on-chain. Deliberately not a market (no order book/listing) — a novation, not a trade.
 - [x] **Cancellation / mutual unwind** — PRD §7's defined unwind: advance settled per agreed schedule, remaining escrow returned, no penalty, logged. Built 1 Sept 2026 as `cancel()`: buyer+cooperative co-signed, reachable Draft through Advance2Released. 30/30 unit tests, plus live-testnet-verified with two genuinely different signers via `api/test/helpers.ts` — see `HarvestLock-Contracts/HANDOFF.md`. A real frontend UX for triggering it is a separate, still-open item — see `api/HANDOFF.md`'s "Next steps."
 - [ ] **Buyer default / side-selling forfeiture paths** — `Status::Defaulted`, `Status::Disputed` similarly unbuilt.
-- [ ] **`claim_window_secs` minimum/maximum** — currently unenforced; a careless or adversarial buyer could set an absurdly short window. Needs a decision on whether this is a contract-level floor or an API-level validation before submission (leaning API-level, since "reasonable" is a business call, not a protocol invariant) — see contracts HANDOFF.md item 5.
+- [x] **`claim_window_secs` minimum/maximum** — enforced API-level per the documented lean (contract itself still has no floor/ceiling, deliberately — see contracts HANDOFF.md item 5). `api/src/server.ts`: 1 hour floor, 90 day ceiling, rejected with 400 before a transaction is even built. Engineering defaults, not researched values — revisit once there's real pilot behavior to observe.
 
 ## API (`api/`) — core lifecycle real and testnet-verified; identity/ledger work still ahead
 
