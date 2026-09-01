@@ -5,6 +5,7 @@ import { getStatus, getCommitment } from "../src/stellar/client.js";
 import { deployContractInstance, initializeArgs } from "../src/stellar/deploy.js";
 import { buildInvokeTransaction, submitSignedTransaction } from "../src/stellar/tx.js";
 import { networkPassphrase } from "../src/stellar/rpc.js";
+import { submitMultiPartyCall, fundTestnetAccount } from "./helpers.js";
 
 /**
  * Every test here hits real Stellar testnet infrastructure — no mocks.
@@ -20,21 +21,33 @@ const KNOWN_SETTLED_CONTRACT_ID = "CDVF6UVJOLF3OHCFSYSJ72RMG2T6DUQ42VRJ6IHL6MVEF
 const PLACEHOLDER_TOKEN = "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC";
 
 describe("stellar/client (live testnet reads)", () => {
-  it("reads status from a known deployed contract", async () => {
-    const status = await getStatus(KNOWN_SETTLED_CONTRACT_ID);
-    expect(typeof status).toBe("string");
-    expect(status.length).toBeGreaterThan(0);
-  });
+  // Real testnet RPC latency varies enough under load that vitest's
+  // default 5s per-test timeout is unreliable here — not flaky logic,
+  // just real network variance. Same generous timeout the write-path
+  // tests already use, applied here too after a false failure.
+  it(
+    "reads status from a known deployed contract",
+    async () => {
+      const status = await getStatus(KNOWN_SETTLED_CONTRACT_ID);
+      expect(typeof status).toBe("string");
+      expect(status.length).toBeGreaterThan(0);
+    },
+    30_000,
+  );
 
-  it("reads the full commitment struct from a known deployed contract", async () => {
-    const commitment = await getCommitment(KNOWN_SETTLED_CONTRACT_ID);
-    expect(commitment.buyer).toMatch(/^G[A-Z0-9]{55}$/);
-    expect(commitment.cooperative).toMatch(/^G[A-Z0-9]{55}$/);
-    expect(commitment.warehouse_operator).toMatch(/^G[A-Z0-9]{55}$/);
-    expect(commitment.token).toMatch(/^C[A-Z0-9]{55}$/);
-    expect(typeof commitment.total_amount).toBe("bigint");
-    expect(commitment.total_amount).toBeGreaterThan(0n);
-  });
+  it(
+    "reads the full commitment struct from a known deployed contract",
+    async () => {
+      const commitment = await getCommitment(KNOWN_SETTLED_CONTRACT_ID);
+      expect(commitment.buyer).toMatch(/^G[A-Z0-9]{55}$/);
+      expect(commitment.cooperative).toMatch(/^G[A-Z0-9]{55}$/);
+      expect(commitment.warehouse_operator).toMatch(/^G[A-Z0-9]{55}$/);
+      expect(commitment.token).toMatch(/^C[A-Z0-9]{55}$/);
+      expect(typeof commitment.total_amount).toBe("bigint");
+      expect(commitment.total_amount).toBeGreaterThan(0n);
+    },
+    30_000,
+  );
 });
 
 describe("stellar/deploy (live testnet writes)", () => {
@@ -92,5 +105,60 @@ describe("stellar/deploy (live testnet writes)", () => {
       expect(commitment.advance1_bps).toBe(1500);
     },
     60_000,
+  );
+
+  it(
+    "cancel requires two genuinely different signers, correctly authorized per-entry",
+    async () => {
+      // lib.rs's cancel() calls both buyer.require_auth() and
+      // cooperative.require_auth() — the one contract method needing two
+      // *different* parties' auth on the same call. See test/helpers.ts's
+      // submitMultiPartyCall doc comment for why the obvious approach
+      // (sign the envelope twice) doesn't work and what does.
+      const deployer = Keypair.fromSecret(process.env.DEPLOYER_SECRET_KEY!);
+      const cooperative = Keypair.random();
+      await fundTestnetAccount(cooperative.publicKey());
+
+      const contractId = await deployContractInstance();
+
+      const initXdr = await buildInvokeTransaction({
+        contractId,
+        method: "initialize",
+        sourcePublicKey: deployer.publicKey(),
+        args: initializeArgs({
+          buyer: deployer.publicKey(),
+          cooperative: cooperative.publicKey(),
+          warehouseOperator: deployer.publicKey(),
+          token: PLACEHOLDER_TOKEN,
+          totalAmount: 1_000_000_000n,
+          advance1Bps: 1500,
+          advance2Bps: 2000,
+          claimWindowSecs: 3600n,
+        }),
+      });
+      const initTx = TransactionBuilder.fromXDR(initXdr, networkPassphrase);
+      initTx.sign(deployer);
+      await submitSignedTransaction(initTx.toXDR());
+
+      const lockXdr = await buildInvokeTransaction({
+        contractId,
+        method: "lock",
+        sourcePublicKey: deployer.publicKey(),
+      });
+      const lockTx = TransactionBuilder.fromXDR(lockXdr, networkPassphrase);
+      lockTx.sign(deployer);
+      await submitSignedTransaction(lockTx.toXDR());
+      expect(await getStatus(contractId)).toBe("Locked");
+
+      const result = await submitMultiPartyCall({
+        contractId,
+        method: "cancel",
+        sourceSigner: deployer,
+        otherSigners: [cooperative],
+      });
+      expect(result.status).toBe("SUCCESS");
+      expect(await getStatus(contractId)).toBe("Cancelled");
+    },
+    120_000,
   );
 });
