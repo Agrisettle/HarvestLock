@@ -1,0 +1,268 @@
+/* Tokens match site/src/index.css (Agrisettle / HarvestLock, per BRANDING.md) —
+   same brand, an app surface instead of a marketing one. Keep these two files
+   in sync by hand; they deliberately don't share an import across apps. */
+
+:root {
+  --void: #0b120f;
+  --void-raised: #121a16;
+  --void-line: #23302a;
+  --void-line-soft: #1a2420;
+
+  --bone: #f3f1e9;
+  --bone-dim: #c9c6ba;
+  --bone-faint: #8a897f;
+
+  --pine: #1e6b4e;
+  --pine-soft: #163f30;
+  --gold: #d4a937;
+  --gold-bright: #eec765;
+  --signal: #c1432e;
+
+  --display: "Fraunces", ui-serif, Georgia, serif;
+  --body: "Inter", -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--void);
+  color: var(--bone);
+  font-family: var(--body);
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+a {
+  color: var(--gold);
+}
+
+.app-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--void-line);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.app-header h1 {
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 1.3rem;
+  margin: 0;
+}
+
+.app-header .tag {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--bone-faint);
+}
+
+main {
+  flex: 1;
+  padding: 24px;
+  max-width: 960px;
+  width: 100%;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.lookup {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.lookup input {
+  flex: 1;
+  min-width: 260px;
+  background: var(--void-raised);
+  border: 1px solid var(--void-line);
+  color: var(--bone);
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  padding: 10px 12px;
+  border-radius: 6px;
+}
+
+.lookup button,
+.refresh-button {
+  background: var(--pine);
+  color: var(--bone);
+  border: none;
+  border-radius: 6px;
+  padding: 10px 16px;
+  font-family: var(--body);
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.lookup button:disabled,
+.refresh-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.error-banner {
+  background: rgba(193, 67, 46, 0.12);
+  border: 1px solid var(--signal);
+  color: var(--bone);
+  padding: 12px 16px;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+.card {
+  background: var(--void-raised);
+  border: 1px solid var(--void-line);
+  border-radius: 10px;
+  padding: 20px;
+}
+
+.commitment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.commitment-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--void-raised);
+  border: 1px solid var(--void-line);
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  width: 100%;
+}
+
+.commitment-row:hover {
+  border-color: var(--pine);
+}
+
+.commitment-row .contract-id {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--bone-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.badge {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--void-line);
+  color: var(--bone-dim);
+  white-space: nowrap;
+}
+
+.badge[data-status="Locked"],
+.badge[data-status="Advance1Released"],
+.badge[data-status="CheckpointPassed"],
+.badge[data-status="Advance2Released"] {
+  border-color: var(--gold);
+  color: var(--gold-bright);
+}
+
+.badge[data-status="Settled"],
+.badge[data-status="Delivered"] {
+  border-color: var(--pine);
+  color: #8fd6b4;
+}
+
+.badge[data-status="Cancelled"],
+.badge[data-status="Defaulted"],
+.badge[data-status="Disputed"] {
+  border-color: var(--signal);
+  color: #ef9c8c;
+}
+
+.detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.detail-header .contract-id {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--bone-dim);
+  word-break: break-all;
+}
+
+.party-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.party-grid dt {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--bone-faint);
+  margin-bottom: 4px;
+}
+
+.party-grid dd {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  word-break: break-all;
+}
+
+table.tranches {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+table.tranches th,
+table.tranches td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--void-line);
+}
+
+table.tranches th {
+  color: var(--bone-faint);
+  font-weight: 500;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.empty-state,
+.loading-state {
+  color: var(--bone-faint);
+  font-size: 0.9rem;
+  padding: 32px 0;
+  text-align: center;
+}

@@ -33,9 +33,9 @@ Target shape per PRD §17: TypeScript/Node, Postgres, talks to the deployed Soro
 - [ ] **`allocation_members` table + off-chain identity map** — still blocked on the same salt-scheme decision as the contracts-side allocation ledger (see above); don't build one side without the other, the schemes need to match.
 - [ ] **A real "create commitment" UX flow** — today it's three API calls plus a client-side wallet signature in the middle; no frontend has exercised this yet. First real user of it will surface whatever's awkward about the three-call shape.
 
-## `coop-pwa/` — was blocked on the API existing; it now does (see above), so this is unblocked
+## `coop-pwa/` — read-only dashboard built and browser-verified; write/auth/offline still ahead
 
-- [ ] Read-only dashboard: show a commitment's current status, the state-machine position, advance-tranche claim windows and deadlines.
+- [x] Read-only dashboard: show a commitment's current status, the state-machine position, advance-tranche claim windows and deadlines. Built 1 Sept 2026, checked in a real browser against the live API and live testnet — see `coop-pwa/README.md` for what that check found (a real CORS bug in the API, fixed there).
 - [ ] Phone-based auth flow — no seed phrases surfaced to cooperative users (PRD §4.6). Needs the API's identity/session model decided first.
 - [ ] Claim-advance action (write, not just read) — once the read-only slice is proven, wire up `claim_advance_1`/`claim_advance_2` calls through the API.
 - [ ] Offline-tolerant queue for the depot connectivity-loss case (PRD §7/§16.3) — service worker + IndexedDB, deliberately deferred until the online path works first.

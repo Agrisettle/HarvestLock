@@ -1,4 +1,5 @@
 import Fastify from "fastify";
+import cors from "@fastify/cors";
 import { getCommitment, type Commitment } from "./stellar/client.js";
 import { deployContractInstance, initializeArgs } from "./stellar/deploy.js";
 import { buildInvokeTransaction, submitSignedTransaction } from "./stellar/tx.js";
@@ -52,6 +53,12 @@ interface InitializeBody {
 
 export function buildServer() {
   const app = Fastify({ logger: true });
+
+  // Reflects the request origin rather than a fixed list — acceptable for
+  // now since there's no auth/session model yet (MVP framing, PRD §17) and
+  // every response here is public read data or a party-signed write the
+  // contract itself gates via require_auth. Revisit once that changes.
+  app.register(cors, { origin: true });
 
   app.get("/health", async () => ({ ok: true }));
 
