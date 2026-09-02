@@ -67,14 +67,18 @@ export interface Commitment {
   advance1_bps: number;
   advance2_bps: number;
   claim_window_secs: bigint;
+  remainder_window_secs: bigint;
   status: string;
   created_at: bigint;
+  delivery_deadline: bigint;
   advance1_deadline: bigint;
   advance1_claimed: boolean;
   advance1_expired: boolean;
   advance2_deadline: bigint;
   advance2_claimed: boolean;
   advance2_expired: boolean;
+  remainder_deadline: bigint;
+  remainder_funded: boolean;
 }
 
 /**

@@ -5,7 +5,7 @@ import { getStatus, getCommitment } from "../src/stellar/client.js";
 import { deployContractInstance, initializeArgs } from "../src/stellar/deploy.js";
 import { buildInvokeTransaction, submitSignedTransaction } from "../src/stellar/tx.js";
 import { networkPassphrase } from "../src/stellar/rpc.js";
-import { submitMultiPartyCall, fundTestnetAccount } from "./helpers.js";
+import { submitMultiPartyCall, submitSingleSignerCall, fundTestnetAccount } from "./helpers.js";
 
 /**
  * Every test here hits real Stellar testnet infrastructure — no mocks.
@@ -85,6 +85,8 @@ describe("stellar/deploy (live testnet writes)", () => {
           advance1Bps: 1500,
           advance2Bps: 2000,
           claimWindowSecs: 3600n,
+          remainderWindowSecs: 3600n,
+          deliveryWindowSecs: 86_400n,
         }),
       });
 
@@ -134,6 +136,8 @@ describe("stellar/deploy (live testnet writes)", () => {
           advance1Bps: 1500,
           advance2Bps: 2000,
           claimWindowSecs: 3600n,
+          remainderWindowSecs: 3600n,
+          deliveryWindowSecs: 86_400n,
         }),
       });
       const initTx = TransactionBuilder.fromXDR(initXdr, networkPassphrase);
@@ -191,6 +195,8 @@ describe("stellar/deploy (live testnet writes)", () => {
           advance1Bps: 1500,
           advance2Bps: 2000,
           claimWindowSecs: 3600n,
+          remainderWindowSecs: 3600n,
+          deliveryWindowSecs: 86_400n,
         }),
       });
       const initTx = TransactionBuilder.fromXDR(initXdr, networkPassphrase);
@@ -218,6 +224,177 @@ describe("stellar/deploy (live testnet writes)", () => {
       const commitment = await getCommitment(contractId);
       expect(commitment.buyer).toBe(newBuyer.publicKey());
       expect(commitment.buyer).not.toBe(deployer.publicKey());
+    },
+    120_000,
+  );
+
+  it(
+    "two-phase funding: lock escrows only the deposit, fund_remainder escrows the rest",
+    async () => {
+      // lib.rs's headline change this session: lock() no longer pulls the
+      // full total_amount, only advance1_bps + advance2_bps of it. This is
+      // the SDK-layer proof that the new field (remainder_window_secs) and
+      // the two new calls (ready_for_delivery, fund_remainder) actually
+      // work through the real API build/sign/submit path, not just
+      // cargo test's simulated ledger — the contract-level walk already
+      // covers the same ground, this covers the API layer specifically.
+      const deployer = Keypair.fromSecret(process.env.DEPLOYER_SECRET_KEY!);
+      const contractId = await deployContractInstance();
+
+      const initXdr = await buildInvokeTransaction({
+        contractId,
+        method: "initialize",
+        sourcePublicKey: deployer.publicKey(),
+        args: initializeArgs({
+          buyer: deployer.publicKey(),
+          cooperative: deployer.publicKey(),
+          warehouseOperator: deployer.publicKey(),
+          token: PLACEHOLDER_TOKEN,
+          totalAmount: 1_000_000_000n,
+          advance1Bps: 1500,
+          advance2Bps: 2000,
+          claimWindowSecs: 3600n,
+          remainderWindowSecs: 3600n,
+          deliveryWindowSecs: 86_400n,
+        }),
+      });
+      const initTx = TransactionBuilder.fromXDR(initXdr, networkPassphrase);
+      initTx.sign(deployer);
+      await submitSignedTransaction(initTx.toXDR());
+
+      await submitSingleSignerCall({ contractId, method: "lock", signer: deployer });
+      const afterLock = await getCommitment(contractId);
+      expect(afterLock.remainder_funded).toBe(false);
+
+      for (const method of ["release_advance_1", "claim_advance_1", "mark_checkpoint", "release_advance_2", "claim_advance_2"]) {
+        await submitSingleSignerCall({ contractId, method, signer: deployer });
+      }
+      expect(await getStatus(contractId)).toBe("Advance2Released");
+
+      await submitSingleSignerCall({ contractId, method: "ready_for_delivery", signer: deployer });
+      expect(await getStatus(contractId)).toBe("ReadyForDelivery");
+
+      // Not funded yet -- confirm_delivery must still be rejected.
+      await expect(
+        submitSingleSignerCall({ contractId, method: "confirm_delivery", signer: deployer }),
+      ).rejects.toThrow();
+
+      await submitSingleSignerCall({ contractId, method: "fund_remainder", signer: deployer });
+      const afterFund = await getCommitment(contractId);
+      expect(afterFund.remainder_funded).toBe(true);
+
+      await submitSingleSignerCall({ contractId, method: "confirm_delivery", signer: deployer });
+      await submitSingleSignerCall({ contractId, method: "settle", signer: deployer });
+      expect(await getStatus(contractId)).toBe("Settled");
+    },
+    180_000,
+  );
+
+  it(
+    "expire_remainder_window: buyer default sweeps escrow to the cooperative, callable by an unrelated third party",
+    async () => {
+      // A short remainderWindowSecs (bypasses the API's 1-hour floor --
+      // that's an HTTP-layer check in server.ts, not a contract one, and
+      // this test calls buildInvokeTransaction/initializeArgs directly)
+      // so the deadline can actually lapse within a test, real time, the
+      // same demo-only reasoning HarvestLock-Contracts/HANDOFF.md uses for
+      // its short-window testnet deployments.
+      const deployer = Keypair.fromSecret(process.env.DEPLOYER_SECRET_KEY!);
+      const cooperative = Keypair.random();
+      const unrelatedThirdParty = Keypair.random();
+      await Promise.all([
+        fundTestnetAccount(cooperative.publicKey()),
+        fundTestnetAccount(unrelatedThirdParty.publicKey()),
+      ]);
+
+      const contractId = await deployContractInstance();
+      const initXdr = await buildInvokeTransaction({
+        contractId,
+        method: "initialize",
+        sourcePublicKey: deployer.publicKey(),
+        args: initializeArgs({
+          buyer: deployer.publicKey(),
+          cooperative: cooperative.publicKey(),
+          warehouseOperator: deployer.publicKey(),
+          token: PLACEHOLDER_TOKEN,
+          totalAmount: 1_000_000_000n,
+          advance1Bps: 1500,
+          advance2Bps: 2000,
+          claimWindowSecs: 3600n,
+          remainderWindowSecs: 12n, // seconds -- deliberately short, see above
+          deliveryWindowSecs: 86_400n,
+        }),
+      });
+      const initTx = TransactionBuilder.fromXDR(initXdr, networkPassphrase);
+      initTx.sign(deployer);
+      await submitSignedTransaction(initTx.toXDR());
+
+      await submitSingleSignerCall({ contractId, method: "lock", signer: deployer });
+      await submitSingleSignerCall({ contractId, method: "release_advance_1", signer: deployer });
+      await submitSingleSignerCall({ contractId, method: "mark_checkpoint", signer: deployer });
+      await submitSingleSignerCall({ contractId, method: "release_advance_2", signer: deployer });
+      // ready_for_delivery is cooperative-gated -- signed and sourced by
+      // the cooperative itself, not the deployer.
+      await submitSingleSignerCall({ contractId, method: "ready_for_delivery", signer: cooperative });
+      expect(await getStatus(contractId)).toBe("ReadyForDelivery");
+
+      // The buyer never calls fund_remainder. Wait past the 12-second
+      // window, real time -- not a simulated-clock trick, this is exactly
+      // what a caller waiting on a real testnet deadline experiences.
+      await new Promise((r) => setTimeout(r, 15_000));
+
+      // Called by neither the buyer nor the cooperative -- proves
+      // expire_remainder_window is genuinely permissionless, not just
+      // "works when I happen to also be a party," the same thing the
+      // contract-level testnet walk in HarvestLock-Contracts/HANDOFF.md
+      // proved with stellar-cli.
+      await submitSingleSignerCall({
+        contractId,
+        method: "expire_remainder_window",
+        signer: unrelatedThirdParty,
+      });
+      expect(await getStatus(contractId)).toBe("Defaulted");
+    },
+    120_000,
+  );
+
+  it(
+    "reclaim_on_nondelivery: seller non-delivery returns escrow to the buyer past the delivery deadline",
+    async () => {
+      const deployer = Keypair.fromSecret(process.env.DEPLOYER_SECRET_KEY!);
+      const contractId = await deployContractInstance();
+
+      const initXdr = await buildInvokeTransaction({
+        contractId,
+        method: "initialize",
+        sourcePublicKey: deployer.publicKey(),
+        args: initializeArgs({
+          buyer: deployer.publicKey(),
+          cooperative: deployer.publicKey(),
+          warehouseOperator: deployer.publicKey(),
+          token: PLACEHOLDER_TOKEN,
+          totalAmount: 1_000_000_000n,
+          advance1Bps: 1500,
+          advance2Bps: 1500,
+          claimWindowSecs: 3600n,
+          remainderWindowSecs: 3600n,
+          deliveryWindowSecs: 12n, // seconds -- deliberately short, see the previous test's comment
+        }),
+      });
+      const initTx = TransactionBuilder.fromXDR(initXdr, networkPassphrase);
+      initTx.sign(deployer);
+      await submitSignedTransaction(initTx.toXDR());
+
+      await submitSingleSignerCall({ contractId, method: "lock", signer: deployer });
+      expect(await getStatus(contractId)).toBe("Locked");
+
+      // The cooperative never takes another action -- no checkpoint, no
+      // ready_for_delivery, nothing. Wait past the 12-second delivery
+      // deadline, real time.
+      await new Promise((r) => setTimeout(r, 15_000));
+
+      await submitSingleSignerCall({ contractId, method: "reclaim_on_nondelivery", signer: deployer });
+      expect(await getStatus(contractId)).toBe("Forfeited");
     },
     120_000,
   );

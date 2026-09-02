@@ -55,6 +55,14 @@ const NO_ARG_METHODS = new Set([
   // signed envelope again with the second party's before POSTing it to
   // /transactions/submit — nothing method-specific needed here.
   "cancel",
+  // Two-phase funding / default-forfeiture additions (lib.rs). All four
+  // are single-signer or fully permissionless — none need the multi-party
+  // signing path `cancel`/`reassign_buyer` do, so they fit the generic
+  // no-arg route unchanged.
+  "ready_for_delivery", // cooperative-gated
+  "fund_remainder", // buyer-gated
+  "expire_remainder_window", // permissionless — the buyer-default sweep
+  "reclaim_on_nondelivery", // buyer-gated — the seller-non-delivery reclaim
 ]);
 
 /** bigint doesn't survive JSON.stringify — stringify it explicitly at the HTTP boundary. */
@@ -63,25 +71,52 @@ function serializeCommitment(c: Commitment) {
     ...c,
     total_amount: c.total_amount.toString(),
     claim_window_secs: c.claim_window_secs.toString(),
+    remainder_window_secs: c.remainder_window_secs.toString(),
     created_at: c.created_at.toString(),
+    delivery_deadline: c.delivery_deadline.toString(),
     advance1_deadline: c.advance1_deadline.toString(),
     advance2_deadline: c.advance2_deadline.toString(),
+    remainder_deadline: c.remainder_deadline.toString(),
   };
 }
 
-// lib.rs enforces no floor/ceiling on claim_window_secs (contracts
-// HANDOFF.md item 5: "as much a business decision as a technical one" —
-// deliberately left as an API-level check, not a protocol invariant).
-// 1 hour floor: short enough to not stall a real commitment, long enough
-// that a genuinely inattentive cooperative isn't set up to fail by a
-// window that closes before anyone could reasonably notice it opened.
-// 90-day ceiling: generous relative to the mid-season-checkpoint cadence
-// PRD §7 describes; mainly a guard against a fat-fingered value locking
-// funds in an open-ended limbo. Both are engineering defaults, not
-// values anyone has validated against real cooperative behavior yet --
-// revisit once there's a real pilot to observe.
+// lib.rs enforces no floor/ceiling on any of these three window values
+// (same reasoning as contracts HANDOFF.md item 5 for claim_window_secs:
+// "as much a business decision as a technical one" — deliberately left as
+// an API-level check, not a protocol invariant). All three are engineering
+// defaults, not values anyone has validated against real cooperative/buyer
+// behavior yet — revisit once there's a real pilot to observe.
+//
+// claim_window_secs: 1 hour floor (short enough to not stall a real
+// commitment, long enough that an inattentive cooperative isn't set up to
+// fail by a window closing before anyone could reasonably notice it
+// opened), 90-day ceiling (generous relative to the mid-season-checkpoint
+// cadence PRD §7 describes; mainly a guard against a fat-fingered value).
 const MIN_CLAIM_WINDOW_SECS = 3600;
 const MAX_CLAIM_WINDOW_SECS = 60 * 60 * 24 * 90;
+
+// remainder_window_secs: the buyer's deadline to fund the remainder once
+// the cooperative signals ready_for_delivery — missing it is an immediate
+// permanent bar (this session's product decision, see TASKS.md), so the
+// floor needs to be long enough a buyer genuinely has a fair chance to act,
+// not so short that a missed notification becomes a default. Same 1-hour
+// technical floor as claim_window_secs, but the recommended/default value
+// (see buyer-app's CreateCommitmentForm) is 7 days, not this floor.
+// 30-day ceiling: a remainder payment sitting "pending" for over a month
+// stops looking like two-phase funding and starts looking like the
+// deposit-only design was pointless.
+const MIN_REMAINDER_WINDOW_SECS = 3600;
+const MAX_REMAINDER_WINDOW_SECS = 60 * 60 * 24 * 30;
+
+// delivery_window_secs: the overall deadline from initialize() until
+// confirm_delivery must have happened, or the buyer can reclaim escrow and
+// the cooperative is forfeiture-eligible (graduated, 3-strike — see
+// TASKS.md). Floor is a full day, not an hour — unlike the other two
+// windows this spans actual physical delivery, not just a wallet signature.
+// 365-day ceiling: generous relative to any realistic agricultural season,
+// mainly a guard against a fat-fingered value.
+const MIN_DELIVERY_WINDOW_SECS = 60 * 60 * 24;
+const MAX_DELIVERY_WINDOW_SECS = 60 * 60 * 24 * 365;
 
 interface InitializeBody {
   buyer: string;
@@ -92,6 +127,8 @@ interface InitializeBody {
   advance1Bps: number;
   advance2Bps: number;
   claimWindowSecs: string;
+  remainderWindowSecs: string;
+  deliveryWindowSecs: string;
   sourcePublicKey: string;
 }
 
@@ -132,6 +169,18 @@ export function buildServer() {
           error: `claimWindowSecs must be between ${MIN_CLAIM_WINDOW_SECS} and ${MAX_CLAIM_WINDOW_SECS} seconds, got ${b.claimWindowSecs}`,
         });
       }
+      const remainderWindowSecs = Number(b.remainderWindowSecs);
+      if (remainderWindowSecs < MIN_REMAINDER_WINDOW_SECS || remainderWindowSecs > MAX_REMAINDER_WINDOW_SECS) {
+        return reply.code(400).send({
+          error: `remainderWindowSecs must be between ${MIN_REMAINDER_WINDOW_SECS} and ${MAX_REMAINDER_WINDOW_SECS} seconds, got ${b.remainderWindowSecs}`,
+        });
+      }
+      const deliveryWindowSecs = Number(b.deliveryWindowSecs);
+      if (deliveryWindowSecs < MIN_DELIVERY_WINDOW_SECS || deliveryWindowSecs > MAX_DELIVERY_WINDOW_SECS) {
+        return reply.code(400).send({
+          error: `deliveryWindowSecs must be between ${MIN_DELIVERY_WINDOW_SECS} and ${MAX_DELIVERY_WINDOW_SECS} seconds, got ${b.deliveryWindowSecs}`,
+        });
+      }
 
       const xdr = await buildInvokeTransaction({
         contractId,
@@ -146,6 +195,8 @@ export function buildServer() {
           advance1Bps: b.advance1Bps,
           advance2Bps: b.advance2Bps,
           claimWindowSecs: BigInt(b.claimWindowSecs),
+          remainderWindowSecs: BigInt(b.remainderWindowSecs),
+          deliveryWindowSecs: BigInt(b.deliveryWindowSecs),
         }),
       });
       return { xdr };

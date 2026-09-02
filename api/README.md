@@ -45,6 +45,19 @@ expose this for exactly this case), not just sign the envelope.
 example of the correct mechanism for both; no frontend UX for either
 exists yet (see `HANDOFF.md`'s "Next steps").
 
+**Two-phase funding, and the default/forfeiture paths built on top of it**
+(contracts `HANDOFF.md` has the full detail): `initialize` now also takes
+`remainderWindowSecs` and `deliveryWindowSecs`, both validated with their
+own floor/ceiling the same way `claimWindowSecs` already was. `lock`
+escrows only the deposit now, not the full `totalAmount` — the remainder
+is escrowed separately via `fund_remainder` once the cooperative calls
+`ready_for_delivery`. `expire_remainder_window` (buyer default — sweeps
+escrow to the cooperative) is genuinely permissionless, callable by any
+address, not just the two parties to the commitment; `reclaim_on_nondelivery`
+(seller non-delivery — returns escrow to the buyer) is buyer-gated. Both
+are plain no-arg calls through the generic route above, same as `lock` —
+neither needed the multi-party signing path.
+
 ## Endpoints, as of this writing
 
 | Method | Path | What it does |
@@ -53,7 +66,7 @@ exists yet (see `HANDOFF.md`'s "Next steps").
 | POST | `/commitments/deploy` | Deploys a fresh, uninitialized escrow contract instance. Deployer-paid, no party auth. |
 | POST | `/commitments/:contractId/tx/initialize` | Builds unsigned `initialize` XDR. Must be signed by the intended buyer. Address fields are validated (`StrKey`) before building. |
 | POST | `/commitments/:contractId/tx/reassign-buyer` | Builds unsigned `reassign_buyer` XDR. Needs three-party auth — see above. |
-| POST | `/commitments/:contractId/tx/:method` | Builds unsigned XDR for any no-argument lifecycle method (`lock`, `release_advance_1/2`, `claim_advance_1/2`, `reclaim_advance_1/2`, `mark_checkpoint`, `confirm_delivery`, `settle`, `cancel`). `cancel` needs two-party auth — see above, not just a second signature on the same XDR. |
+| POST | `/commitments/:contractId/tx/:method` | Builds unsigned XDR for any no-argument lifecycle method (`lock`, `release_advance_1/2`, `claim_advance_1/2`, `reclaim_advance_1/2`, `mark_checkpoint`, `confirm_delivery`, `settle`, `cancel`, `ready_for_delivery`, `fund_remainder`, `expire_remainder_window`, `reclaim_on_nondelivery`). `cancel` needs two-party auth — see above, not just a second signature on the same XDR. The four two-phase-funding/forfeiture additions are all single-signer or fully permissionless, so they need nothing extra — see below. |
 | POST | `/transactions/submit` | Submits a signed envelope, polls for confirmation, optionally refreshes the Postgres cache. |
 | GET | `/commitments/:contractId` | Live read straight from chain (source of truth), refreshes the cache as a side effect. |
 | GET | `/commitments` | Lists the Postgres-cached mirror — the only way to list commitments at all, since the chain has no such query. |
@@ -80,13 +93,22 @@ repo) deploys real throwaway contract instances and builds/submits real
 `initialize`/`lock`/`cancel`/`reassign_buyer` transactions — `cancel`
 with two genuinely different signers, `reassign_buyer` with three, both
 via `test/helpers.ts`'s `submitMultiPartyCall` — asserting on the
-resulting on-chain state each time; `retry.test.ts` covers the retry
-helper's own logic with deterministic fakes, no network needed; `server.test.ts`
-exercises the HTTP layer via Fastify's `.inject()`, covering validation
-paths that reject before ever reaching the network. This costs real
-(testnet) transaction submissions and friendbot funding calls each
-run — that's the point, it's the only way to know the SDK usage is
-actually correct.
+resulting on-chain state each time. Same file also covers the two-phase-
+funding/forfeiture additions: a full `lock` → `ready_for_delivery` →
+`fund_remainder` → `confirm_delivery` → `settle` walk proving `lock` only
+escrows the deposit; `expire_remainder_window` triggered by a genuinely
+unrelated third-party signer (proving it's really permissionless, not
+just "works when I'm also a party"), waited out over a deliberately short
+`remainderWindowSecs` in real time; and `reclaim_on_nondelivery` after a
+deliberately short `deliveryWindowSecs` lapses with the cooperative never
+having acted. `retry.test.ts` covers the retry helper's own logic with
+deterministic fakes, no network needed; `server.test.ts` exercises the
+HTTP layer via Fastify's `.inject()`, covering validation paths that
+reject before ever reaching the network — including dedicated boundary
+tests for `remainderWindowSecs`/`deliveryWindowSecs`, mirroring
+`claimWindowSecs`'s existing ones. This costs real (testnet) transaction
+submissions and friendbot funding calls each run — that's the point,
+it's the only way to know the SDK usage is actually correct.
 
 ## What's not built yet
 

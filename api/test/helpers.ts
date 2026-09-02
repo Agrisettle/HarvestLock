@@ -9,7 +9,7 @@ import {
   xdr,
 } from "@stellar/stellar-sdk";
 import { server, networkPassphrase } from "../src/stellar/rpc.js";
-import { submitSignedTransaction, type SubmitResult } from "../src/stellar/tx.js";
+import { buildInvokeTransaction, submitSignedTransaction, type SubmitResult } from "../src/stellar/tx.js";
 
 /**
  * Test-only helper for contract methods that need more than one party's
@@ -117,4 +117,33 @@ export async function fundTestnetAccount(publicKey: string): Promise<void> {
   if (!res.ok) {
     throw new Error(`friendbot funding failed for ${publicKey}: ${await res.text()}`);
   }
+}
+
+/**
+ * Test-only convenience for the common case `submitMultiPartyCall` doesn't
+ * need to cover: a single signer, who's also the transaction source, on a
+ * no-arg (or already-built-args) method. Every lifecycle call the
+ * two-phase-funding tests below drive (`lock`, `release_advance_1`,
+ * `claim_advance_1`, `ready_for_delivery`, `fund_remainder`, ...) is this
+ * shape — `buildInvokeTransaction` + sign + `submitSignedTransaction`,
+ * repeated. Pulled out once used more than a couple of times, same
+ * reasoning as `submitMultiPartyCall` existing at all: this still isn't
+ * something src/ needs, since the real API only ever hands a caller's
+ * wallet an unsigned XDR to sign itself.
+ */
+export async function submitSingleSignerCall(opts: {
+  contractId: string;
+  method: string;
+  args?: xdr.ScVal[];
+  signer: Keypair;
+}): Promise<SubmitResult> {
+  const unsignedXdr = await buildInvokeTransaction({
+    contractId: opts.contractId,
+    method: opts.method,
+    sourcePublicKey: opts.signer.publicKey(),
+    args: opts.args,
+  });
+  const tx = TransactionBuilder.fromXDR(unsignedXdr, networkPassphrase);
+  tx.sign(opts.signer);
+  return submitSignedTransaction(tx.toXDR());
 }

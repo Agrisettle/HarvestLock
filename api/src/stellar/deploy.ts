@@ -97,6 +97,8 @@ export interface InitializeArgs {
   advance1Bps: number;
   advance2Bps: number;
   claimWindowSecs: bigint;
+  remainderWindowSecs: bigint;
+  deliveryWindowSecs: bigint;
 }
 
 /** Builds the `initialize` args in the exact order lib.rs declares them. */
@@ -110,5 +112,7 @@ export function initializeArgs(a: InitializeArgs): xdr.ScVal[] {
     nativeToScVal(a.advance1Bps, { type: "u32" }),
     nativeToScVal(a.advance2Bps, { type: "u32" }),
     nativeToScVal(a.claimWindowSecs, { type: "u64" }),
+    nativeToScVal(a.remainderWindowSecs, { type: "u64" }),
+    nativeToScVal(a.deliveryWindowSecs, { type: "u64" }),
   ];
 }

@@ -150,6 +150,110 @@ describe("server (HTTP layer)", () => {
   );
 
   it(
+    "rejects remainderWindowSecs below the minimum before touching the network",
+    async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: `/commitments/${FAKE_CONTRACT_ID}/tx/initialize`,
+        payload: {
+          buyer: FAKE_PUBLIC_KEY,
+          cooperative: FAKE_PUBLIC_KEY,
+          warehouseOperator: FAKE_PUBLIC_KEY,
+          token: FAKE_CONTRACT_ID,
+          totalAmount: "1000000000",
+          advance1Bps: 1500,
+          advance2Bps: 2000,
+          claimWindowSecs: "3600",
+          remainderWindowSecs: "60",
+          deliveryWindowSecs: String(60 * 60 * 24 * 120),
+          sourcePublicKey: FAKE_PUBLIC_KEY,
+        },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toMatch(/remainderWindowSecs must be between/);
+    },
+    15_000,
+  );
+
+  it(
+    "rejects remainderWindowSecs above the maximum before touching the network",
+    async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: `/commitments/${FAKE_CONTRACT_ID}/tx/initialize`,
+        payload: {
+          buyer: FAKE_PUBLIC_KEY,
+          cooperative: FAKE_PUBLIC_KEY,
+          warehouseOperator: FAKE_PUBLIC_KEY,
+          token: FAKE_CONTRACT_ID,
+          totalAmount: "1000000000",
+          advance1Bps: 1500,
+          advance2Bps: 2000,
+          claimWindowSecs: "3600",
+          remainderWindowSecs: String(60 * 60 * 24 * 365),
+          deliveryWindowSecs: String(60 * 60 * 24 * 120),
+          sourcePublicKey: FAKE_PUBLIC_KEY,
+        },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toMatch(/remainderWindowSecs must be between/);
+    },
+    15_000,
+  );
+
+  it(
+    "rejects deliveryWindowSecs below the minimum before touching the network",
+    async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: `/commitments/${FAKE_CONTRACT_ID}/tx/initialize`,
+        payload: {
+          buyer: FAKE_PUBLIC_KEY,
+          cooperative: FAKE_PUBLIC_KEY,
+          warehouseOperator: FAKE_PUBLIC_KEY,
+          token: FAKE_CONTRACT_ID,
+          totalAmount: "1000000000",
+          advance1Bps: 1500,
+          advance2Bps: 2000,
+          claimWindowSecs: "3600",
+          remainderWindowSecs: String(60 * 60 * 24 * 7),
+          deliveryWindowSecs: "60",
+          sourcePublicKey: FAKE_PUBLIC_KEY,
+        },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toMatch(/deliveryWindowSecs must be between/);
+    },
+    15_000,
+  );
+
+  it(
+    "rejects deliveryWindowSecs above the maximum before touching the network",
+    async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: `/commitments/${FAKE_CONTRACT_ID}/tx/initialize`,
+        payload: {
+          buyer: FAKE_PUBLIC_KEY,
+          cooperative: FAKE_PUBLIC_KEY,
+          warehouseOperator: FAKE_PUBLIC_KEY,
+          token: FAKE_CONTRACT_ID,
+          totalAmount: "1000000000",
+          advance1Bps: 1500,
+          advance2Bps: 2000,
+          claimWindowSecs: "3600",
+          remainderWindowSecs: String(60 * 60 * 24 * 7),
+          deliveryWindowSecs: String(60 * 60 * 24 * 1000),
+          sourcePublicKey: FAKE_PUBLIC_KEY,
+        },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toMatch(/deliveryWindowSecs must be between/);
+    },
+    15_000,
+  );
+
+  it(
     "rejects a malformed buyer address on initialize before touching the network",
     async () => {
       const res = await app.inject({
