@@ -35,6 +35,10 @@ call if a third frontend shows up needing the same thing.
 (`src/components/CommitmentDetail.tsx`'s `pendingSummary()`) instead of
 just the raw tranche table `coop-pwa` shows first. Verified in a real
 browser against the live API and live testnet data on 1 Sept 2026.
+Automated tests (`npm test`) cover `pendingSummary`'s branches and
+`App`'s fetch-mocked flows, same setup as `coop-pwa` — see that app's
+README for the two real environment issues found getting it working
+(forks-pool hang, Testing Library cleanup needing an explicit hook).
 
 **Deferred**: lock/settle write actions, auth, ERP integration (see
 above) — none of this exists yet, don't assume it does.
