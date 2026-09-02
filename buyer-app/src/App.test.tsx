@@ -47,13 +47,17 @@ const detail: CommitmentDetail = {
   advance1_bps: 1500,
   advance2_bps: 2000,
   claim_window_secs: "3600",
+  remainder_window_secs: "604800",
   created_at: "1788245397",
+  delivery_deadline: "1798245397",
   advance1_deadline: "0",
   advance1_claimed: false,
   advance1_expired: false,
   advance2_deadline: "0",
   advance2_claimed: false,
   advance2_expired: false,
+  remainder_deadline: "0",
+  remainder_funded: false,
 };
 
 function jsonResponse(body: unknown, ok = true) {
@@ -199,6 +203,10 @@ describe("App", () => {
   it("creates a commitment: deploy -> build initialize -> sign -> submit -> loads it, end to end", async () => {
     const newContractId = "CBRANDNEWCOMMITMENTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX";
     const newDetail: CommitmentDetail = { ...detail, buyer: "GNEWBUYER", status: "Draft" };
+    // Many user.type()/user.click() steps below -- the default 5s per-test
+    // timeout is tight for that even without network variance, since this
+    // is component-level (fetch-mocked), not live network. Generous
+    // explicit timeout, same reasoning as stellar.test.ts's live tests.
 
     fetchMock.mockResolvedValueOnce(jsonResponse([])); // initial list
     fetchMock.mockResolvedValueOnce(jsonResponse({ contractId: newContractId })); // deployCommitment
@@ -226,6 +234,7 @@ describe("App", () => {
     await user.type(screen.getByLabelText("Advance 2 share (basis points)"), "2000");
     await user.clear(screen.getByLabelText("Claim window (seconds)"));
     await user.type(screen.getByLabelText("Claim window (seconds)"), "3600");
+    await user.click(screen.getByRole("checkbox"));
 
     await user.click(screen.getByRole("button", { name: "Create commitment" }));
 
@@ -237,5 +246,5 @@ describe("App", () => {
     const initCall = fetchMock.mock.calls.find(([url]) => String(url).includes("/tx/initialize"));
     expect(initCall).toBeDefined();
     expect(String(initCall?.[1]?.body)).toContain("GNEWBUYER");
-  });
+  }, 15_000);
 });

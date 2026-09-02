@@ -201,6 +201,25 @@ main {
   border-radius: 6px;
 }
 
+.consent-checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 0.8rem;
+  color: var(--bone-dim);
+  margin-top: 6px;
+  cursor: pointer;
+}
+
+.consent-checkbox input {
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+
+.consent-checkbox a {
+  color: var(--gold);
+}
+
 .create-commitment-form button {
   align-self: flex-start;
   margin-top: 10px;

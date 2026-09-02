@@ -71,5 +71,23 @@ Freighter extension exists in this environment. What the flow's chain
 operations actually do (deploy, initialize) is separately proven at the
 API layer in `api/test/stellar.test.ts` against real testnet.
 
+**Two-phase funding fields + Roles & Responsibilities consent** (same
+file, added 2 Sept 2026, later same day, alongside the contract-side
+default/forfeiture work — see `HarvestLock-Contracts/HANDOFF.md`): the
+form now also collects `remainderWindowSecs` (default 7 days) and
+`deliveryWindowSecs` (default 120 days), each validated client-side
+against the same bounds `server.ts` enforces, mirroring
+`claimWindowSecs`'s existing pattern. A required checkbox — "I've read
+Roles & Responsibilities, including that missing the remainder-payment
+deadline means an immediate, permanent bar" — blocks submission until
+checked; this is enforced client-side only (the API has no way to know
+whether a UI actually showed a buyer this), on the theory that *some*
+disclosure gate belongs in the one flow that creates a commitment at
+all, not that this one checkbox is a complete compliance story. The link
+target (`site/roles.html`) is opt-in via `VITE_SITE_URL` — unset by
+default, since there's no deployed site domain yet (same pattern as
+`site/`'s own `useLiveStatus` hook); when unset, the checkbox label
+degrades to plain, non-linked text rather than guessing a URL.
+
 **Deferred**: auth, ERP integration (see above) — neither exists yet,
 don't assume it does.

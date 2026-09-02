@@ -11,6 +11,9 @@ const validFields: CreateCommitmentFields = {
   advance1Bps: 1500,
   advance2Bps: 2000,
   claimWindowSecs: "3600",
+  remainderWindowSecs: "3600",
+  deliveryWindowSecs: String(60 * 60 * 24),
+  rolesAcknowledged: true,
 };
 
 describe("validateCreateCommitmentFields", () => {
@@ -41,6 +44,36 @@ describe("validateCreateCommitmentFields", () => {
       validateCreateCommitmentFields({ ...validFields, claimWindowSecs: String(60 * 60 * 24 * 365) }),
     ).toMatch(/Claim window must be between/);
   });
+
+  it("rejects a remainder-payment window below the API's minimum", () => {
+    expect(validateCreateCommitmentFields({ ...validFields, remainderWindowSecs: "60" })).toMatch(
+      /Remainder-payment window must be between/,
+    );
+  });
+
+  it("rejects a remainder-payment window above the API's maximum", () => {
+    expect(
+      validateCreateCommitmentFields({ ...validFields, remainderWindowSecs: String(60 * 60 * 24 * 365) }),
+    ).toMatch(/Remainder-payment window must be between/);
+  });
+
+  it("rejects a delivery window below the API's minimum", () => {
+    expect(validateCreateCommitmentFields({ ...validFields, deliveryWindowSecs: "60" })).toMatch(
+      /Delivery window must be between/,
+    );
+  });
+
+  it("rejects a delivery window above the API's maximum", () => {
+    expect(
+      validateCreateCommitmentFields({ ...validFields, deliveryWindowSecs: String(60 * 60 * 24 * 1000) }),
+    ).toMatch(/Delivery window must be between/);
+  });
+
+  it("rejects submitting without acknowledging Roles & Responsibilities", () => {
+    expect(validateCreateCommitmentFields({ ...validFields, rolesAcknowledged: false })).toMatch(
+      /Roles & Responsibilities/,
+    );
+  });
 });
 
 describe("CreateCommitmentForm", () => {
@@ -70,6 +103,7 @@ describe("CreateCommitmentForm", () => {
     await user.type(screen.getByLabelText("Advance 2 share (basis points)"), "2000");
     await user.clear(screen.getByLabelText("Claim window (seconds)"));
     await user.type(screen.getByLabelText("Claim window (seconds)"), "3600");
+    await user.click(screen.getByRole("checkbox"));
 
     await user.click(screen.getByRole("button", { name: "Create commitment" }));
 
@@ -82,9 +116,33 @@ describe("CreateCommitmentForm", () => {
         advance1Bps: 1500,
         advance2Bps: 2000,
         claimWindowSecs: "3600",
+        rolesAcknowledged: true,
       }),
     );
   });
+
+  it("does not call onSubmit when the Roles & Responsibilities checkbox is left unchecked", async () => {
+    const onSubmit = vi.fn();
+    const user = userEvent.setup();
+    render(<CreateCommitmentForm onSubmit={onSubmit} submitting={false} submitError={null} />);
+
+    await user.type(screen.getByLabelText("Cooperative address"), validFields.cooperative);
+    await user.type(screen.getByLabelText("Warehouse operator address"), validFields.warehouseOperator);
+    await user.type(screen.getByLabelText("Token contract address"), validFields.token);
+    await user.type(screen.getByLabelText("Total amount (stroops)"), validFields.totalAmount);
+    await user.clear(screen.getByLabelText("Advance 1 share (basis points)"));
+    await user.type(screen.getByLabelText("Advance 1 share (basis points)"), "1500");
+    await user.clear(screen.getByLabelText("Advance 2 share (basis points)"));
+    await user.type(screen.getByLabelText("Advance 2 share (basis points)"), "2000");
+    // Deliberately not checking the checkbox this time.
+
+    await user.click(screen.getByRole("button", { name: "Create commitment" }));
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    // Matches only the error banner -- a plain /Roles & Responsibilities/
+    // regex also matches the checkbox's own (unrelated) label text.
+    expect(screen.getByText(/must confirm you've read Roles & Responsibilities/)).toBeInTheDocument();
+  }, 15_000);
 
   it("shows 'Creating…' and disables the button while submitting", () => {
     render(<CreateCommitmentForm onSubmit={vi.fn()} submitting={true} submitError={null} />);

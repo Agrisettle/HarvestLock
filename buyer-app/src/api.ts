@@ -12,13 +12,17 @@ export interface CommitmentDetail {
   advance1_bps: number;
   advance2_bps: number;
   claim_window_secs: string;
+  remainder_window_secs: string;
   created_at: string;
+  delivery_deadline: string;
   advance1_deadline: string;
   advance1_claimed: boolean;
   advance1_expired: boolean;
   advance2_deadline: string;
   advance2_claimed: boolean;
   advance2_expired: boolean;
+  remainder_deadline: string;
+  remainder_funded: boolean;
 }
 
 /** Mirrors api/src/db/commitments.ts's CommitmentRow — the Postgres cache. */
@@ -89,6 +93,8 @@ export interface InitializeFields {
   advance1Bps: number;
   advance2Bps: number;
   claimWindowSecs: string;
+  remainderWindowSecs: string;
+  deliveryWindowSecs: string;
   sourcePublicKey: string;
 }
 

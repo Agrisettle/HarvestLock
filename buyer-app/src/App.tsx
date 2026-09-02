@@ -114,6 +114,8 @@ export default function App() {
             advance1Bps: fields.advance1Bps,
             advance2Bps: fields.advance2Bps,
             claimWindowSecs: fields.claimWindowSecs,
+            remainderWindowSecs: fields.remainderWindowSecs,
+            deliveryWindowSecs: fields.deliveryWindowSecs,
             sourcePublicKey: walletAddress,
           });
         })
