@@ -16,6 +16,7 @@ export function Footer() {
         </div>
 
         <div className="footer-links">
+          <a href="/roles.html">Roles &amp; responsibilities</a>
           <a href="https://github.com/agrisettle/harvestlock" target="_blank" rel="noreferrer">
             GitHub
           </a>

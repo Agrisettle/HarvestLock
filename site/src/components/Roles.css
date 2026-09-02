@@ -1,0 +1,152 @@
+.roles-hero {
+  padding-top: clamp(80px, 12vw, 140px);
+  padding-bottom: clamp(24px, 4vw, 40px);
+}
+
+.roles-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  color: var(--bone-dim);
+  text-decoration: none;
+  margin-bottom: 2rem;
+}
+
+.roles-back:hover {
+  color: var(--gold);
+}
+
+.roles-updated {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  color: var(--bone-faint);
+  margin-top: 0.9rem;
+}
+
+.roles-section {
+  padding: clamp(28px, 4vw, 48px) 0;
+  border-top: 1px solid var(--void-line-soft);
+}
+
+.roles-section h2 {
+  margin-bottom: 1.4rem;
+}
+
+.roles-section > .wrap > p {
+  margin-bottom: 1rem;
+  color: var(--bone-dim);
+}
+
+.roles-columns {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: clamp(20px, 3vw, 32px);
+  margin-top: 1.6rem;
+}
+
+@media (min-width: 780px) {
+  .roles-columns {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.roles-card {
+  background: var(--void-raised);
+  border: 1px solid var(--void-line);
+  border-radius: 6px;
+  padding: clamp(20px, 2.6vw, 28px);
+}
+
+.roles-card h3 {
+  margin-bottom: 0.9rem;
+}
+
+.roles-card ul {
+  margin: 0;
+  padding-left: 1.1em;
+  color: var(--bone-dim);
+}
+
+.roles-card li {
+  margin-bottom: 0.6em;
+  line-height: 1.55;
+}
+
+.roles-card li:last-child {
+  margin-bottom: 0;
+}
+
+.roles-severity {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.03em;
+  padding: 0.35em 0.8em;
+  border-radius: 999px;
+  margin-bottom: 1.1rem;
+}
+
+.roles-severity.immediate {
+  color: var(--signal);
+  border: 1px solid rgba(193, 67, 46, 0.4);
+  background: rgba(193, 67, 46, 0.08);
+}
+
+.roles-severity.graduated {
+  color: var(--gold);
+  border: 1px solid rgba(212, 169, 55, 0.4);
+  background: rgba(212, 169, 55, 0.08);
+}
+
+.roles-appeal {
+  background: var(--pine-soft);
+  border: 1px solid var(--void-line);
+  border-radius: 6px;
+  padding: clamp(20px, 3vw, 32px);
+  margin-top: 1.6rem;
+}
+
+.roles-appeal p {
+  color: var(--bone-dim);
+  margin-bottom: 0.8rem;
+}
+
+.roles-appeal p:last-child {
+  margin-bottom: 0;
+}
+
+.roles-windows-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1.4rem;
+  font-size: 0.95rem;
+}
+
+.roles-windows-table th,
+.roles-windows-table td {
+  text-align: left;
+  padding: 0.75em 1em;
+  border-bottom: 1px solid var(--void-line-soft);
+}
+
+.roles-windows-table th {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--bone-faint);
+  font-weight: 500;
+}
+
+.roles-windows-table td {
+  color: var(--bone-dim);
+}
+
+.roles-windows-table td:first-child {
+  color: var(--bone);
+  font-weight: 500;
+}
