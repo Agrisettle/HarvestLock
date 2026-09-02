@@ -23,7 +23,14 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # jsdom 30 (this app's vitest environment) hard-requires
+          # ^22.22.2 || ^24.15.0 || >=26.0.0 (its own package.json
+          # engines field) -- Node 20 doesn't satisfy that at all, and
+          # crashes before any test runs with "webidl.util.markAsUncloneable
+          # is not a function" (jsdom's bundled undici calling a Node
+          # internal webidl API that doesn't exist on 20). 24 matches
+          # local dev, where the whole suite has run clean all along.
+          node-version: 24
           cache: npm
           cache-dependency-path: coop-pwa/package-lock.json
 
