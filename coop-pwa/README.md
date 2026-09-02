@@ -42,19 +42,34 @@ appropriate for now since there's no auth to protect; revisit if that
 changes). This is exactly why "start the dev server and check it in a
 browser" matters more than typecheck/build passing.
 
+**Automated tests** (`npm test`, vitest + Testing Library, added 1 Sept
+2026): `StatusBadge`, `CommitmentDetail`'s formatting logic (bps-to-
+percentage, the deadline-0 special case, claim state), and `App`'s
+fetch-mocked list/detail/error flows. Fetch is mocked at the network
+boundary here — a different kind of mock than `api/`'s "no mocks"
+testnet suite; the real integration is what the browser check above
+already verified, these check this app's own rendering logic. Two real
+environment issues found and fixed while setting this up: the default
+vitest forks pool hangs on this machine (`pool: "threads"` in
+`vitest.config.ts` fixes it), and Testing Library's automatic DOM
+cleanup between tests needs vitest's global test APIs, which this
+project doesn't use — needs an explicit `afterEach(cleanup)` instead
+(`src/test-setup.ts`), found via a genuinely confusing failure (a count
+assertion off by exactly 2x) before it was added.
+
 **Deferred, per `TASKS.md`**:
 - Phone-based auth (PRD §4.6) — needs the API's identity/session model decided first.
 - Claim-advance write actions.
 - Offline-tolerant queue for depot connectivity loss (PRD §7/§16.3).
 - Allocation-ledger / per-member display — the API doesn't have this data yet either.
 
-## A real testnet flakiness observed, not a bug
+## A real testnet flakiness observed, not a bug — now handled
 
 During testing, one `GET /commitments/:contractId` call failed with a
 500 (`Account not found: G...` from the Stellar RPC) on an account that
 had just transacted successfully seconds earlier — a transient Soroban
 RPC inconsistency, not a code defect; a retry of the same request
-succeeded normally. Neither the API nor this app retries automatically
-yet. If this becomes a recurring nuisance once there's real usage, add
-retry-with-backoff to the API's `simulateRead` — don't add it
-speculatively before there's evidence it's needed often enough to matter.
+succeeded normally. `api/`'s `simulateRead` now retries transient
+failures automatically (`src/stellar/retry.ts`, added after a second,
+different occurrence made this stop being speculative) — see
+`api/HANDOFF.md`.
