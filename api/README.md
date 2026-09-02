@@ -58,6 +58,21 @@ address, not just the two parties to the commitment; `reclaim_on_nondelivery`
 are plain no-arg calls through the generic route above, same as `lock` —
 neither needed the multi-party signing path.
 
+**Off-chain reputation/strikes** (`src/reputation.ts`, `src/db/reputation.ts`):
+the contract only ever emits a clean terminal status
+(`Status::Defaulted`/`Status::Forfeited`) — it has no visibility into a
+party's history across other commitments, so consequences live here. A
+buyer default bars the buyer's address immediately, on the first
+occurrence (`party_standing.barred`); a cooperative forfeiture increments
+a strike counter and only bars at three. This is **observation-triggered,
+not backed by a chain indexer or background watcher** — the same caveat
+already documented below for the commitments cache: a
+default/forfeiture nobody ever calls `GET` or
+`/transactions/submit?refreshContractId` on won't be recorded until
+someone does. `initialize` now rejects (403) if the intended buyer or
+cooperative is barred, via `requireNotBarred` — the enforcement half of
+the system. `GET /parties/:address/standing` exposes the read side.
+
 ## Endpoints, as of this writing
 
 | Method | Path | What it does |
@@ -68,8 +83,9 @@ neither needed the multi-party signing path.
 | POST | `/commitments/:contractId/tx/reassign-buyer` | Builds unsigned `reassign_buyer` XDR. Needs three-party auth — see above. |
 | POST | `/commitments/:contractId/tx/:method` | Builds unsigned XDR for any no-argument lifecycle method (`lock`, `release_advance_1/2`, `claim_advance_1/2`, `reclaim_advance_1/2`, `mark_checkpoint`, `confirm_delivery`, `settle`, `cancel`, `ready_for_delivery`, `fund_remainder`, `expire_remainder_window`, `reclaim_on_nondelivery`). `cancel` needs two-party auth — see above, not just a second signature on the same XDR. The four two-phase-funding/forfeiture additions are all single-signer or fully permissionless, so they need nothing extra — see below. |
 | POST | `/transactions/submit` | Submits a signed envelope, polls for confirmation, optionally refreshes the Postgres cache. |
-| GET | `/commitments/:contractId` | Live read straight from chain (source of truth), refreshes the cache as a side effect. |
+| GET | `/commitments/:contractId` | Live read straight from chain (source of truth), refreshes the cache as a side effect. Also applies any reputation consequence from a fresh transition into `Defaulted`/`Forfeited` — see above. |
 | GET | `/commitments` | Lists the Postgres-cached mirror — the only way to list commitments at all, since the chain has no such query. |
+| GET | `/parties/:address/standing` | A party's current reputation: strike count, whether they're barred, and why. Returns a clean default (not 404) for an address with no history. |
 
 ## Setup
 
@@ -110,6 +126,20 @@ tests for `remainderWindowSecs`/`deliveryWindowSecs`, mirroring
 submissions and friendbot funding calls each run — that's the point,
 it's the only way to know the SDK usage is actually correct.
 
+A fourth suite, `test/reputation.test.ts`, is **real-Postgres, not live
+testnet** — no chain calls, no mocks, hits the same local database the
+running server does. Covers the core reputation logic directly: immediate
+buyer bar and its idempotency (calling it twice doesn't clobber the
+original `barred_at`), the graduated cooperative strike count and the
+exact threshold where it bars, and `applyReputationConsequences`'s
+no-op cases (status unchanged, or changed but not to a terminal one).
+`stellar.test.ts`'s `expire_remainder_window`/`reclaim_on_nondelivery`
+tests each end with the same `upsertCommitment` →
+`applyReputationConsequences` → `getStanding` sequence the HTTP routes
+run, against a real chain read — the integration proof that
+`reputation.test.ts`'s narrower, hand-built-`Commitment` coverage
+doesn't give on its own.
+
 ## What's not built yet
 
 - The allocation-ledger and voucher/SDP pieces mentioned above — nothing
@@ -120,7 +150,13 @@ it's the only way to know the SDK usage is actually correct.
   called `GET /commitments/:contractId` on recently — there's no
   background poller yet, so the list view can go stale for commitments no
   one has viewed. Acceptable for now, worth revisiting once there's real
-  usage.
+  usage. The reputation consequences above inherit the exact same gap,
+  for the exact same reason.
+- The appeals process behind reputation's bar: the contact
+  (`samuelojetunde898@gmail.com`) is documented on `site/roles.html`;
+  there's no inbox automation or reinstatement workflow here yet,
+  deliberately — matches this project's bias against over-building ahead
+  of real usage.
 
 See `../TASKS.md` for the full, current backlog and `../HANDOFF.md` for
 project-wide state.
