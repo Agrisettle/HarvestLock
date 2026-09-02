@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { describe, it, expect } from "vitest";
-import { Keypair, TransactionBuilder } from "@stellar/stellar-sdk";
+import { Keypair, TransactionBuilder, Address } from "@stellar/stellar-sdk";
 import { getStatus, getCommitment } from "../src/stellar/client.js";
 import { deployContractInstance, initializeArgs } from "../src/stellar/deploy.js";
 import { buildInvokeTransaction, submitSignedTransaction } from "../src/stellar/tx.js";
@@ -158,6 +158,66 @@ describe("stellar/deploy (live testnet writes)", () => {
       });
       expect(result.status).toBe("SUCCESS");
       expect(await getStatus(contractId)).toBe("Cancelled");
+    },
+    120_000,
+  );
+
+  it(
+    "reassign_buyer requires three genuinely different signers and actually changes the buyer",
+    async () => {
+      // lib.rs's reassign_buyer() calls buyer.require_auth(),
+      // cooperative.require_auth(), AND new_buyer.require_auth() -- three
+      // parties on one call, the only method in the contract that needs
+      // that many. Exercises submitMultiPartyCall's `args` support too
+      // (reassign_buyer takes the new buyer address; cancel, the only
+      // other multi-party method, takes none).
+      const deployer = Keypair.fromSecret(process.env.DEPLOYER_SECRET_KEY!);
+      const cooperative = Keypair.random();
+      const newBuyer = Keypair.random();
+      await Promise.all([fundTestnetAccount(cooperative.publicKey()), fundTestnetAccount(newBuyer.publicKey())]);
+
+      const contractId = await deployContractInstance();
+
+      const initXdr = await buildInvokeTransaction({
+        contractId,
+        method: "initialize",
+        sourcePublicKey: deployer.publicKey(),
+        args: initializeArgs({
+          buyer: deployer.publicKey(),
+          cooperative: cooperative.publicKey(),
+          warehouseOperator: deployer.publicKey(),
+          token: PLACEHOLDER_TOKEN,
+          totalAmount: 1_000_000_000n,
+          advance1Bps: 1500,
+          advance2Bps: 2000,
+          claimWindowSecs: 3600n,
+        }),
+      });
+      const initTx = TransactionBuilder.fromXDR(initXdr, networkPassphrase);
+      initTx.sign(deployer);
+      await submitSignedTransaction(initTx.toXDR());
+
+      const lockXdr = await buildInvokeTransaction({
+        contractId,
+        method: "lock",
+        sourcePublicKey: deployer.publicKey(),
+      });
+      const lockTx = TransactionBuilder.fromXDR(lockXdr, networkPassphrase);
+      lockTx.sign(deployer);
+      await submitSignedTransaction(lockTx.toXDR());
+
+      const result = await submitMultiPartyCall({
+        contractId,
+        method: "reassign_buyer",
+        args: [new Address(newBuyer.publicKey()).toScVal()],
+        sourceSigner: deployer,
+        otherSigners: [cooperative, newBuyer],
+      });
+      expect(result.status).toBe("SUCCESS");
+
+      const commitment = await getCommitment(contractId);
+      expect(commitment.buyer).toBe(newBuyer.publicKey());
+      expect(commitment.buyer).not.toBe(deployer.publicKey());
     },
     120_000,
   );
