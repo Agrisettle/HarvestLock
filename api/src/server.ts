@@ -1,10 +1,27 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import { StrKey } from "@stellar/stellar-sdk";
 import { getCommitment, type Commitment } from "./stellar/client.js";
 import { deployContractInstance, initializeArgs } from "./stellar/deploy.js";
 import { buildInvokeTransaction, submitSignedTransaction } from "./stellar/tx.js";
 import { upsertCommitment, listCommitments } from "./db/commitments.js";
 import { pool } from "./db/pool.js";
+import { BadRequestError } from "./errors.js";
+
+/**
+ * Every route below takes a contract ID at some point. Before this
+ * existed, a malformed one (wrong length, bad checksum, a G... account
+ * address instead of a C... contract one) reached the Stellar SDK, which
+ * throws a plain Error with no status code — Fastify's default handling
+ * of that is a 500, which is wrong: it's the caller's bad input, not a
+ * server fault. Checked with StrKey.isValidContract, not a regex, since
+ * that's the network's own validation, not a guess at its format.
+ */
+function requireValidContractId(contractId: string): void {
+  if (!StrKey.isValidContract(contractId)) {
+    throw new BadRequestError(`not a valid contract ID: ${contractId}`);
+  }
+}
 
 /**
  * Contract methods that take no arguments beyond the invocation itself —
@@ -95,6 +112,7 @@ export function buildServer() {
     "/commitments/:contractId/tx/initialize",
     async (req, reply) => {
       const { contractId } = req.params;
+      requireValidContractId(contractId);
       const b = req.body;
 
       const claimWindowSecs = Number(b.claimWindowSecs);
@@ -127,6 +145,7 @@ export function buildServer() {
     "/commitments/:contractId/tx/:method",
     async (req, reply) => {
       const { contractId, method } = req.params;
+      requireValidContractId(contractId);
       if (!NO_ARG_METHODS.has(method)) {
         return reply.code(400).send({ error: `unknown or unsupported method: ${method}` });
       }
@@ -147,6 +166,13 @@ export function buildServer() {
   app.post<{ Body: { xdr: string; refreshContractId?: string } }>(
     "/transactions/submit",
     async (req) => {
+      // Validated before submitting, not after: a bad refreshContractId
+      // shouldn't leave the caller wondering whether their (real, funds-
+      // moving) transaction went through or not because the response came
+      // back an error either way.
+      if (req.body.refreshContractId) {
+        requireValidContractId(req.body.refreshContractId);
+      }
       const result = await submitSignedTransaction(req.body.xdr);
       if (req.body.refreshContractId) {
         const commitment = await getCommitment(req.body.refreshContractId);
@@ -160,6 +186,7 @@ export function buildServer() {
   // Postgres cache as a side effect so /commitments (list) stays current
   // even for state changes this API didn't itself submit.
   app.get<{ Params: { contractId: string } }>("/commitments/:contractId", async (req) => {
+    requireValidContractId(req.params.contractId);
     const commitment = await getCommitment(req.params.contractId);
     await upsertCommitment(req.params.contractId, commitment).catch((err: unknown) => {
       req.log.warn({ err }, "failed to refresh commitments cache");
