@@ -3,6 +3,16 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "./App";
 import type { CommitmentDetail, CommitmentSummary } from "./api";
+import * as wallet from "./wallet";
+
+// Mocked at the module boundary -- see coop-pwa's identical App.test.tsx
+// comment for why (no real Freighter extension exists in this
+// environment; what's verified here is App.tsx's own build/sign/submit
+// wiring, not Freighter itself).
+vi.mock("./wallet", () => ({
+  connectWallet: vi.fn(),
+  signTransactionXdr: vi.fn(),
+}));
 
 /**
  * Component-level tests, fetch mocked at the network boundary -- see
@@ -60,6 +70,8 @@ let fetchMock: ReturnType<typeof vi.fn>;
 beforeEach(() => {
   fetchMock = vi.fn();
   vi.stubGlobal("fetch", fetchMock);
+  vi.mocked(wallet.connectWallet).mockReset();
+  vi.mocked(wallet.signTransactionXdr).mockReset();
 });
 
 afterEach(() => {
@@ -107,5 +119,80 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Look up" }));
 
     expect(await screen.findByText(/Pending: advance 1/)).toBeInTheDocument();
+  });
+
+  it("locks a Draft commitment: build -> sign -> submit -> refresh, end to end through the app", async () => {
+    const draftSummary = { ...summary, status: "Draft" };
+    const draftDetail: CommitmentDetail = { ...detail, status: "Draft" };
+    const lockedDetail: CommitmentDetail = { ...detail, status: "Locked" };
+
+    fetchMock.mockResolvedValueOnce(jsonResponse([draftSummary])); // initial list
+    fetchMock.mockResolvedValueOnce(jsonResponse(draftDetail)); // click row -> detail
+    fetchMock.mockResolvedValueOnce(jsonResponse({ xdr: "UNSIGNED_XDR" })); // buildTx
+    fetchMock.mockResolvedValueOnce(jsonResponse({ status: "SUCCESS", hash: "abc" })); // submitTx
+    fetchMock.mockResolvedValueOnce(jsonResponse(lockedDetail)); // post-lock refresh
+
+    vi.mocked(wallet.connectWallet).mockResolvedValueOnce(detail.buyer);
+    vi.mocked(wallet.signTransactionXdr).mockResolvedValueOnce("SIGNED_XDR");
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Connect wallet" }));
+    await user.click(await screen.findByText(draftSummary.contract_id));
+    await user.click(await screen.findByRole("button", { name: "Lock deposit" }));
+
+    await waitFor(() => expect(screen.getByText("Locked")).toBeInTheDocument());
+    expect(wallet.signTransactionXdr).toHaveBeenCalledWith("UNSIGNED_XDR", detail.buyer);
+
+    const buildCall = fetchMock.mock.calls.find(([url]) => String(url).includes("/tx/lock"));
+    expect(buildCall).toBeDefined();
+  });
+
+  it("settles a Delivered commitment as a non-buyer, non-cooperative wallet (permissionless)", async () => {
+    const deliveredSummary = { ...summary, status: "Delivered" };
+    const deliveredDetail: CommitmentDetail = { ...detail, status: "Delivered" };
+    const settledDetail: CommitmentDetail = { ...detail, status: "Settled" };
+    const thirdPartyWallet = "GSOME_UNRELATED_THIRD_PARTY_WALLET";
+
+    fetchMock.mockResolvedValueOnce(jsonResponse([deliveredSummary]));
+    fetchMock.mockResolvedValueOnce(jsonResponse(deliveredDetail));
+    fetchMock.mockResolvedValueOnce(jsonResponse({ xdr: "UNSIGNED_SETTLE_XDR" }));
+    fetchMock.mockResolvedValueOnce(jsonResponse({ status: "SUCCESS", hash: "def" }));
+    fetchMock.mockResolvedValueOnce(jsonResponse(settledDetail));
+
+    vi.mocked(wallet.connectWallet).mockResolvedValueOnce(thirdPartyWallet);
+    vi.mocked(wallet.signTransactionXdr).mockResolvedValueOnce("SIGNED_SETTLE_XDR");
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Connect wallet" }));
+    await user.click(await screen.findByText(deliveredSummary.contract_id));
+    await user.click(await screen.findByRole("button", { name: "Settle" }));
+
+    await waitFor(() => expect(screen.getByText("Settled")).toBeInTheDocument());
+    expect(wallet.signTransactionXdr).toHaveBeenCalledWith("UNSIGNED_SETTLE_XDR", thirdPartyWallet);
+  });
+
+  it("shows an action error banner, not a crash, if signing is rejected", async () => {
+    const draftSummary = { ...summary, status: "Draft" };
+    const draftDetail: CommitmentDetail = { ...detail, status: "Draft" };
+
+    fetchMock.mockResolvedValueOnce(jsonResponse([draftSummary]));
+    fetchMock.mockResolvedValueOnce(jsonResponse(draftDetail));
+    fetchMock.mockResolvedValueOnce(jsonResponse({ xdr: "UNSIGNED_XDR" }));
+
+    vi.mocked(wallet.connectWallet).mockResolvedValueOnce(detail.buyer);
+    vi.mocked(wallet.signTransactionXdr).mockRejectedValueOnce(new Error("User declined to sign"));
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Connect wallet" }));
+    await user.click(await screen.findByText(draftSummary.contract_id));
+    await user.click(await screen.findByRole("button", { name: "Lock deposit" }));
+
+    expect(await screen.findByText("User declined to sign")).toBeInTheDocument();
   });
 });

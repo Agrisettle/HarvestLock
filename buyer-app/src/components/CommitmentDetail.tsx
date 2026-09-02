@@ -34,7 +34,40 @@ function pendingSummary(c: CommitmentDetailType): string {
   return `Pending: ${outstanding.join("; ")}.`;
 }
 
-export function CommitmentDetail({ commitment, contractId }: { commitment: CommitmentDetailType; contractId: string }) {
+export type PrimaryAction = "lock" | "settle" | null;
+
+/**
+ * What top-level action (if any) makes sense to offer right now. `lock`
+ * is buyer-auth-gated in lib.rs, so it only shows for the connected
+ * wallet that actually *is* the buyer. `settle` has no require_auth() at
+ * all — genuinely permissionless, anyone can trigger it once delivery is
+ * confirmed — so it's offered to any connected wallet, not just the
+ * buyer, matching the contract's real authorization model rather than
+ * assuming everything needs to be buyer-gated.
+ */
+export function primaryAction(commitment: CommitmentDetailType, walletAddress: string | null): PrimaryAction {
+  if (commitment.status === "Draft" && walletAddress === commitment.buyer) return "lock";
+  if (commitment.status === "Delivered" && walletAddress !== null) return "settle";
+  return null;
+}
+
+export function CommitmentDetail({
+  commitment,
+  contractId,
+  walletAddress,
+  onAction,
+  actionInFlight,
+  actionError,
+}: {
+  commitment: CommitmentDetailType;
+  contractId: string;
+  walletAddress: string | null;
+  onAction: (action: "lock" | "settle") => void;
+  actionInFlight: boolean;
+  actionError: string | null;
+}) {
+  const action = primaryAction(commitment, walletAddress);
+
   return (
     <div className="card">
       <div className="detail-header">
@@ -43,6 +76,20 @@ export function CommitmentDetail({ commitment, contractId }: { commitment: Commi
       </div>
 
       <p className="pending-summary">{pendingSummary(commitment)}</p>
+
+      {actionError && <div className="error-banner">{actionError}</div>}
+
+      {action && (
+        <button className="action-button" onClick={() => onAction(action)} disabled={actionInFlight}>
+          {actionInFlight
+            ? action === "lock"
+              ? "Locking…"
+              : "Settling…"
+            : action === "lock"
+              ? "Lock deposit"
+              : "Settle"}
+        </button>
+      )}
 
       <dl className="party-grid">
         <div>
