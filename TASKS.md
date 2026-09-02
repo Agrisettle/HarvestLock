@@ -42,11 +42,11 @@ Target shape per PRD §17: TypeScript/Node, Postgres, talks to the deployed Soro
 - [x] Claim-advance action (write, not just read) — built 2 Sept 2026 via Freighter (testnet/MVP stand-in, not the real phone-auth model). Build → sign → submit → refresh, API/component logic tested (13 tests). Real gap, flagged not hidden: no real Freighter extension available in this environment, so actual wallet signing hasn't been manually QA'd — see `coop-pwa/README.md`.
 - [ ] Offline-tolerant queue for the depot connectivity-loss case (PRD §7/§16.3) — service worker + IndexedDB, deliberately deferred until the online path works first.
 
-## `buyer-app/` — read-only dashboard built, browser-verified, and unit-tested; write/ERP still ahead
+## `buyer-app/` — dashboard + lock/settle write actions built, tested; real-wallet QA/auth/ERP still ahead
 
 - [x] Read-only dashboard: same information as coop-pwa's, buyer-facing framing (what they've locked, what's pending, settlement status). Built and browser-checked 1 Sept 2026 — see `buyer-app/README.md`.
 - [x] Automated tests — same setup as coop-pwa, plus specific coverage for `pendingSummary`'s buyer-framing branches. `npm test` runs in CI now too.
-- [ ] Lock/settle actions once read-only is proven.
+- [x] Lock/settle actions -- built 2 Sept 2026 via Freighter (testnet/MVP stand-in). settle() confirmed permissionless (any connected wallet, tested with a non-buyer/non-cooperative address) since the contract has no require_auth() on it. Real gap, flagged not hidden: no real Freighter extension available in this environment -- see buyer-app/README.md.
 - [ ] ERP integration — explicitly out of scope until there's a real off-taker to integrate with (PRD §16.2); don't build this speculatively.
 
 ## `site/` — small, unblocked, good starting points for a new contributor
