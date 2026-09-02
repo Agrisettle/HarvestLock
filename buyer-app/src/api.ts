@@ -75,6 +75,28 @@ export function buildTx(contractId: string, method: string, sourcePublicKey: str
   return post<{ xdr: string }>(`/commitments/${encodeURIComponent(contractId)}/tx/${method}`, { sourcePublicKey });
 }
 
+/** Deploys a fresh, uninitialized escrow contract instance. Deployer-paid — no party signature needed for this step. */
+export function deployCommitment(): Promise<{ contractId: string }> {
+  return post<{ contractId: string }>("/commitments/deploy", {});
+}
+
+export interface InitializeFields {
+  buyer: string;
+  cooperative: string;
+  warehouseOperator: string;
+  token: string;
+  totalAmount: string;
+  advance1Bps: number;
+  advance2Bps: number;
+  claimWindowSecs: string;
+  sourcePublicKey: string;
+}
+
+/** Builds unsigned `initialize` XDR for a freshly-deployed contract. Must be signed by `fields.buyer`. */
+export function buildInitializeTx(contractId: string, fields: InitializeFields): Promise<{ xdr: string }> {
+  return post<{ xdr: string }>(`/commitments/${encodeURIComponent(contractId)}/tx/initialize`, fields);
+}
+
 export interface SubmitResult {
   status: "SUCCESS" | "FAILED";
   hash: string;
