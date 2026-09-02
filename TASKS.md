@@ -34,12 +34,12 @@ Target shape per PRD §17: TypeScript/Node, Postgres, talks to the deployed Soro
 - [ ] **A real "create commitment" UX flow** — today it's three API calls plus a client-side wallet signature in the middle; no frontend has exercised this yet. First real user of it will surface whatever's awkward about the three-call shape.
 - [ ] **A real multi-party signing UX for `cancel`** — the API/SDK mechanism is proven; nothing coordinates two separate wallets producing one signed envelope yet. See `api/HANDOFF.md`'s "What's deliberately deferred."
 
-## `coop-pwa/` — read-only dashboard built, browser-verified, and unit-tested; write/auth/offline still ahead
+## `coop-pwa/` — dashboard + first write action built, tested; real-wallet QA/auth/offline still ahead
 
 - [x] Read-only dashboard: show a commitment's current status, the state-machine position, advance-tranche claim windows and deadlines. Built 1 Sept 2026, checked in a real browser against the live API and live testnet — see `coop-pwa/README.md` for what that check found (a real CORS bug in the API, fixed there).
 - [x] Automated tests — vitest + Testing Library added 1 Sept 2026, covering `StatusBadge`, `CommitmentDetail`'s formatting logic, and `App`'s fetch-mocked flows. `npm test` runs in CI now too.
 - [ ] Phone-based auth flow — no seed phrases surfaced to cooperative users (PRD §4.6). Needs the API's identity/session model decided first.
-- [ ] Claim-advance action (write, not just read) — once the read-only slice is proven, wire up `claim_advance_1`/`claim_advance_2` calls through the API.
+- [x] Claim-advance action (write, not just read) — built 2 Sept 2026 via Freighter (testnet/MVP stand-in, not the real phone-auth model). Build → sign → submit → refresh, API/component logic tested (13 tests). Real gap, flagged not hidden: no real Freighter extension available in this environment, so actual wallet signing hasn't been manually QA'd — see `coop-pwa/README.md`.
 - [ ] Offline-tolerant queue for the depot connectivity-loss case (PRD §7/§16.3) — service worker + IndexedDB, deliberately deferred until the online path works first.
 
 ## `buyer-app/` — read-only dashboard built, browser-verified, and unit-tested; write/ERP still ahead
