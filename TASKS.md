@@ -31,7 +31,7 @@ Target shape per PRD §17: TypeScript/Node, Postgres, talks to the deployed Soro
 - [x] **Tests against testnet** — `api/test/stellar.test.ts`, not mocked: SDK-level lifecycle (deploy → initialize → lock), a full HTTP-layer walk run by hand on 1 Sept 2026, and a genuine two-different-signer `cancel` call, all confirmed via fresh chain reads.
 - [x] **`api/README.md` and `api/HANDOFF.md`** — both written 1 Sept 2026, describing what's real, what's deferred, and why (build-unsigned/client-signs/submit architecture, deploy-vs-initialize split, cache-refresh-on-read model, the `cancel` multi-party exception).
 - [ ] **`allocation_members` table + off-chain identity map** — still blocked on the same salt-scheme decision as the contracts-side allocation ledger (see above); don't build one side without the other, the schemes need to match.
-- [ ] **A real "create commitment" UX flow** — today it's three API calls plus a client-side wallet signature in the middle; no frontend has exercised this yet. First real user of it will surface whatever's awkward about the three-call shape.
+- [x] **A real "create commitment" UX flow** — built 2 Sept 2026 in `buyer-app` (`CreateCommitmentForm.tsx`): deploy → build initialize → Freighter signs → submit → load. Client-side validation mirrors the API's own bounds (advance bps sum, claim window) so a bad value fails fast. What the three-call shape actually surfaced, as predicted: nothing awkward in the shape itself, but the flow is unreachable in this environment's real-browser checks since it's gated behind wallet connection and no real Freighter extension exists here — see `buyer-app/README.md`.
 - [ ] **A real multi-party signing UX for `cancel`** — the API/SDK mechanism is proven; nothing coordinates two separate wallets producing one signed envelope yet. See `api/HANDOFF.md`'s "What's deliberately deferred."
 
 ## `coop-pwa/` — dashboard + first write action built, tested; real-wallet QA/auth/offline still ahead
@@ -42,7 +42,7 @@ Target shape per PRD §17: TypeScript/Node, Postgres, talks to the deployed Soro
 - [x] Claim-advance action (write, not just read) — built 2 Sept 2026 via Freighter (testnet/MVP stand-in, not the real phone-auth model). Build → sign → submit → refresh, API/component logic tested (13 tests). Real gap, flagged not hidden: no real Freighter extension available in this environment, so actual wallet signing hasn't been manually QA'd — see `coop-pwa/README.md`.
 - [ ] Offline-tolerant queue for the depot connectivity-loss case (PRD §7/§16.3) — service worker + IndexedDB, deliberately deferred until the online path works first.
 
-## `buyer-app/` — dashboard + lock/settle write actions built, tested; real-wallet QA/auth/ERP still ahead
+## `buyer-app/` — dashboard + lock/settle/create-commitment built, tested; real-wallet QA/auth/ERP still ahead
 
 - [x] Read-only dashboard: same information as coop-pwa's, buyer-facing framing (what they've locked, what's pending, settlement status). Built and browser-checked 1 Sept 2026 — see `buyer-app/README.md`.
 - [x] Automated tests — same setup as coop-pwa, plus specific coverage for `pendingSummary`'s buyer-framing branches. `npm test` runs in CI now too.
