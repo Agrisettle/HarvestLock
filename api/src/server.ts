@@ -1,6 +1,6 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
-import { StrKey } from "@stellar/stellar-sdk";
+import { StrKey, Address } from "@stellar/stellar-sdk";
 import { getCommitment, type Commitment } from "./stellar/client.js";
 import { deployContractInstance, initializeArgs } from "./stellar/deploy.js";
 import { buildInvokeTransaction, submitSignedTransaction } from "./stellar/tx.js";
@@ -20,6 +20,12 @@ import { BadRequestError } from "./errors.js";
 function requireValidContractId(contractId: string): void {
   if (!StrKey.isValidContract(contractId)) {
     throw new BadRequestError(`not a valid contract ID: ${contractId}`);
+  }
+}
+
+function requireValidPublicKey(publicKey: string, fieldName: string): void {
+  if (!StrKey.isValidEd25519PublicKey(publicKey)) {
+    throw new BadRequestError(`${fieldName} is not a valid public key: ${publicKey}`);
   }
 }
 
@@ -115,6 +121,11 @@ export function buildServer() {
       requireValidContractId(contractId);
       const b = req.body;
 
+      requireValidPublicKey(b.buyer, "buyer");
+      requireValidPublicKey(b.cooperative, "cooperative");
+      requireValidPublicKey(b.warehouseOperator, "warehouseOperator");
+      requireValidContractId(b.token);
+
       const claimWindowSecs = Number(b.claimWindowSecs);
       if (claimWindowSecs < MIN_CLAIM_WINDOW_SECS || claimWindowSecs > MAX_CLAIM_WINDOW_SECS) {
         return reply.code(400).send({
@@ -153,6 +164,31 @@ export function buildServer() {
         contractId,
         method,
         sourcePublicKey: req.body.sourcePublicKey,
+      });
+      return { xdr };
+    },
+  );
+
+  // reassign_buyer takes an argument (the new buyer), so it can't go
+  // through the generic no-arg /tx/:method route above — same reason
+  // initialize gets its own route. Needs THREE signatures on the
+  // submitted envelope (outgoing buyer, cooperative, incoming buyer —
+  // see lib.rs's reassign_buyer doc comment for why all three, not the
+  // two the PRD line alone would suggest); the generic build/submit flow
+  // handles that the same way it handles cancel's two, nothing extra
+  // needed here.
+  app.post<{ Params: { contractId: string }; Body: { newBuyer: string; sourcePublicKey: string } }>(
+    "/commitments/:contractId/tx/reassign-buyer",
+    async (req) => {
+      const { contractId } = req.params;
+      requireValidContractId(contractId);
+      requireValidPublicKey(req.body.newBuyer, "newBuyer");
+
+      const xdr = await buildInvokeTransaction({
+        contractId,
+        method: "reassign_buyer",
+        sourcePublicKey: req.body.sourcePublicKey,
+        args: [new Address(req.body.newBuyer).toScVal()],
       });
       return { xdr };
     },
