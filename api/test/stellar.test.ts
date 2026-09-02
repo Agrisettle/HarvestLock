@@ -1,14 +1,15 @@
 import "dotenv/config";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterAll } from "vitest";
 import { Keypair, TransactionBuilder, Address } from "@stellar/stellar-sdk";
 import { getStatus, getCommitment } from "../src/stellar/client.js";
 import { deployContractInstance, initializeArgs } from "../src/stellar/deploy.js";
 import { buildInvokeTransaction, submitSignedTransaction } from "../src/stellar/tx.js";
 import { networkPassphrase } from "../src/stellar/rpc.js";
-import { submitMultiPartyCall, submitSingleSignerCall, fundTestnetAccount } from "./helpers.js";
+import { submitMultiPartyCall, submitSingleSignerCall, fundTestnetAccount, simulateFreighterSignAuthEntry } from "./helpers.js";
 import { upsertCommitment } from "../src/db/commitments.js";
 import { applyReputationConsequences } from "../src/reputation.js";
 import { getStanding } from "../src/db/reputation.js";
+import { buildServer } from "../src/server.js";
 
 /**
  * Every test here hits real Stellar testnet infrastructure — no mocks.
@@ -443,5 +444,138 @@ describe("stellar/deploy (live testnet writes)", () => {
       expect(await getStanding(buyer.publicKey())).toBeNull();
     },
     120_000,
+  );
+});
+
+describe("staged multi-party cancel (propose / sign / finalize, live testnet + real HTTP layer)", () => {
+  // Own Fastify instance for this describe block specifically -- the only
+  // place in this file that needs the HTTP layer (server.test.ts covers
+  // validation-only routes without touching the network; every other test
+  // above calls src/stellar/*.ts directly). Built once, closed once, same
+  // reasoning server.test.ts documents for its own shared instance
+  // (buildServer()'s onClose calls pool.end() on the module-level
+  // Postgres pool -- closing per-test would double-close it).
+  const app = buildServer();
+  afterAll(() => app.close());
+
+  it(
+    "buyer proposes, cooperative signs their own auth entry via a separate request, buyer finalizes -- ends in a real Cancelled commitment",
+    async () => {
+      // The whole point of this feature: the cooperative's signature
+      // never touches a process that holds the buyer's key, or vice
+      // versa -- unlike submitMultiPartyCall (used elsewhere in this
+      // file), which exists specifically because a *test* can hold both.
+      // simulateFreighterSignAuthEntry stands in for the one thing that
+      // can't be exercised in this environment: a real installed
+      // Freighter extension.
+      const buyer = Keypair.random();
+      const cooperative = Keypair.random();
+      await Promise.all([fundTestnetAccount(buyer.publicKey()), fundTestnetAccount(cooperative.publicKey())]);
+
+      const contractId = await deployContractInstance();
+      const initXdr = await buildInvokeTransaction({
+        contractId,
+        method: "initialize",
+        sourcePublicKey: buyer.publicKey(),
+        args: initializeArgs({
+          buyer: buyer.publicKey(),
+          cooperative: cooperative.publicKey(),
+          warehouseOperator: buyer.publicKey(),
+          token: PLACEHOLDER_TOKEN,
+          totalAmount: 1_000_000_000n,
+          advance1Bps: 1500,
+          advance2Bps: 2000,
+          claimWindowSecs: 3600n,
+          remainderWindowSecs: 3600n,
+          deliveryWindowSecs: 86_400n,
+        }),
+      });
+      const initTx = TransactionBuilder.fromXDR(initXdr, networkPassphrase);
+      initTx.sign(buyer);
+      await submitSignedTransaction(initTx.toXDR());
+      expect(await getStatus(contractId)).toBe("Draft");
+
+      // An unrelated third party can't propose a cancellation on someone
+      // else's commitment -- the business-rule check that needs a live
+      // commitment read (getCommitment), which is why this lives here and
+      // not in server.test.ts's network-free validation suite.
+      const unrelatedThirdParty = Keypair.random();
+      const rejectedProposeRes = await app.inject({
+        method: "POST",
+        url: `/commitments/${contractId}/tx/cancel/propose`,
+        payload: { proposerPublicKey: unrelatedThirdParty.publicKey() },
+      });
+      expect(rejectedProposeRes.statusCode).toBe(403);
+
+      // 1. Buyer proposes.
+      const proposeRes = await app.inject({
+        method: "POST",
+        url: `/commitments/${contractId}/tx/cancel/propose`,
+        payload: { proposerPublicKey: buyer.publicKey() },
+      });
+      expect(proposeRes.statusCode).toBe(201);
+      const proposal = proposeRes.json();
+      expect(proposal.status).toBe("pending");
+      // Buyer is the proposer/source -- their own auth is satisfied by
+      // the classic signature at finalize time, so the only pending
+      // entry should be the cooperative's.
+      expect(proposal.pending_entries).toHaveLength(1);
+      expect(proposal.pending_entries[0].address).toBe(cooperative.publicKey());
+
+      // Proposing again for the same contract returns the SAME proposal,
+      // not a duplicate -- confirms the "at most one active proposal"
+      // behavior, not just asserted separately.
+      const reProposeRes = await app.inject({
+        method: "POST",
+        url: `/commitments/${contractId}/tx/cancel/propose`,
+        payload: { proposerPublicKey: buyer.publicKey() },
+      });
+      expect(reProposeRes.statusCode).toBe(200);
+      expect(reProposeRes.json().id).toBe(proposal.id);
+
+      // 2. Cooperative, on what's meant to be an entirely separate
+      // device/app, signs their own entry.
+      const signedEntryXdr = await simulateFreighterSignAuthEntry(proposal.pending_entries[0].entry_xdr, cooperative);
+      const signRes = await app.inject({
+        method: "POST",
+        url: `/commitments/${contractId}/tx/cancel/propose/${proposal.id}/sign`,
+        payload: { signerPublicKey: cooperative.publicKey(), signedEntryXdr },
+      });
+      expect(signRes.statusCode).toBe(200);
+      const afterSign = signRes.json();
+      expect(afterSign.status).toBe("ready");
+      expect(afterSign.pending_entries).toHaveLength(0);
+      expect(typeof afterSign.ready_xdr).toBe("string");
+
+      // Signing again with the same entry should be rejected -- nothing
+      // left pending for that address.
+      const doubleSignRes = await app.inject({
+        method: "POST",
+        url: `/commitments/${contractId}/tx/cancel/propose/${proposal.id}/sign`,
+        payload: { signerPublicKey: cooperative.publicKey(), signedEntryXdr },
+      });
+      expect(doubleSignRes.statusCode).toBe(400);
+
+      // 3. Buyer finalizes: classically signs the ready XDR (an ordinary
+      // signature now, no different from any other write in this API)
+      // and submits through the *existing* generic submit endpoint.
+      const finalTx = TransactionBuilder.fromXDR(afterSign.ready_xdr, networkPassphrase);
+      finalTx.sign(buyer);
+      const submitRes = await app.inject({
+        method: "POST",
+        url: "/transactions/submit",
+        payload: { xdr: finalTx.toXDR(), refreshContractId: contractId, completeProposalId: proposal.id },
+      });
+      expect(submitRes.statusCode).toBe(200);
+      expect(submitRes.json().status).toBe("SUCCESS");
+
+      expect(await getStatus(contractId)).toBe("Cancelled");
+
+      // The proposal is completed, not lingering as "ready" for a future
+      // viewer to trip over.
+      const afterCompleteRes = await app.inject({ method: "GET", url: `/commitments/${contractId}/tx/cancel/propose` });
+      expect(afterCompleteRes.json().proposal).toBeNull();
+    },
+    180_000,
   );
 });

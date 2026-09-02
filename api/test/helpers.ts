@@ -6,6 +6,7 @@ import {
   BASE_FEE,
   rpc,
   authorizeEntry,
+  inspectAuthEntry,
   xdr,
 } from "@stellar/stellar-sdk";
 import { server, networkPassphrase } from "../src/stellar/rpc.js";
@@ -109,6 +110,29 @@ export async function submitMultiPartyCall(opts: {
   freshTx.sign(opts.sourceSigner);
 
   return submitSignedTransaction(freshTx.toXDR());
+}
+
+/**
+ * Test-only stand-in for what Freighter's `signAuthEntry(entryXdr)` does
+ * inside the extension — no real, installed Freighter exists in this
+ * environment (same honesty caveat as every frontend `wallet.ts` in this
+ * project). Freighter's own signature takes no `validUntilLedgerSeq`
+ * parameter, unlike the SDK's local-signer `authorizeEntry()` — meaning
+ * whatever expiration is already embedded in the entry XDR handed to it
+ * is what gets signed, not something the wallet invents. This helper
+ * mirrors that: read the expiration `src/stellar/multiParty.ts` already
+ * set (via `inspectAuthEntry`, not a raw field reach-in), then sign with
+ * that exact value so the resulting signature matches what a real
+ * Freighter call would produce against the same input.
+ */
+export async function simulateFreighterSignAuthEntry(entryXdr: string, signer: Keypair): Promise<string> {
+  const entry = xdr.SorobanAuthorizationEntry.fromXDR(entryXdr, "base64");
+  const info = inspectAuthEntry(entry);
+  if (info.signatureExpirationLedger === null) {
+    throw new Error("entry has no address credentials to sign (source_account entries never need signing)");
+  }
+  const signed = await authorizeEntry(entry, signer, info.signatureExpirationLedger, networkPassphrase);
+  return signed.toXDR("base64");
 }
 
 /** Funds a fresh testnet keypair via friendbot. Needed for any `otherSigners` entry — see point 4 above. */

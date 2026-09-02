@@ -370,4 +370,70 @@ describe("server (HTTP layer)", () => {
     },
     15_000,
   );
+
+  it(
+    "rejects a malformed contract ID on cancel/propose before touching the network",
+    async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: "/commitments/not-a-real-contract-id/tx/cancel/propose",
+        payload: { proposerPublicKey: FAKE_PUBLIC_KEY },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().message).toMatch(/not a valid contract ID/);
+    },
+    15_000,
+  );
+
+  it(
+    "rejects a malformed proposerPublicKey on cancel/propose before touching the network",
+    async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: `/commitments/${FAKE_CONTRACT_ID}/tx/cancel/propose`,
+        payload: { proposerPublicKey: "not-a-real-address" },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().message).toMatch(/proposerPublicKey is not a valid public key/);
+    },
+    15_000,
+  );
+
+  it(
+    "GET cancel/propose returns no active proposal for a contract that's never had one",
+    async () => {
+      const res = await app.inject({ method: "GET", url: `/commitments/${FAKE_CONTRACT_ID}/tx/cancel/propose` });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ proposal: null });
+    },
+    15_000,
+  );
+
+  it(
+    "rejects signing a proposal that doesn't exist",
+    async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: `/commitments/${FAKE_CONTRACT_ID}/tx/cancel/propose/00000000-0000-0000-0000-000000000000/sign`,
+        payload: { signerPublicKey: FAKE_PUBLIC_KEY, signedEntryXdr: "AAAA" },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().message).toMatch(/no pending cancellation proposal/);
+    },
+    15_000,
+  );
+
+  it(
+    "rejects a malformed signerPublicKey on the sign route before touching the network",
+    async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: `/commitments/${FAKE_CONTRACT_ID}/tx/cancel/propose/00000000-0000-0000-0000-000000000000/sign`,
+        payload: { signerPublicKey: "not-a-real-address", signedEntryXdr: "AAAA" },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().message).toMatch(/signerPublicKey is not a valid public key/);
+    },
+    15_000,
+  );
 });

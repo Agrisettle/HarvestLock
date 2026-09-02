@@ -8,6 +8,16 @@ import { upsertCommitment, listCommitments } from "./db/commitments.js";
 import { pool } from "./db/pool.js";
 import { BadRequestError, ForbiddenError } from "./errors.js";
 import { applyReputationConsequences, getStanding } from "./reputation.js";
+import { buildMultiPartyProposal, finalizeMultiPartyProposal } from "./stellar/multiParty.js";
+import {
+  createProposal,
+  findActiveProposal,
+  getProposalById,
+  signProposalEntry,
+  markReady,
+  markCompleted,
+  type PendingCancellationRow,
+} from "./db/pendingCancellations.js";
 
 /**
  * Every route below takes a contract ID at some point. Before this
@@ -135,6 +145,29 @@ const MAX_REMAINDER_WINDOW_SECS = 60 * 60 * 24 * 30;
 // mainly a guard against a fat-fingered value.
 const MIN_DELIVERY_WINDOW_SECS = 60 * 60 * 24;
 const MAX_DELIVERY_WINDOW_SECS = 60 * 60 * 24 * 365;
+
+// How long a proposed cancellation stays open for the other party to sign
+// before a fresh one can be proposed instead. Generous, matching the
+// ~24-hour ledger-sequence window multiParty.ts already sets on the auth
+// entries themselves (VALID_LEDGERS_AHEAD) -- the two should stay roughly
+// in sync, since an "active" Postgres row referencing already-expired
+// on-chain auth entries would be pointless.
+const PENDING_CANCELLATION_TTL_MS = 24 * 60 * 60 * 1000;
+
+/** Public shape of a pending-cancellation proposal -- hides internal fields (func/sorobanData XDR, already-signed entries) a client never needs. */
+function serializeProposal(row: PendingCancellationRow) {
+  const pendingEntries = row.auth_entries
+    .filter((e) => e.address !== null && e.signedEntryXdr === null)
+    .map((e) => ({ address: e.address, entry_xdr: e.entryXdr }));
+  return {
+    id: row.id,
+    contract_id: row.contract_id,
+    proposer_address: row.proposer_address,
+    status: row.status,
+    pending_entries: pendingEntries,
+    ready_xdr: row.status === "ready" ? row.final_xdr : null,
+  };
+}
 
 interface InitializeBody {
   buyer: string;
@@ -265,12 +298,105 @@ export function buildServer() {
     },
   );
 
+  // Staged multi-party signing for cancel() -- see src/stellar/multiParty.ts
+  // and db/pendingCancellations.ts for the mechanism and schema. Either
+  // party (buyer or cooperative) can propose; the OTHER party signs their
+  // own auth entry via their own wallet (Freighter's signAuthEntry, not
+  // signTransaction -- this is a single auth entry, not a whole tx) in a
+  // separate request, at a separate time, from a separate device. Once
+  // ready, the proposer signs the final XDR through the *existing*
+  // sign -> /transactions/submit path below -- nothing new needed there.
+  app.post<{ Params: { contractId: string }; Body: { proposerPublicKey: string } }>(
+    "/commitments/:contractId/tx/cancel/propose",
+    async (req, reply) => {
+      const { contractId } = req.params;
+      requireValidContractId(contractId);
+      requireValidPublicKey(req.body.proposerPublicKey, "proposerPublicKey");
+
+      const existing = await findActiveProposal(contractId);
+      if (existing) {
+        return reply.code(200).send(serializeProposal(existing));
+      }
+
+      const commitment = await getCommitment(contractId);
+      if (req.body.proposerPublicKey !== commitment.buyer && req.body.proposerPublicKey !== commitment.cooperative) {
+        throw new ForbiddenError(`proposerPublicKey must be the commitment's buyer or cooperative to propose a cancellation`);
+      }
+
+      const pieces = await buildMultiPartyProposal({
+        contractId,
+        method: "cancel",
+        sourcePublicKey: req.body.proposerPublicKey,
+      });
+      const row = await createProposal({
+        contractId,
+        proposerAddress: req.body.proposerPublicKey,
+        funcXdr: pieces.funcXdr,
+        sorobanDataXdr: pieces.sorobanDataXdr,
+        entries: pieces.entries.map((e) => ({ address: e.address, entryXdr: e.entryXdr, signedEntryXdr: null })),
+        expiresAt: new Date(Date.now() + PENDING_CANCELLATION_TTL_MS),
+      });
+      return reply.code(201).send(serializeProposal(row));
+    },
+  );
+
+  // The active proposal for a contract, if any -- what a viewer's UI polls
+  // to show "X wants to cancel this commitment, approve?" or "waiting on
+  // the other party" or "ready to finalize."
+  app.get<{ Params: { contractId: string } }>("/commitments/:contractId/tx/cancel/propose", async (req) => {
+    requireValidContractId(req.params.contractId);
+    const proposal = await findActiveProposal(req.params.contractId);
+    return { proposal: proposal ? serializeProposal(proposal) : null };
+  });
+
+  app.post<{
+    Params: { contractId: string; proposalId: string };
+    Body: { signerPublicKey: string; signedEntryXdr: string };
+  }>("/commitments/:contractId/tx/cancel/propose/:proposalId/sign", async (req) => {
+    const { contractId, proposalId } = req.params;
+    requireValidContractId(contractId);
+    requireValidPublicKey(req.body.signerPublicKey, "signerPublicKey");
+
+    const proposal = await getProposalById(proposalId);
+    if (!proposal || proposal.contract_id !== contractId) {
+      throw new BadRequestError(`no pending cancellation proposal ${proposalId} for contract ${contractId}`);
+    }
+    if (new Date(proposal.expires_at).getTime() <= Date.now()) {
+      throw new BadRequestError(`proposal ${proposalId} has expired -- propose a fresh cancellation`);
+    }
+    if (proposal.status !== "pending") {
+      throw new BadRequestError(`proposal ${proposalId} is already ${proposal.status}, not awaiting a signature`);
+    }
+
+    const result = await signProposalEntry(proposalId, req.body.signerPublicKey, req.body.signedEntryXdr);
+    if (result.outcome === "not_found") {
+      throw new BadRequestError(`no pending cancellation proposal ${proposalId}`);
+    }
+    if (result.outcome === "no_matching_pending_entry") {
+      throw new BadRequestError(
+        `${req.body.signerPublicKey} has no pending (unsigned) auth entry on proposal ${proposalId} -- wrong signer, or already signed`,
+      );
+    }
+
+    if (result.allSigned) {
+      const finalXdr = await finalizeMultiPartyProposal({
+        sourcePublicKey: result.row.proposer_address,
+        funcXdr: result.row.func_xdr,
+        sorobanDataXdr: result.row.soroban_data_xdr,
+        entries: result.row.auth_entries.map((e) => ({ address: e.address, entryXdr: e.entryXdr, signedEntryXdr: e.signedEntryXdr })),
+      });
+      await markReady(proposalId, finalXdr);
+      return serializeProposal({ ...result.row, status: "ready", final_xdr: finalXdr });
+    }
+    return serializeProposal(result.row);
+  });
+
   // Every write flows through here: the frontend builds via one of the
   // /tx routes above, has the right party's wallet sign, and submits the
   // signed envelope back to this single endpoint. On success, optionally
   // refreshes the Postgres cache from a live chain read — never trusts
   // the submitted tx's own claims about the resulting state.
-  app.post<{ Body: { xdr: string; refreshContractId?: string } }>(
+  app.post<{ Body: { xdr: string; refreshContractId?: string; completeProposalId?: string } }>(
     "/transactions/submit",
     async (req) => {
       // Validated before submitting, not after: a bad refreshContractId
@@ -285,6 +411,15 @@ export function buildServer() {
         const commitment = await getCommitment(req.body.refreshContractId);
         const { previousStatus } = await upsertCommitment(req.body.refreshContractId, commitment);
         await applyReputationConsequences(req.body.refreshContractId, previousStatus, commitment);
+      }
+      // Marks the proposal finished so a stale "ready to finalize" state
+      // doesn't linger for other viewers once the cancel actually landed.
+      // Best-effort: a failure here shouldn't mask that the real,
+      // funds-moving submission above already succeeded.
+      if (req.body.completeProposalId) {
+        await markCompleted(req.body.completeProposalId).catch((err: unknown) => {
+          req.log.warn({ err }, "failed to mark cancellation proposal completed");
+        });
       }
       return result;
     },
