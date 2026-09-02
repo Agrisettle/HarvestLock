@@ -2,9 +2,11 @@
 
 HarvestLock's buyer/off-taker dashboard. React + Vite + TypeScript,
 desktop-first — this user is at a desk on good connectivity, unlike the
-cooperative side. **Read-only, for now** — same data as `coop-pwa`, framed
-around what a buyer actually wants to know: what's locked, what's still
-pending, and whether a commitment is ready to settle.
+cooperative side. Same data as `coop-pwa`, framed around what a buyer
+actually wants to know: what's locked, what's still pending, and whether
+a commitment is ready to settle — plus, now, the ability to actually lock
+a Draft commitment or settle a Delivered one, when a connected wallet is
+entitled to.
 
 Eventually needs ERP integration (SAP/Oracle procurement and payables
 reconciliation, PRD §16.2) once there's an institutional off-taker in the
@@ -40,5 +42,20 @@ Automated tests (`npm test`) cover `pendingSummary`'s branches and
 README for the two real environment issues found getting it working
 (forks-pool hang, Testing Library cleanup needing an explicit hook).
 
-**Deferred**: lock/settle write actions, auth, ERP integration (see
-above) — none of this exists yet, don't assume it does.
+**Lock and settle write actions** (`src/wallet.ts`, `src/App.tsx`, added 2
+Sept 2026): same build → Freighter signs → submit → refresh shape as
+coop-pwa's claim-advance, via `primaryAction()` in `CommitmentDetail.tsx`
+picking the applicable action from contract state rather than guessing
+per screen. Worth knowing: `settle` has **no** `require_auth()` at all in
+the contract — genuinely permissionless — so it's offered to any
+connected wallet once a commitment is `Delivered`, not just the buyer;
+tested explicitly with a third-party wallet address to prove that, not
+just asserted. Same honesty note as coop-pwa: the API/component logic is
+tested (17 tests), but no real, installed Freighter extension exists in
+this environment, so actual wallet signing hasn't been manually verified
+— what *was* found and fixed in a real browser is the "extension not
+installed" hang (see `wallet.ts`), re-checked in this app specifically
+rather than assumed to carry over from coop-pwa's identical fix.
+
+**Deferred**: auth, ERP integration (see above) — neither exists yet,
+don't assume it does.
