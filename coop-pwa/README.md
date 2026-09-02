@@ -75,6 +75,30 @@ resolves nor rejects, it hangs forever — fixed with a timeout wrapper
 around every Freighter call, see `wallet.ts`. Manual QA with a real
 Freighter install is still a real gap before calling this fully proven.
 
+**Cancel this commitment** (`src/components/CancelSection.tsx`, added
+2 Sept 2026, later same day): the staged multi-party propose/sign/finalize
+UX for `cancel()` — see `api/HANDOFF.md`. Either party (buyer or
+cooperative) can propose; if the *other* party is connected, they see
+"approve cancellation," which signs their own Soroban auth entry via
+Freighter's `signAuthEntry` (a new `wallet.ts` export, distinct from
+`signTransactionXdr` — this signs one auth entry, not a whole
+transaction). Once both sides have acted, the proposer sees "finalize
+cancellation," which classically signs the ready XDR and submits through
+the same `submitTx` every other write uses. Polls the active proposal
+every 10s while waiting on the other party, stops once it's this
+viewer's own turn to act. Rendered inside `CommitmentDetail` for any
+cancellable status (`Draft` through `ReadyForDelivery`, matching
+`lib.rs`'s reachable range) when the connected wallet is a party to the
+commitment; hidden otherwise. Identical to `buyer-app`'s copy of this
+component — same small-duplication call as `wallet.ts`/`api.ts` across
+the two apps already made, not a shared package. 7 new component tests
+cover all three roles (proposer waiting, approver signing, proposer
+finalizing) plus a rejected-signature error path. Same honesty note as
+the claim-advance action above: no real, installed Freighter extension
+exists in this environment, so `signAuthEntry`'s actual on-extension
+behavior hasn't been manually verified — the API side of this flow *has*
+been verified live end to end (see `api/HANDOFF.md`).
+
 **Deferred, per `TASKS.md`**:
 - Phone-based auth (PRD §4.6) — needs the API's identity/session model decided first. Freighter is a stand-in, not this.
 - Offline-tolerant queue for depot connectivity loss (PRD §7/§16.3).

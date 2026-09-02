@@ -12,13 +12,17 @@ export interface CommitmentDetail {
   advance1_bps: number;
   advance2_bps: number;
   claim_window_secs: string;
+  remainder_window_secs: string;
   created_at: string;
+  delivery_deadline: string;
   advance1_deadline: string;
   advance1_claimed: boolean;
   advance1_expired: boolean;
   advance2_deadline: string;
   advance2_claimed: boolean;
   advance2_expired: boolean;
+  remainder_deadline: string;
+  remainder_funded: boolean;
 }
 
 /** Mirrors api/src/db/commitments.ts's CommitmentRow — the Postgres cache. */
@@ -80,7 +84,40 @@ export interface SubmitResult {
   hash: string;
 }
 
-/** Submits a signed envelope. `refreshContractId` also refreshes the API's Postgres cache as a side effect. */
-export function submitTx(signedXdr: string, refreshContractId?: string): Promise<SubmitResult> {
-  return post<SubmitResult>("/transactions/submit", { xdr: signedXdr, refreshContractId });
+/** Submits a signed envelope. `refreshContractId` also refreshes the API's Postgres cache; `completeProposalId` marks a staged cancellation proposal finished. */
+export function submitTx(signedXdr: string, refreshContractId?: string, completeProposalId?: string): Promise<SubmitResult> {
+  return post<SubmitResult>("/transactions/submit", { xdr: signedXdr, refreshContractId, completeProposalId });
+}
+
+/** Mirrors api/src/server.ts's serializeProposal — the staged multi-party cancel flow's public shape. */
+export interface CancelProposal {
+  id: string;
+  contract_id: string;
+  proposer_address: string;
+  status: "pending" | "ready" | "completed";
+  pending_entries: { address: string; entry_xdr: string }[];
+  ready_xdr: string | null;
+}
+
+/** The active proposed cancellation for a commitment, if any — poll this to render "X wants to cancel, approve?" / "waiting" / "ready to finalize." */
+export function getCancelProposal(contractId: string): Promise<{ proposal: CancelProposal | null }> {
+  return get<{ proposal: CancelProposal | null }>(`/commitments/${encodeURIComponent(contractId)}/tx/cancel/propose`);
+}
+
+/** Proposes a cancellation, or idempotently returns the already-active one for this commitment. */
+export function proposeCancel(contractId: string, proposerPublicKey: string): Promise<CancelProposal> {
+  return post<CancelProposal>(`/commitments/${encodeURIComponent(contractId)}/tx/cancel/propose`, { proposerPublicKey });
+}
+
+/** Records one party's signed auth entry against a proposal. Once every pending entry is signed, the response's status flips to "ready". */
+export function signCancelProposal(
+  contractId: string,
+  proposalId: string,
+  signerPublicKey: string,
+  signedEntryXdr: string,
+): Promise<CancelProposal> {
+  return post<CancelProposal>(`/commitments/${encodeURIComponent(contractId)}/tx/cancel/propose/${proposalId}/sign`, {
+    signerPublicKey,
+    signedEntryXdr,
+  });
 }

@@ -135,6 +135,7 @@ export default function App() {
                 onClaim={handleClaim}
                 claimingTranche={claimingTranche}
                 claimError={claimError}
+                onCancelled={() => loadDetail(selectedId)}
               />
             )}
           </section>

@@ -54,13 +54,17 @@ const detail: CommitmentDetail = {
   advance1_bps: 1500,
   advance2_bps: 2000,
   claim_window_secs: "3600",
+  remainder_window_secs: "604800",
   created_at: "1788245397",
+  delivery_deadline: "1798245397",
   advance1_deadline: "0",
   advance1_claimed: false,
   advance1_expired: false,
   advance2_deadline: "0",
   advance2_claimed: false,
   advance2_expired: false,
+  remainder_deadline: "0",
+  remainder_funded: false,
 };
 
 function jsonResponse(body: unknown, ok = true) {
@@ -161,9 +165,12 @@ describe("App", () => {
 
     fetchMock.mockResolvedValueOnce(jsonResponse([summary])); // initial list
     fetchMock.mockResolvedValueOnce(jsonResponse(openDetail)); // click row -> detail
+    fetchMock.mockResolvedValueOnce(jsonResponse({ proposal: null })); // CancelSection's background poll (Locked is cancellable)
     fetchMock.mockResolvedValueOnce(jsonResponse({ xdr: "UNSIGNED_XDR" })); // buildTx
     fetchMock.mockResolvedValueOnce(jsonResponse({ status: "SUCCESS", hash: "abc" })); // submitTx
     fetchMock.mockResolvedValueOnce(jsonResponse(claimedDetail)); // post-claim refresh
+    // No second CancelSection poll expected: refresh() is memoized on
+    // [contractId, cancellable], and this claim doesn't change either.
 
     vi.mocked(wallet.connectWallet).mockResolvedValueOnce(detail.cooperative);
     vi.mocked(wallet.signTransactionXdr).mockResolvedValueOnce("SIGNED_XDR");
@@ -189,6 +196,7 @@ describe("App", () => {
 
     fetchMock.mockResolvedValueOnce(jsonResponse([summary]));
     fetchMock.mockResolvedValueOnce(jsonResponse(openDetail));
+    fetchMock.mockResolvedValueOnce(jsonResponse({ proposal: null })); // CancelSection's background poll (Locked is cancellable)
     fetchMock.mockResolvedValueOnce(jsonResponse({ xdr: "UNSIGNED_XDR" }));
 
     vi.mocked(wallet.connectWallet).mockResolvedValueOnce(detail.cooperative);

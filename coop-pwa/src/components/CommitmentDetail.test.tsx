@@ -14,13 +14,17 @@ const baseCommitment: CommitmentDetailType = {
   advance1_bps: 1500,
   advance2_bps: 2000,
   claim_window_secs: "3600",
+  remainder_window_secs: "604800",
   created_at: "1788245397",
+  delivery_deadline: "1798245397",
   advance1_deadline: "0",
   advance1_claimed: false,
   advance1_expired: false,
   advance2_deadline: "0",
   advance2_claimed: false,
   advance2_expired: false,
+  remainder_deadline: "0",
+  remainder_funded: false,
 };
 
 // Defaults for the write-path props every test doesn't specifically
@@ -31,6 +35,7 @@ const noopProps = {
   onClaim: vi.fn(),
   claimingTranche: null as 1 | 2 | null,
   claimError: null as string | null,
+  onCancelled: vi.fn(),
 };
 
 describe("CommitmentDetail", () => {

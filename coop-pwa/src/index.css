@@ -166,6 +166,40 @@ main {
   cursor: not-allowed;
 }
 
+.action-button {
+  background: var(--gold);
+  color: var(--void);
+  border: none;
+  border-radius: 6px;
+  padding: 10px 18px;
+  font-family: var(--body);
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  margin-bottom: 20px;
+}
+
+.action-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.action-button.secondary {
+  background: transparent;
+  color: var(--bone);
+  border: 1px solid var(--void-line);
+}
+
+.cancel-section {
+  margin-bottom: 20px;
+}
+
+.cancel-status {
+  color: var(--bone-dim);
+  font-size: 0.85rem;
+  margin: 0 0 10px;
+}
+
 .error-banner {
   background: rgba(193, 67, 46, 0.12);
   border: 1px solid var(--signal);

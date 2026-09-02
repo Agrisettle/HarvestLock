@@ -1,5 +1,6 @@
 import type { CommitmentDetail as CommitmentDetailType } from "../api";
 import { StatusBadge } from "./StatusBadge";
+import { CancelSection } from "./CancelSection";
 
 function formatDeadline(unixSecs: string): string {
   const n = Number(unixSecs);
@@ -44,6 +45,7 @@ export function CommitmentDetail({
   onClaim,
   claimingTranche,
   claimError,
+  onCancelled,
 }: {
   commitment: CommitmentDetailType;
   contractId: string;
@@ -51,6 +53,7 @@ export function CommitmentDetail({
   onClaim: (tranche: 1 | 2) => void;
   claimingTranche: 1 | 2 | null;
   claimError: string | null;
+  onCancelled: () => void;
 }) {
   // claim_advance_* is cooperative-auth-gated (lib.rs) — offering the
   // button to a connected wallet that isn't the cooperative would just
@@ -63,6 +66,8 @@ export function CommitmentDetail({
         <StatusBadge status={commitment.status} />
         <span className="contract-id">{contractId}</span>
       </div>
+
+      <CancelSection commitment={commitment} contractId={contractId} walletAddress={walletAddress} onCancelled={onCancelled} />
 
       <dl className="party-grid">
         <div>
