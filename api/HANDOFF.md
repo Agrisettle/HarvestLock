@@ -16,6 +16,7 @@ Component-scoped handoff, same structure as `HarvestLock-Contracts/HANDOFF.md`. 
 - **Postgres cache** (`src/db/commitments.ts`, migration `001_init.sql`): `commitments` table, upserted from live chain reads on every `GET /commitments/:contractId` and on `POST /transactions/submit` when `refreshContractId` is passed. `GET /commitments` lists the cache — the only way to list at all, since the chain has no such query. Deliberately still summary-only — the new per-commitment deadline/funded fields (`remainder_deadline`, `remainder_funded`, `delivery_deadline`, etc.) are exposed only via the live `GET /commitments/:contractId` read, same as the tranche-deadline fields already weren't cached; no migration needed for this feature.
 - **Off-chain reputation/strikes** (`src/reputation.ts`, `src/db/reputation.ts`, migration `002_reputation.sql`): the contract only ever emits a clean terminal status (`Status::Defaulted`/`Status::Forfeited`) — no visibility into a party's history across other commitments, so consequences are tracked here, per this session's product decision (`TASKS.md`). `party_standing` is one denormalized row per address (strike count, barred flag, reason, timestamp); `standing_events` is a pure audit log for a human reviewing an appeal, not the source of truth for current state. `recordBuyerDefault` bars immediately and is idempotent (a second call for an already-barred address doesn't overwrite the original `barred_at`); `recordCooperativeForfeiture` increments a strike counter and only bars at three. `applyReputationConsequences` is the orchestration point: called after `upsertCommitment` returns the *previous* cached status (a new field on its return value, `UpsertResult`, read inside the same transaction as the write so two concurrent refreshes of the same contract can't double-apply a consequence), it fires exactly once per fresh transition into a terminal status. Wired into both `upsertCommitment` call sites in `server.ts` (`GET /commitments/:contractId` and `/transactions/submit`'s `refreshContractId` path). `requireNotBarred` is the enforcement half — checked for both `buyer` and `cooperative` on `initialize`, rejects with 403 before a transaction is even built. `GET /parties/:address/standing` exposes the read side, returning a clean default rather than 404 for an address with no history. **Same observation-triggered caveat as the commitments cache**: nothing here is backed by a chain indexer, so a default/forfeiture nobody ever reads via this API won't be recorded until someone does.
 - **`deploy.ts` retry hardening** — found while live-testing the reputation feature: `deployContractInstance`'s `server.getAccount()` call was the one Soroban RPC call in `src/stellar/` that hadn't been wrapped in `withRetry`, unlike the equivalent calls in `client.ts` and `tx.ts`. It hit the exact "Account not found" flakiness this file already documents below — repeatedly, since `deployContractInstance` runs first in nearly every test, so one unretried transient failure there took the whole test down with it. Now wrapped, along with `simulateTransaction` and the `getTransaction` confirmation poll (which gained the same mid-poll-throw tolerance `tx.ts`'s equivalent loop already had). A real, reproducible gap this session's live testing surfaced, not a hypothetical.
+- **Staged multi-party signing for `cancel`** (`src/stellar/multiParty.ts`, `src/db/pendingCancellations.ts`, migration `003_pending_cancellations.sql`) — the item directly below used to say this needed deciding between a server-side staging store and a client-side (QR code / link) hand-off. Decided: server-side staging, since the API is already the coordination point for everything else both frontends do, and neither party needs to be near the other or exchange anything out of band. Either party proposes (`POST .../tx/cancel/propose`); the API simulates, and — this is the one non-obvious wrinkle — sets a `signatureExpirationLedger` on the non-source auth entry itself, server-side, before that entry's XDR ever reaches a wallet, since simulation doesn't set one sensibly and Freighter's `signAuthEntry(entryXdr)` takes no separate expiration parameter to fill it in later (unlike the SDK's local-signer `authorizeEntry()`, which takes `validUntilLedgerSeq` explicitly). The other party signs that entry via their own wallet and `POST .../propose/:id/sign`; once every pending entry is signed, the API rebuilds the final transaction (same resource-footprint-reuse reasoning `submitMultiPartyCall` already documents) and the proposal flips to `ready`. The proposer then signs the `ready_xdr` classically and submits through the **existing** `/transactions/submit` — deliberately not a new submit endpoint, to keep this feature's added surface area small. `api/README.md` has the full request/response shape. Verified live end to end through the real HTTP layer (`test/stellar.test.ts`, `buildServer()` + `app.inject()`, not the SDK functions called directly): propose, an unrelated third party rejected, sign via `test/helpers.ts`'s new `simulateFreighterSignAuthEntry` (a stand-in for a real Freighter extension — same "not available in this environment" caveat every frontend `wallet.ts` already carries), a double-sign rejected, finalize, submit, confirmed `Cancelled` on chain. No frontend UI consumes this yet — see "Next steps."
 
 ## What's deliberately deferred
 
@@ -25,7 +26,8 @@ Component-scoped handoff, same structure as `HarvestLock-Contracts/HANDOFF.md`. 
 - **No background cache refresher** — `GET /commitments` can go stale for a contract nobody has read via `GET /commitments/:contractId` recently, since the cache only refreshes on read or on this API's own writes. Fine for now (no real users yet); revisit once something else can also mutate a contract without going through this API.
 - **Auth/sessions** — none. Matches PRD's MVP framing (no auth, no multi-tenant), but the data model doesn't assume a single user, so this can be layered on later.
 - **Voucher issuance/redemption, warehouse receipt attestation intake, SDP integration** — mentioned in the original `api/README.md` placeholder as eventual scope; nothing built.
-- **A real multi-party signing UX for `cancel`** — the API builds the unsigned tx correctly and `/transactions/submit` will accept a correctly multi-signed envelope, but nothing coordinates two *separate* wallets/devices producing one. `test/helpers.ts` proves the mechanism works when one script holds both keys; a real "cooperative approves a buyer-initiated cancellation" flow needs either a server-side in-flight-transaction store (buyer submits their half, cooperative fetches and completes it later) or a client-side hand-off (QR code / shared link carrying the partially-authorized XDR). Neither exists. Don't build a "Cancel" button in `coop-pwa`/`buyer-app` before deciding which.
+- **The same staged-signing UX for `reassign_buyer`** — only `cancel` got it (see above). `reassign_buyer` needs three signers instead of two, but the same mechanism (propose, each non-source party signs their own entry, proposer finalizes) would extend to it; nothing built for that case yet.
+- **Frontend UI for the new `cancel` propose/sign/finalize routes** — the API is fully built and live-tested; neither `coop-pwa` nor `buyer-app` has a "Cancel this commitment" button wired to it yet. See "Next steps."
 
 ## Design decisions and why
 
@@ -45,14 +47,35 @@ During `coop-pwa`'s browser check, one `GET /commitments/:contractId` call faile
 
 ## Next steps, in priority order
 
-1. The appeals process's actual reinstatement path — today it's "email a human, they update `party_standing` by hand." Fine for zero real users; revisit once there's a first real appeal to learn from.
-2. Allocation-ledger schema + salt-scheme decision (blocks `allocation_members`, blocks a real off-chain identity map).
-3. Decide the multi-party signing UX for `cancel`/`reassign_buyer` (see above) before building either into a frontend.
-4. ~~A real write action in a frontend~~ — **done**: `coop-pwa` can claim an advance tranche, `buyer-app` can lock, settle, and create a commitment end to end, all via Freighter. Manual QA against a real, installed Freighter extension is still outstanding — see `coop-pwa/README.md`/`buyer-app/README.md`.
-5. A background cache-refresh job, once there's a real reason to care about `GET /commitments`/reputation freshness beyond what's already been read.
+1. **A "Cancel this commitment" UI in `coop-pwa` and `buyer-app`** wired to the propose/sign/finalize routes above — the API side is done and live-tested, this is now purely frontend work (`wallet.ts` in each app needs a `signAuthEntry` wrapper alongside the existing `signTransactionXdr`).
+2. The appeals process's actual reinstatement path — today it's "email a human, they update `party_standing` by hand." Fine for zero real users; revisit once there's a first real appeal to learn from.
+3. Allocation-ledger schema + salt-scheme decision (blocks `allocation_members`, blocks a real off-chain identity map).
+4. The same staged-signing treatment for `reassign_buyer` (three parties instead of two) — lower priority than item 1, since `reassign_buyer` doesn't have any frontend entry point yet at all, unlike `cancel`.
+5. ~~A real write action in a frontend~~ — **done**: `coop-pwa` can claim an advance tranche, `buyer-app` can lock, settle, and create a commitment end to end, all via Freighter. Manual QA against a real, installed Freighter extension is still outstanding — see `coop-pwa/README.md`/`buyer-app/README.md`.
+6. A background cache-refresh job, once there's a real reason to care about `GET /commitments`/reputation freshness beyond what's already been read.
 
 ---
-*Last updated: 2 Sept 2026 (later same day again) — off-chain reputation/
+*Last updated: 2 Sept 2026 (later same day, third time) — staged
+multi-party signing for `cancel`: propose/sign/finalize
+(`src/stellar/multiParty.ts`, `src/db/pendingCancellations.ts`, migration
+`003_pending_cancellations.sql`). Either party proposes; the *other*
+signs their own Soroban auth entry from their own wallet in a separate
+request (Freighter's `signAuthEntry`, not `signTransaction`); the
+proposer finalizes through the existing `/transactions/submit`. The one
+real wrinkle: simulation doesn't set a sensible `signatureExpirationLedger`
+on its own, and Freighter's `signAuthEntry` takes no parameter to supply
+one later, so `multiParty.ts` sets it server-side before any entry XDR
+reaches a wallet — verified correct with an offline round-trip (set →
+serialize → deserialize → sign → inspect) before touching live network.
+45/45 tests passing, including a new end-to-end scenario through the
+real HTTP layer (`buildServer()` + `app.inject()`, not the SDK called
+directly) proving the full propose → an unrelated party rejected → sign
+→ finalize → submit → `Cancelled` loop on real testnet, plus
+network-free validation coverage in `server.test.ts`. This was the
+"decide between a server-side store and a client-side hand-off" item —
+decided: server-side, since the API already coordinates everything else
+both frontends do. No frontend UI consumes it yet.
+Prior entry: off-chain reputation/
 strikes tracking (`src/reputation.ts`, `src/db/reputation.ts`, migration
 `002_reputation.sql`): immediate buyer bar on `Status::Defaulted`,
 graduated 3-strike cooperative bar on `Status::Forfeited`, both applied
