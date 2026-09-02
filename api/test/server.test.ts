@@ -148,4 +148,42 @@ describe("server (HTTP layer)", () => {
     },
     15_000,
   );
+
+  it(
+    "rejects a malformed buyer address on initialize before touching the network",
+    async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: `/commitments/${FAKE_CONTRACT_ID}/tx/initialize`,
+        payload: {
+          buyer: "not-a-real-address",
+          cooperative: FAKE_PUBLIC_KEY,
+          warehouseOperator: FAKE_PUBLIC_KEY,
+          token: FAKE_CONTRACT_ID,
+          totalAmount: "1000000000",
+          advance1Bps: 1500,
+          advance2Bps: 2000,
+          claimWindowSecs: "3600",
+          sourcePublicKey: FAKE_PUBLIC_KEY,
+        },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().message).toMatch(/buyer is not a valid public key/);
+    },
+    15_000,
+  );
+
+  it(
+    "rejects a malformed newBuyer on the reassign-buyer route before touching the network",
+    async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: `/commitments/${FAKE_CONTRACT_ID}/tx/reassign-buyer`,
+        payload: { newBuyer: "not-a-real-address", sourcePublicKey: FAKE_PUBLIC_KEY },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().message).toMatch(/newBuyer is not a valid public key/);
+    },
+    15_000,
+  );
 });
