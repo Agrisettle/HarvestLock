@@ -4,12 +4,15 @@ import {
   listCommitments,
   buildTx,
   submitTx,
+  deployCommitment,
+  buildInitializeTx,
   type CommitmentDetail as CommitmentDetailType,
   type CommitmentSummary,
 } from "./api";
 import { connectWallet, signTransactionXdr } from "./wallet";
 import { CommitmentDetail } from "./components/CommitmentDetail";
 import { CommitmentList } from "./components/CommitmentList";
+import { CreateCommitmentForm, type CreateCommitmentFields } from "./components/CreateCommitmentForm";
 
 export default function App() {
   const [commitments, setCommitments] = useState<CommitmentSummary[]>([]);
@@ -26,6 +29,10 @@ export default function App() {
   const [walletError, setWalletError] = useState<string | null>(null);
   const [actionInFlight, setActionInFlight] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   const refreshList = useCallback(() => {
     setListLoading(true);
@@ -83,6 +90,46 @@ export default function App() {
     [selectedId, walletAddress],
   );
 
+  // Deploy -> build initialize -> sign -> submit -> look it up. The
+  // "create commitment" flow TASKS.md flagged as unexercised by any
+  // frontend: three API calls with a client-side signature in the
+  // middle, not one endpoint, because the buyer has to sign initialize
+  // themselves (api/README.md's architecture section explains why this
+  // isn't collapsed into a single call).
+  const handleCreateCommitment = useCallback(
+    (fields: CreateCommitmentFields) => {
+      if (!walletAddress) return;
+      setCreateError(null);
+      setCreating(true);
+      let newContractId = "";
+      deployCommitment()
+        .then(({ contractId }) => {
+          newContractId = contractId;
+          return buildInitializeTx(contractId, {
+            buyer: walletAddress,
+            cooperative: fields.cooperative,
+            warehouseOperator: fields.warehouseOperator,
+            token: fields.token,
+            totalAmount: fields.totalAmount,
+            advance1Bps: fields.advance1Bps,
+            advance2Bps: fields.advance2Bps,
+            claimWindowSecs: fields.claimWindowSecs,
+            sourcePublicKey: walletAddress,
+          });
+        })
+        .then(({ xdr }) => signTransactionXdr(xdr, walletAddress))
+        .then((signedXdr) => submitTx(signedXdr, newContractId))
+        .then(() => {
+          setShowCreateForm(false);
+          refreshList();
+          loadDetail(newContractId);
+        })
+        .catch((err: unknown) => setCreateError(err instanceof Error ? err.message : String(err)))
+        .finally(() => setCreating(false));
+    },
+    [walletAddress, refreshList, loadDetail],
+  );
+
   return (
     <>
       <header className="app-header">
@@ -123,6 +170,18 @@ export default function App() {
             Look up
           </button>
         </form>
+
+        {walletAddress && (
+          <section>
+            {!showCreateForm ? (
+              <button className="wallet-button" onClick={() => setShowCreateForm(true)}>
+                Create commitment
+              </button>
+            ) : (
+              <CreateCommitmentForm onSubmit={handleCreateCommitment} submitting={creating} submitError={createError} />
+            )}
+          </section>
+        )}
 
         {selectedId && (
           <section>

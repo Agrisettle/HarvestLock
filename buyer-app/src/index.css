@@ -167,6 +167,59 @@ main {
   cursor: not-allowed;
 }
 
+.create-commitment-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--void-raised);
+  border: 1px solid var(--void-line);
+  border-radius: 10px;
+  padding: 20px;
+  max-width: 480px;
+}
+
+.create-commitment-form h3 {
+  margin: 0 0 6px;
+  font-family: var(--display);
+  font-weight: 600;
+  font-size: 1.05rem;
+}
+
+.create-commitment-form label {
+  font-size: 0.78rem;
+  color: var(--bone-faint);
+  margin-top: 4px;
+}
+
+.create-commitment-form input {
+  background: var(--void);
+  border: 1px solid var(--void-line);
+  color: var(--bone);
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  padding: 8px 10px;
+  border-radius: 6px;
+}
+
+.create-commitment-form button {
+  align-self: flex-start;
+  margin-top: 10px;
+  background: var(--gold);
+  color: var(--void);
+  border: none;
+  border-radius: 6px;
+  padding: 10px 18px;
+  font-family: var(--body);
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.create-commitment-form button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .error-banner {
   background: rgba(193, 67, 46, 0.12);
   border: 1px solid var(--signal);

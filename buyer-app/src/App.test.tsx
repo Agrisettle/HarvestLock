@@ -195,4 +195,47 @@ describe("App", () => {
 
     expect(await screen.findByText("User declined to sign")).toBeInTheDocument();
   });
+
+  it("creates a commitment: deploy -> build initialize -> sign -> submit -> loads it, end to end", async () => {
+    const newContractId = "CBRANDNEWCOMMITMENTXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX";
+    const newDetail: CommitmentDetail = { ...detail, buyer: "GNEWBUYER", status: "Draft" };
+
+    fetchMock.mockResolvedValueOnce(jsonResponse([])); // initial list
+    fetchMock.mockResolvedValueOnce(jsonResponse({ contractId: newContractId })); // deployCommitment
+    fetchMock.mockResolvedValueOnce(jsonResponse({ xdr: "UNSIGNED_INIT_XDR" })); // buildInitializeTx
+    fetchMock.mockResolvedValueOnce(jsonResponse({ status: "SUCCESS", hash: "xyz" })); // submitTx
+    fetchMock.mockResolvedValueOnce(jsonResponse([])); // refreshList after create
+    fetchMock.mockResolvedValueOnce(jsonResponse(newDetail)); // loadDetail(newContractId)
+
+    vi.mocked(wallet.connectWallet).mockResolvedValueOnce("GNEWBUYER");
+    vi.mocked(wallet.signTransactionXdr).mockResolvedValueOnce("SIGNED_INIT_XDR");
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Connect wallet" }));
+    await user.click(await screen.findByRole("button", { name: "Create commitment" }));
+
+    await user.type(screen.getByLabelText("Cooperative address"), "GCOOPADDR");
+    await user.type(screen.getByLabelText("Warehouse operator address"), "GWHADDR");
+    await user.type(screen.getByLabelText("Token contract address"), "CTOKENADDR");
+    await user.type(screen.getByLabelText("Total amount (stroops)"), "1000000000");
+    await user.clear(screen.getByLabelText("Advance 1 share (basis points)"));
+    await user.type(screen.getByLabelText("Advance 1 share (basis points)"), "1500");
+    await user.clear(screen.getByLabelText("Advance 2 share (basis points)"));
+    await user.type(screen.getByLabelText("Advance 2 share (basis points)"), "2000");
+    await user.clear(screen.getByLabelText("Claim window (seconds)"));
+    await user.type(screen.getByLabelText("Claim window (seconds)"), "3600");
+
+    await user.click(screen.getByRole("button", { name: "Create commitment" }));
+
+    expect(await screen.findByText(newContractId)).toBeInTheDocument();
+    expect(wallet.signTransactionXdr).toHaveBeenCalledWith("UNSIGNED_INIT_XDR", "GNEWBUYER");
+
+    const deployCall = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/commitments/deploy"));
+    expect(deployCall).toBeDefined();
+    const initCall = fetchMock.mock.calls.find(([url]) => String(url).includes("/tx/initialize"));
+    expect(initCall).toBeDefined();
+    expect(String(initCall?.[1]?.body)).toContain("GNEWBUYER");
+  });
 });
