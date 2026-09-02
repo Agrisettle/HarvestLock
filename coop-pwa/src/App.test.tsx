@@ -3,6 +3,19 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "./App";
 import type { CommitmentDetail, CommitmentSummary } from "./api";
+import * as wallet from "./wallet";
+
+// wallet.ts talks to the real Freighter browser extension, which doesn't
+// exist in this test environment (and can't be meaningfully faked the
+// way fetch can — there's no real signer to fake signing with). Mocked
+// at the module boundary; what these tests verify is App.tsx's own
+// build -> sign -> submit -> refresh wiring, not Freighter itself, which
+// hasn't been verified against a real installed extension in this
+// session — see coop-pwa/README.md.
+vi.mock("./wallet", () => ({
+  connectWallet: vi.fn(),
+  signTransactionXdr: vi.fn(),
+}));
 
 /**
  * Component-level tests, fetch mocked at the network boundary. This is a
@@ -64,6 +77,8 @@ let fetchMock: ReturnType<typeof vi.fn>;
 beforeEach(() => {
   fetchMock = vi.fn();
   vi.stubGlobal("fetch", fetchMock);
+  vi.mocked(wallet.connectWallet).mockReset();
+  vi.mocked(wallet.signTransactionXdr).mockReset();
 });
 
 afterEach(() => {
@@ -114,5 +129,78 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Look up" }));
 
     expect(await screen.findByText("15.00%")).toBeInTheDocument();
+  });
+
+  it("connects a wallet and shows its truncated address instead of the connect button", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse([]));
+    vi.mocked(wallet.connectWallet).mockResolvedValueOnce(detail.cooperative);
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByRole("button", { name: "Connect wallet" });
+    await user.click(screen.getByRole("button", { name: "Connect wallet" }));
+
+    expect(await screen.findByText("GCOO…COOP")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Connect wallet" })).not.toBeInTheDocument();
+  });
+
+  it("shows a wallet error banner, not a crash, if connecting fails", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse([]));
+    vi.mocked(wallet.connectWallet).mockRejectedValueOnce(new Error("User declined access"));
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Connect wallet" }));
+
+    expect(await screen.findByText("User declined access")).toBeInTheDocument();
+  });
+
+  it("claims an open tranche: build -> sign -> submit -> refresh, end to end through the app", async () => {
+    const openDetail: CommitmentDetail = { ...detail, advance1_deadline: String(Math.floor(Date.now() / 1000) + 3600) };
+    const claimedDetail: CommitmentDetail = { ...openDetail, advance1_claimed: true };
+
+    fetchMock.mockResolvedValueOnce(jsonResponse([summary])); // initial list
+    fetchMock.mockResolvedValueOnce(jsonResponse(openDetail)); // click row -> detail
+    fetchMock.mockResolvedValueOnce(jsonResponse({ xdr: "UNSIGNED_XDR" })); // buildTx
+    fetchMock.mockResolvedValueOnce(jsonResponse({ status: "SUCCESS", hash: "abc" })); // submitTx
+    fetchMock.mockResolvedValueOnce(jsonResponse(claimedDetail)); // post-claim refresh
+
+    vi.mocked(wallet.connectWallet).mockResolvedValueOnce(detail.cooperative);
+    vi.mocked(wallet.signTransactionXdr).mockResolvedValueOnce("SIGNED_XDR");
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Connect wallet" }));
+    await user.click(await screen.findByText(summary.contract_id));
+    await user.click(await screen.findByRole("button", { name: "Claim" }));
+
+    expect(await screen.findByText("claimed")).toBeInTheDocument();
+    expect(wallet.signTransactionXdr).toHaveBeenCalledWith("UNSIGNED_XDR", detail.cooperative);
+
+    const buildCall = fetchMock.mock.calls.find(([url]) => String(url).includes("/tx/claim_advance_1"));
+    expect(buildCall).toBeDefined();
+    const submitCall = fetchMock.mock.calls.find(([url]) => String(url).includes("/transactions/submit"));
+    expect(submitCall?.[1]?.body).toContain("SIGNED_XDR");
+  });
+
+  it("shows a claim error banner, not a crash, if signing is rejected", async () => {
+    const openDetail: CommitmentDetail = { ...detail, advance1_deadline: String(Math.floor(Date.now() / 1000) + 3600) };
+
+    fetchMock.mockResolvedValueOnce(jsonResponse([summary]));
+    fetchMock.mockResolvedValueOnce(jsonResponse(openDetail));
+    fetchMock.mockResolvedValueOnce(jsonResponse({ xdr: "UNSIGNED_XDR" }));
+
+    vi.mocked(wallet.connectWallet).mockResolvedValueOnce(detail.cooperative);
+    vi.mocked(wallet.signTransactionXdr).mockRejectedValueOnce(new Error("User declined to sign"));
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Connect wallet" }));
+    await user.click(await screen.findByText(summary.contract_id));
+    await user.click(await screen.findByRole("button", { name: "Claim" }));
+
+    expect(await screen.findByText("User declined to sign")).toBeInTheDocument();
   });
 });

@@ -131,6 +131,41 @@ main {
   cursor: not-allowed;
 }
 
+.wallet-button {
+  background: var(--gold);
+  color: var(--void);
+  border: none;
+  border-radius: 6px;
+  padding: 8px 14px;
+  font-family: var(--body);
+  font-weight: 600;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.wallet-address {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--bone-dim);
+}
+
+.claim-button {
+  background: var(--gold);
+  color: var(--void);
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-family: var(--body);
+  font-weight: 600;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.claim-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .error-banner {
   background: rgba(193, 67, 46, 0.12);
   border: 1px solid var(--signal);
