@@ -47,6 +47,19 @@ async function get<T>(path: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+async function post<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${API_URL}${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const responseBody = await res.text();
+    throw new Error(`${path} -> ${res.status}: ${responseBody}`);
+  }
+  return res.json() as Promise<T>;
+}
+
 /** Live chain read — the source of truth. Also refreshes the API's cache as a side effect. */
 export function getCommitment(contractId: string): Promise<CommitmentDetail> {
   return get<CommitmentDetail>(`/commitments/${encodeURIComponent(contractId)}`);
@@ -55,4 +68,19 @@ export function getCommitment(contractId: string): Promise<CommitmentDetail> {
 /** Postgres-cached list — the only way to enumerate commitments, since the chain has no such query. */
 export function listCommitments(): Promise<CommitmentSummary[]> {
   return get<CommitmentSummary[]>("/commitments");
+}
+
+/** Builds unsigned XDR for a no-argument lifecycle method (e.g. `claim_advance_1`). The caller's wallet signs it next. */
+export function buildTx(contractId: string, method: string, sourcePublicKey: string): Promise<{ xdr: string }> {
+  return post<{ xdr: string }>(`/commitments/${encodeURIComponent(contractId)}/tx/${method}`, { sourcePublicKey });
+}
+
+export interface SubmitResult {
+  status: "SUCCESS" | "FAILED";
+  hash: string;
+}
+
+/** Submits a signed envelope. `refreshContractId` also refreshes the API's Postgres cache as a side effect. */
+export function submitTx(signedXdr: string, refreshContractId?: string): Promise<SubmitResult> {
+  return post<SubmitResult>("/transactions/submit", { xdr: signedXdr, refreshContractId });
 }
