@@ -134,9 +134,10 @@ checkboxes.** They'll drift; HANDOFF.md is maintained to stay accurate.
       caught a real fairness bug in the first draft — see HANDOFF.md's
       design-decisions section, it's worth reading even if you're not
       touching this contract, as an example of the kind of thing to
-      watch for elsewhere. 24/24 tests passing, verified live on testnet
-      including the negative case (an on-chain rejection, not just a
-      local one).
+      watch for elsewhere. 30/30 tests passing (as of 1 Sept 2026 — 24
+      at claimable-balance, 6 more since for mutual cancellation, below),
+      verified live on testnet including the negative case (an on-chain
+      rejection, not just a local one).
 - [ ] **Week 4–5**: Allocation ledger, built correctly the first time —
       **salted hash per member, not raw identifiers** (PRD §4.8, corrected
       in v0.6 after an NDPA compliance finding in §16.1). Decide the salting
@@ -153,7 +154,10 @@ checkboxes.** They'll drift; HANDOFF.md is maintained to stay accurate.
       order book, no listing.
 - [ ] **Week 7–8**: Regression tests for the edge cases that matter most at
       the contract layer: partial delivery, over-delivery, buyer default,
-      side-selling forfeiture, mutual cancellation unwind.
+      side-selling forfeiture. Mutual cancellation unwind is **done** —
+      `cancel()`, buyer+cooperative co-signed, shipped and testnet-verified
+      1 Sept 2026 (ahead of this week's original slot, once it was
+      genuinely ready) — this bullet used to include it, it no longer does.
 - [ ] **Week 8–10**: Get this reviewed by someone who isn't you before
       calling it done, even informally. This is the highest-stakes code in
       the whole system.
@@ -216,14 +220,19 @@ funding gate, not just an internal milestone — target them explicitly.
       for exactly what that means). Contract address in that file's
       "Verified on testnet" section — treat it as a validation artifact,
       redeploy fresh rather than building on top of that specific instance.
-- [ ] Minimal TypeScript API: create a contract instance, lock it in,
+- [x] Minimal TypeScript API: create a contract instance, lock it in,
       trigger the two advance tranches, trigger settlement. No auth, no UI
       polish, no multi-tenant anything — one hardcoded counterparty pair,
-      one flow, end to end.
+      one flow, end to end. **Done, 1 Sept 2026** — went further than this
+      bullet's original scope, too: every lifecycle method including
+      mutual cancellation (two-party auth), not just the two named here.
+      Testnet-verified at both the SDK and HTTP layers. See `api/HANDOFF.md`.
 - [ ] This is the point at which you have a "deployed contract or working
-      MVP" — **this condition is arguably already met**; check whether
-      that's sufficient for Builder tier / Instawards eligibility and apply
-      if so (PRD §11), rather than waiting for the API too.
+      MVP" — **this condition is now clearly met** (contract and API both
+      real and testnet-verified, not just the contract as when this was
+      last written); the remaining action is checking Builder tier /
+      Instawards eligibility (PRD §11) and applying if so — that's a human
+      step this file can't mark done on its own.
 
 ### Testnet tranche (SCF: 30%)
 
