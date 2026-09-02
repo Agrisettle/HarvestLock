@@ -1,11 +1,12 @@
 # coop-pwa
 
 HarvestLock's cooperative-facing dashboard. React + Vite + TypeScript.
-**Read-only, for now** — look up a commitment by contract ID, or pick one
-from the cached list, and see its status and advance-tranche claim windows
-straight from chain. No write actions, no auth, no offline support yet —
-all deliberately deferred, see below. Not a PWA yet either (no service
-worker/manifest) — that's tied to the offline-queue work.
+Look up a commitment by contract ID, or pick one from the cached list, see
+its status and advance-tranche claim windows straight from chain, and —
+if a connected wallet matches the commitment's cooperative — claim an open
+advance tranche. No auth, no offline support yet — deliberately deferred,
+see below. Not a PWA yet either (no service worker/manifest) — that's tied
+to the offline-queue work.
 
 Note what this app is *not*, even once it's further along: individual
 farmers never get an app. They get SMS (and eventually USSD) only — PRD
@@ -57,9 +58,25 @@ project doesn't use — needs an explicit `afterEach(cleanup)` instead
 (`src/test-setup.ts`), found via a genuinely confusing failure (a count
 assertion off by exactly 2x) before it was added.
 
+**Claim-advance write action** (`src/wallet.ts`, `src/App.tsx`, added 2 Sept
+2026): the app's first write. Build → Freighter signs → submit → refresh,
+same shape every write in this project follows, now running client-side.
+Freighter is explicitly a testnet/MVP stand-in, not the real auth model —
+PRD §4.6 rules out seed-phrase wallets for cooperative users. **What's
+verified and what isn't**: the API calls (build/submit) and the component
+logic (button gating, error handling, the full flow with fetch and wallet
+both mocked) are tested — 13 tests. What's **not** independently verified
+in this session: signing against a real, installed Freighter extension —
+this sandboxed environment has no way to install and drive a real browser
+extension with a real funded account. A genuinely real finding *did* come
+from a real browser, though: with no Freighter extension present at all
+(the exact case a first-time visitor hits), `requestAccess()` neither
+resolves nor rejects, it hangs forever — fixed with a timeout wrapper
+around every Freighter call, see `wallet.ts`. Manual QA with a real
+Freighter install is still a real gap before calling this fully proven.
+
 **Deferred, per `TASKS.md`**:
-- Phone-based auth (PRD §4.6) — needs the API's identity/session model decided first.
-- Claim-advance write actions.
+- Phone-based auth (PRD §4.6) — needs the API's identity/session model decided first. Freighter is a stand-in, not this.
 - Offline-tolerant queue for depot connectivity loss (PRD §7/§16.3).
 - Allocation-ledger / per-member display — the API doesn't have this data yet either.
 
