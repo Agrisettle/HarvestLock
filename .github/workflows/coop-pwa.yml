@@ -13,7 +13,7 @@ on:
 
 jobs:
   build:
-    name: typecheck + lint + build
+    name: typecheck + lint + test + build
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -35,6 +35,9 @@ jobs:
 
       - name: lint
         run: npm run lint
+
+      - name: test
+        run: npm test
 
       - name: build
         run: npm run build
