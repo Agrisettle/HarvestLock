@@ -6,6 +6,9 @@ import { deployContractInstance, initializeArgs } from "../src/stellar/deploy.js
 import { buildInvokeTransaction, submitSignedTransaction } from "../src/stellar/tx.js";
 import { networkPassphrase } from "../src/stellar/rpc.js";
 import { submitMultiPartyCall, submitSingleSignerCall, fundTestnetAccount } from "./helpers.js";
+import { upsertCommitment } from "../src/db/commitments.js";
+import { applyReputationConsequences } from "../src/reputation.js";
+import { getStanding } from "../src/db/reputation.js";
 
 /**
  * Every test here hits real Stellar testnet infrastructure — no mocks.
@@ -291,7 +294,7 @@ describe("stellar/deploy (live testnet writes)", () => {
   );
 
   it(
-    "expire_remainder_window: buyer default sweeps escrow to the cooperative, callable by an unrelated third party",
+    "expire_remainder_window: buyer default sweeps escrow to the cooperative, callable by an unrelated third party, and bars the buyer",
     async () => {
       // A short remainderWindowSecs (bypasses the API's 1-hour floor --
       // that's an HTTP-layer check in server.ts, not a contract one, and
@@ -299,10 +302,19 @@ describe("stellar/deploy (live testnet writes)", () => {
       // so the deadline can actually lapse within a test, real time, the
       // same demo-only reasoning HarvestLock-Contracts/HANDOFF.md uses for
       // its short-window testnet deployments.
+      //
+      // A fresh `buyer` keypair, not the shared `deployer` account: this
+      // test ends by barring its buyer address in the real local
+      // Postgres, and DEPLOYER_SECRET_KEY's address is reused as the
+      // source/signer across most of this file's other tests -- barring
+      // it for real would be a surprising, sticky side effect on a
+      // shared identity, not a throwaway one.
       const deployer = Keypair.fromSecret(process.env.DEPLOYER_SECRET_KEY!);
+      const buyer = Keypair.random();
       const cooperative = Keypair.random();
       const unrelatedThirdParty = Keypair.random();
       await Promise.all([
+        fundTestnetAccount(buyer.publicKey()),
         fundTestnetAccount(cooperative.publicKey()),
         fundTestnetAccount(unrelatedThirdParty.publicKey()),
       ]);
@@ -311,9 +323,9 @@ describe("stellar/deploy (live testnet writes)", () => {
       const initXdr = await buildInvokeTransaction({
         contractId,
         method: "initialize",
-        sourcePublicKey: deployer.publicKey(),
+        sourcePublicKey: buyer.publicKey(),
         args: initializeArgs({
-          buyer: deployer.publicKey(),
+          buyer: buyer.publicKey(),
           cooperative: cooperative.publicKey(),
           warehouseOperator: deployer.publicKey(),
           token: PLACEHOLDER_TOKEN,
@@ -326,10 +338,10 @@ describe("stellar/deploy (live testnet writes)", () => {
         }),
       });
       const initTx = TransactionBuilder.fromXDR(initXdr, networkPassphrase);
-      initTx.sign(deployer);
+      initTx.sign(buyer);
       await submitSignedTransaction(initTx.toXDR());
 
-      await submitSingleSignerCall({ contractId, method: "lock", signer: deployer });
+      await submitSingleSignerCall({ contractId, method: "lock", signer: buyer });
       await submitSingleSignerCall({ contractId, method: "release_advance_1", signer: deployer });
       await submitSingleSignerCall({ contractId, method: "mark_checkpoint", signer: deployer });
       await submitSingleSignerCall({ contractId, method: "release_advance_2", signer: deployer });
@@ -354,23 +366,46 @@ describe("stellar/deploy (live testnet writes)", () => {
         signer: unrelatedThirdParty,
       });
       expect(await getStatus(contractId)).toBe("Defaulted");
+
+      // The same sequence server.ts's GET /commitments/:contractId and
+      // POST /transactions/submit routes run on every refresh -- proving
+      // the reputation consequence actually fires end to end against a
+      // real chain read, not just against a hand-built Commitment object
+      // (see test/reputation.test.ts for that narrower unit coverage).
+      const commitment = await getCommitment(contractId);
+      const { previousStatus } = await upsertCommitment(contractId, commitment);
+      await applyReputationConsequences(contractId, previousStatus, commitment);
+
+      const standing = await getStanding(buyer.publicKey());
+      expect(standing?.barred).toBe(true);
+      expect(standing?.barred_reason).toBe("buyer_default");
+      // The cooperative wasn't at fault here -- confirms the consequence
+      // lands on the right party, not just "someone."
+      expect(await getStanding(cooperative.publicKey())).toBeNull();
     },
     120_000,
   );
 
   it(
-    "reclaim_on_nondelivery: seller non-delivery returns escrow to the buyer past the delivery deadline",
+    "reclaim_on_nondelivery: seller non-delivery returns escrow to the buyer past the delivery deadline, and strikes the cooperative",
     async () => {
+      // Fresh buyer/cooperative keypairs, not the shared deployer account
+      // -- see the previous test's comment for why (this one strikes the
+      // cooperative's reputation for real).
       const deployer = Keypair.fromSecret(process.env.DEPLOYER_SECRET_KEY!);
+      const buyer = Keypair.random();
+      const cooperative = Keypair.random();
+      await Promise.all([fundTestnetAccount(buyer.publicKey()), fundTestnetAccount(cooperative.publicKey())]);
+
       const contractId = await deployContractInstance();
 
       const initXdr = await buildInvokeTransaction({
         contractId,
         method: "initialize",
-        sourcePublicKey: deployer.publicKey(),
+        sourcePublicKey: buyer.publicKey(),
         args: initializeArgs({
-          buyer: deployer.publicKey(),
-          cooperative: deployer.publicKey(),
+          buyer: buyer.publicKey(),
+          cooperative: cooperative.publicKey(),
           warehouseOperator: deployer.publicKey(),
           token: PLACEHOLDER_TOKEN,
           totalAmount: 1_000_000_000n,
@@ -382,10 +417,10 @@ describe("stellar/deploy (live testnet writes)", () => {
         }),
       });
       const initTx = TransactionBuilder.fromXDR(initXdr, networkPassphrase);
-      initTx.sign(deployer);
+      initTx.sign(buyer);
       await submitSignedTransaction(initTx.toXDR());
 
-      await submitSingleSignerCall({ contractId, method: "lock", signer: deployer });
+      await submitSingleSignerCall({ contractId, method: "lock", signer: buyer });
       expect(await getStatus(contractId)).toBe("Locked");
 
       // The cooperative never takes another action -- no checkpoint, no
@@ -393,8 +428,19 @@ describe("stellar/deploy (live testnet writes)", () => {
       // deadline, real time.
       await new Promise((r) => setTimeout(r, 15_000));
 
-      await submitSingleSignerCall({ contractId, method: "reclaim_on_nondelivery", signer: deployer });
+      await submitSingleSignerCall({ contractId, method: "reclaim_on_nondelivery", signer: buyer });
       expect(await getStatus(contractId)).toBe("Forfeited");
+
+      const commitment = await getCommitment(contractId);
+      const { previousStatus } = await upsertCommitment(contractId, commitment);
+      await applyReputationConsequences(contractId, previousStatus, commitment);
+
+      const coopStanding = await getStanding(cooperative.publicKey());
+      expect(coopStanding?.strike_count).toBe(1);
+      expect(coopStanding?.barred).toBe(false); // one strike, not three yet
+      // The buyer wasn't at fault here -- confirms the consequence lands
+      // on the right party.
+      expect(await getStanding(buyer.publicKey())).toBeNull();
     },
     120_000,
   );

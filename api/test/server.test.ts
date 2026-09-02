@@ -1,7 +1,9 @@
 import "dotenv/config";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { FastifyInstance } from "fastify";
+import { Keypair } from "@stellar/stellar-sdk";
 import { buildServer } from "../src/server.js";
+import { recordBuyerDefault } from "../src/db/reputation.js";
 
 /**
  * First HTTP-layer test coverage for server.ts — everything before this
@@ -273,6 +275,84 @@ describe("server (HTTP layer)", () => {
       });
       expect(res.statusCode).toBe(400);
       expect(res.json().message).toMatch(/buyer is not a valid public key/);
+    },
+    15_000,
+  );
+
+  it(
+    "rejects initialize with 403 when the buyer address is barred",
+    async () => {
+      // Seeds real reputation state directly (same DB the running server
+      // instance reads from) -- this is the enforcement half of the
+      // buyer-default consequence: expire_remainder_window bars a buyer
+      // off-chain (see test/reputation.test.ts), and requireNotBarred in
+      // server.ts is what actually stops that address from appearing on a
+      // *new* commitment. Fires before window-bounds validation, so the
+      // payload here can otherwise be minimal.
+      const barredBuyer = Keypair.random().publicKey();
+      await recordBuyerDefault(barredBuyer, "CFAKECONTRACTFORTEST");
+
+      const res = await app.inject({
+        method: "POST",
+        url: `/commitments/${FAKE_CONTRACT_ID}/tx/initialize`,
+        payload: {
+          buyer: barredBuyer,
+          cooperative: FAKE_PUBLIC_KEY,
+          warehouseOperator: FAKE_PUBLIC_KEY,
+          token: FAKE_CONTRACT_ID,
+          totalAmount: "1000000000",
+          advance1Bps: 1500,
+          advance2Bps: 2000,
+          claimWindowSecs: "3600",
+          sourcePublicKey: FAKE_PUBLIC_KEY,
+        },
+      });
+      expect(res.statusCode).toBe(403);
+      expect(res.json().message).toMatch(/barred/);
+    },
+    15_000,
+  );
+
+  it(
+    "rejects initialize with 403 when the cooperative address is barred",
+    async () => {
+      const barredCooperative = Keypair.random().publicKey();
+      await recordBuyerDefault(barredCooperative, "CFAKECONTRACTFORTEST");
+
+      const res = await app.inject({
+        method: "POST",
+        url: `/commitments/${FAKE_CONTRACT_ID}/tx/initialize`,
+        payload: {
+          buyer: FAKE_PUBLIC_KEY,
+          cooperative: barredCooperative,
+          warehouseOperator: FAKE_PUBLIC_KEY,
+          token: FAKE_CONTRACT_ID,
+          totalAmount: "1000000000",
+          advance1Bps: 1500,
+          advance2Bps: 2000,
+          claimWindowSecs: "3600",
+          sourcePublicKey: FAKE_PUBLIC_KEY,
+        },
+      });
+      expect(res.statusCode).toBe(403);
+      expect(res.json().message).toMatch(/barred/);
+    },
+    15_000,
+  );
+
+  it(
+    "GET /parties/:address/standing returns a clean default for an address with no history",
+    async () => {
+      const freshAddress = Keypair.random().publicKey();
+      const res = await app.inject({ method: "GET", url: `/parties/${freshAddress}/standing` });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({
+        address: freshAddress,
+        strike_count: 0,
+        barred: false,
+        barred_reason: null,
+        barred_at: null,
+      });
     },
     15_000,
   );

@@ -18,3 +18,10 @@ export class BadRequestError extends HttpError {
     super(400, message);
   }
 }
+
+/** The request is well-formed but not permitted — a barred address trying to appear on a new commitment. */
+export class ForbiddenError extends HttpError {
+  constructor(message: string) {
+    super(403, message);
+  }
+}

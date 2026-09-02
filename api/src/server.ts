@@ -6,7 +6,8 @@ import { deployContractInstance, initializeArgs } from "./stellar/deploy.js";
 import { buildInvokeTransaction, submitSignedTransaction } from "./stellar/tx.js";
 import { upsertCommitment, listCommitments } from "./db/commitments.js";
 import { pool } from "./db/pool.js";
-import { BadRequestError } from "./errors.js";
+import { BadRequestError, ForbiddenError } from "./errors.js";
+import { applyReputationConsequences, getStanding } from "./reputation.js";
 
 /**
  * Every route below takes a contract ID at some point. Before this
@@ -26,6 +27,23 @@ function requireValidContractId(contractId: string): void {
 function requireValidPublicKey(publicKey: string, fieldName: string): void {
   if (!StrKey.isValidEd25519PublicKey(publicKey)) {
     throw new BadRequestError(`${fieldName} is not a valid public key: ${publicKey}`);
+  }
+}
+
+/**
+ * Blocks a barred address from appearing on a new commitment — the
+ * enforcement half of the off-chain reputation system (see
+ * src/reputation.ts and src/db/reputation.ts). Only called for `buyer`
+ * and `cooperative`: those are the two roles the default/forfeiture model
+ * actually bars (see site/roles.html); the warehouse operator isn't a
+ * settlement party in that sense.
+ */
+async function requireNotBarred(address: string, fieldName: string): Promise<void> {
+  const standing = await getStanding(address);
+  if (standing?.barred) {
+    throw new ForbiddenError(
+      `${fieldName} ${address} is barred (${standing.barred_reason}) and cannot be added to a new commitment`,
+    );
   }
 }
 
@@ -162,6 +180,8 @@ export function buildServer() {
       requireValidPublicKey(b.cooperative, "cooperative");
       requireValidPublicKey(b.warehouseOperator, "warehouseOperator");
       requireValidContractId(b.token);
+      await requireNotBarred(b.buyer, "buyer");
+      await requireNotBarred(b.cooperative, "cooperative");
 
       const claimWindowSecs = Number(b.claimWindowSecs);
       if (claimWindowSecs < MIN_CLAIM_WINDOW_SECS || claimWindowSecs > MAX_CLAIM_WINDOW_SECS) {
@@ -263,7 +283,8 @@ export function buildServer() {
       const result = await submitSignedTransaction(req.body.xdr);
       if (req.body.refreshContractId) {
         const commitment = await getCommitment(req.body.refreshContractId);
-        await upsertCommitment(req.body.refreshContractId, commitment);
+        const { previousStatus } = await upsertCommitment(req.body.refreshContractId, commitment);
+        await applyReputationConsequences(req.body.refreshContractId, previousStatus, commitment);
       }
       return result;
     },
@@ -275,13 +296,33 @@ export function buildServer() {
   app.get<{ Params: { contractId: string } }>("/commitments/:contractId", async (req) => {
     requireValidContractId(req.params.contractId);
     const commitment = await getCommitment(req.params.contractId);
-    await upsertCommitment(req.params.contractId, commitment).catch((err: unknown) => {
-      req.log.warn({ err }, "failed to refresh commitments cache");
-    });
+    await upsertCommitment(req.params.contractId, commitment)
+      .then(({ previousStatus }) => applyReputationConsequences(req.params.contractId, previousStatus, commitment))
+      .catch((err: unknown) => {
+        req.log.warn({ err }, "failed to refresh commitments cache");
+      });
     return serializeCommitment(commitment);
   });
 
   app.get("/commitments", async () => listCommitments());
+
+  // Read-only: a party's current reputation standing (strikes, whether
+  // they're barred, and why). Returns a "clean" default rather than 404
+  // when no row exists yet, so a frontend doesn't need a special case for
+  // "never struck" vs. "explicitly not barred."
+  app.get<{ Params: { address: string } }>("/parties/:address/standing", async (req) => {
+    requireValidPublicKey(req.params.address, "address");
+    const standing = await getStanding(req.params.address);
+    return (
+      standing ?? {
+        address: req.params.address,
+        strike_count: 0,
+        barred: false,
+        barred_reason: null,
+        barred_at: null,
+      }
+    );
+  });
 
   app.addHook("onClose", async () => {
     await pool.end();

@@ -10,6 +10,7 @@ import {
 } from "@stellar/stellar-sdk";
 import { randomBytes } from "node:crypto";
 import { server, networkPassphrase } from "./rpc.js";
+import { withRetry } from "./retry.js";
 
 /**
  * One contract instance per commitment (PRD §4.8) — there is no factory
@@ -39,7 +40,13 @@ function wasmHashBytes(): Buffer {
 /** Deploys a new, uninitialized escrow contract instance. Returns its contract ID (C...). */
 export async function deployContractInstance(): Promise<string> {
   const deployer = deployerKeypair();
-  const account = await server.getAccount(deployer.publicKey());
+  // Retried -- see client.ts's simulateRead / tx.ts's buildInvokeTransaction
+  // for why (the exact "Account not found" flakiness this project has
+  // already observed and documented, api/HANDOFF.md's "Known testnet
+  // flakiness"). This was the one getAccount call in src/stellar/ that
+  // hadn't been wrapped yet -- found the hard way, when it was the one
+  // still failing during this session's live-testnet reputation tests.
+  const account = await withRetry(() => server.getAccount(deployer.publicKey()));
   const salt = randomBytes(32);
 
   const tx = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase })
@@ -53,7 +60,7 @@ export async function deployContractInstance(): Promise<string> {
     .setTimeout(60)
     .build();
 
-  const sim = await server.simulateTransaction(tx);
+  const sim = await withRetry(() => server.simulateTransaction(tx));
   if (rpc.Api.isSimulationError(sim)) {
     throw new Error(`simulation failed for contract deploy: ${sim.error}`);
   }
@@ -68,10 +75,18 @@ export async function deployContractInstance(): Promise<string> {
 
   const hash = sendResult.hash;
   const started = Date.now();
-  let result: rpc.Api.GetTransactionResponse;
+  let result: rpc.Api.GetTransactionResponse | undefined;
+  // Same eventually-consistent poll as tx.ts's submitSignedTransaction,
+  // including tolerating a transient mid-poll throw instead of aborting
+  // the whole wait over one blip -- this loop used to be a separate,
+  // less-hardened copy of that one; kept in sync now.
   for (;;) {
-    result = await server.getTransaction(hash);
-    if (result.status !== rpc.Api.GetTransactionStatus.NOT_FOUND) break;
+    try {
+      result = await server.getTransaction(hash);
+      if (result.status !== rpc.Api.GetTransactionStatus.NOT_FOUND) break;
+    } catch {
+      // fall through to the timeout check / sleep below and retry
+    }
     if (Date.now() - started > 30_000) {
       throw new Error(`timed out waiting for deploy transaction ${hash} to be included`);
     }
