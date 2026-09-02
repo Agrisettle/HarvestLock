@@ -55,7 +55,11 @@ export default function App() {
             if (lookupInput.trim()) loadDetail(lookupInput.trim());
           }}
         >
+          <label htmlFor="contract-lookup" className="sr-only">
+            Contract ID
+          </label>
           <input
+            id="contract-lookup"
             value={lookupInput}
             onChange={(e) => setLookupInput(e.target.value)}
             placeholder="Contract ID (C...)"
