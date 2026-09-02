@@ -89,5 +89,29 @@ default, since there's no deployed site domain yet (same pattern as
 `site/`'s own `useLiveStatus` hook); when unset, the checkbox label
 degrades to plain, non-linked text rather than guessing a URL.
 
+**Cancel this commitment** (`src/components/CancelSection.tsx`, added
+2 Sept 2026, later same day again): the staged multi-party
+propose/sign/finalize UX for `cancel()` — see `api/HANDOFF.md`. Either
+party (buyer or cooperative) can propose; if the *other* party is
+connected, they see "approve cancellation," which signs their own
+Soroban auth entry via Freighter's `signAuthEntry` (a new `wallet.ts`
+export, distinct from `signTransactionXdr` — this signs one auth entry,
+not a whole transaction). Once both sides have acted, the proposer sees
+"finalize cancellation," which classically signs the ready XDR and
+submits through the same `submitTx` every other write uses. Polls the
+active proposal every 10s while waiting on the other party, stops once
+it's this viewer's own turn to act. Rendered inside `CommitmentDetail`
+for any cancellable status (`Draft` through `ReadyForDelivery`, matching
+`lib.rs`'s reachable range) when the connected wallet is a party to the
+commitment; hidden otherwise. 7 new component tests (mocked wallet +
+fetch, same conventions as the rest of this app) cover all three roles
+(proposer waiting, approver signing, proposer finalizing) plus a
+rejected-signature error path. Same honesty note as every other write
+action here: no real, installed Freighter extension exists in this
+environment, so `signAuthEntry`'s actual on-extension behavior hasn't
+been manually verified, only the component logic against a mocked one —
+the API side of this flow *has* been verified live end to end (see
+`api/HANDOFF.md`).
+
 **Deferred**: auth, ERP integration (see above) — neither exists yet,
 don't assume it does.

@@ -34,6 +34,7 @@ const noopProps = {
   onAction: vi.fn(),
   actionInFlight: false,
   actionError: null as string | null,
+  onCancelled: vi.fn(),
 };
 
 describe("CommitmentDetail's pendingSummary (buyer-specific framing)", () => {

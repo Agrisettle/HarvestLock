@@ -1,5 +1,6 @@
 import type { CommitmentDetail as CommitmentDetailType } from "../api";
 import { StatusBadge } from "./StatusBadge";
+import { CancelSection } from "./CancelSection";
 
 function formatDeadline(unixSecs: string): string {
   const n = Number(unixSecs);
@@ -58,6 +59,7 @@ export function CommitmentDetail({
   onAction,
   actionInFlight,
   actionError,
+  onCancelled,
 }: {
   commitment: CommitmentDetailType;
   contractId: string;
@@ -65,6 +67,7 @@ export function CommitmentDetail({
   onAction: (action: "lock" | "settle") => void;
   actionInFlight: boolean;
   actionError: string | null;
+  onCancelled: () => void;
 }) {
   const action = primaryAction(commitment, walletAddress);
 
@@ -90,6 +93,8 @@ export function CommitmentDetail({
               : "Settle"}
         </button>
       )}
+
+      <CancelSection commitment={commitment} contractId={contractId} walletAddress={walletAddress} onCancelled={onCancelled} />
 
       <dl className="party-grid">
         <div>

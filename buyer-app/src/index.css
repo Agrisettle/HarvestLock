@@ -167,6 +167,22 @@ main {
   cursor: not-allowed;
 }
 
+.action-button.secondary {
+  background: transparent;
+  color: var(--bone);
+  border: 1px solid var(--void-line);
+}
+
+.cancel-section {
+  margin-bottom: 20px;
+}
+
+.cancel-status {
+  color: var(--bone-dim);
+  font-size: 0.85rem;
+  margin: 0 0 10px;
+}
+
 .create-commitment-form {
   display: flex;
   flex-direction: column;

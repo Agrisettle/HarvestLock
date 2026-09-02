@@ -69,3 +69,25 @@ export async function signTransactionXdr(xdr: string, address: string): Promise<
   throwIfError(result.error);
   return result.signedTxXdr;
 }
+
+/**
+ * Signs a single Soroban authorization entry — NOT a whole transaction.
+ * Used for the staged multi-party `cancel` flow (api/HANDOFF.md): when
+ * someone other than the proposer approves a pending cancellation, they
+ * sign only their own auth entry, not an envelope — the proposer's
+ * classic signature (via `signTransactionXdr` above) is what finalizes
+ * things later. `signTransaction` would be the wrong call here — it adds
+ * a classic envelope signature, which isn't what a non-source party's
+ * `require_auth()` needs.
+ */
+export async function signAuthEntry(entryXdr: string, address: string): Promise<string> {
+  const result = await withTimeout(
+    freighterApi.signAuthEntry(entryXdr, { address, networkPassphrase: NETWORK_PASSPHRASE }),
+    60_000, // same reasoning as signTransactionXdr's timeout
+  );
+  throwIfError(result.error);
+  if (!result.signedAuthEntry) {
+    throw new Error("Freighter returned no signed auth entry");
+  }
+  return result.signedAuthEntry;
+}

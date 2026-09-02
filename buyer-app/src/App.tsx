@@ -197,6 +197,7 @@ export default function App() {
                 onAction={handleAction}
                 actionInFlight={actionInFlight}
                 actionError={actionError}
+                onCancelled={() => loadDetail(selectedId)}
               />
             )}
           </section>

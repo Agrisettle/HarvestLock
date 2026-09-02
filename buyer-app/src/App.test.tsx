@@ -132,9 +132,13 @@ describe("App", () => {
 
     fetchMock.mockResolvedValueOnce(jsonResponse([draftSummary])); // initial list
     fetchMock.mockResolvedValueOnce(jsonResponse(draftDetail)); // click row -> detail
+    fetchMock.mockResolvedValueOnce(jsonResponse({ proposal: null })); // CancelSection's background poll (Draft is cancellable)
     fetchMock.mockResolvedValueOnce(jsonResponse({ xdr: "UNSIGNED_XDR" })); // buildTx
     fetchMock.mockResolvedValueOnce(jsonResponse({ status: "SUCCESS", hash: "abc" })); // submitTx
     fetchMock.mockResolvedValueOnce(jsonResponse(lockedDetail)); // post-lock refresh
+    // No second CancelSection poll expected here: its refresh() is memoized
+    // on [contractId, cancellable], and Draft -> Locked doesn't change
+    // either (both are cancellable statuses), so the effect doesn't re-fire.
 
     vi.mocked(wallet.connectWallet).mockResolvedValueOnce(detail.buyer);
     vi.mocked(wallet.signTransactionXdr).mockResolvedValueOnce("SIGNED_XDR");
@@ -185,6 +189,7 @@ describe("App", () => {
 
     fetchMock.mockResolvedValueOnce(jsonResponse([draftSummary]));
     fetchMock.mockResolvedValueOnce(jsonResponse(draftDetail));
+    fetchMock.mockResolvedValueOnce(jsonResponse({ proposal: null })); // CancelSection's background poll (Draft is cancellable)
     fetchMock.mockResolvedValueOnce(jsonResponse({ xdr: "UNSIGNED_XDR" }));
 
     vi.mocked(wallet.connectWallet).mockResolvedValueOnce(detail.buyer);
