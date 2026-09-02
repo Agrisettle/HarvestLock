@@ -57,5 +57,19 @@ this environment, so actual wallet signing hasn't been manually verified
 installed" hang (see `wallet.ts`), re-checked in this app specifically
 rather than assumed to carry over from coop-pwa's identical fix.
 
+**Create-commitment flow** (`src/components/CreateCommitmentForm.tsx`,
+added 2 Sept 2026): deploy → build `initialize` → Freighter signs →
+submit → load, gated behind a connected wallet (the buyer field comes
+from that address, not the form). Client-side validation mirrors the
+API's own `claim_window_secs` bounds and the advance-bps-sum-to-100%
+rule so a bad value fails fast rather than round-tripping to find out.
+This is the "real create commitment UX flow" `TASKS.md` had flagged as
+unexercised by any frontend. Unlike lock/settle/claim, there wasn't even
+a partial real-browser check possible for this one in this session —
+the form is unreachable without a connected wallet, and no real
+Freighter extension exists in this environment. What the flow's chain
+operations actually do (deploy, initialize) is separately proven at the
+API layer in `api/test/stellar.test.ts` against real testnet.
+
 **Deferred**: auth, ERP integration (see above) — neither exists yet,
 don't assume it does.

@@ -41,7 +41,7 @@ During `coop-pwa`'s browser check, one `GET /commitments/:contractId` call faile
 
 1. Allocation-ledger schema + salt-scheme decision (blocks `allocation_members`, blocks a real off-chain identity map).
 2. Decide the multi-party signing UX for `cancel`/`reassign_buyer` (see above) before building either into a frontend.
-3. A real write action in a frontend — `coop-pwa`'s claim-advance is the natural first one (single-signer, cooperative-only, no multi-party UX decision blocking it unlike `cancel`/`reassign_buyer`).
+3. ~~A real write action in a frontend~~ — **done**: `coop-pwa` can claim an advance tranche, `buyer-app` can lock, settle, and create a commitment end to end, all via Freighter. Manual QA against a real, installed Freighter extension is still outstanding — see `coop-pwa/README.md`/`buyer-app/README.md`.
 4. A background cache-refresh job, once there's a real reason to care about `GET /commitments` freshness beyond what's already been read.
 
 ---
