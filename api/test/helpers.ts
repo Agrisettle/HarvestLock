@@ -6,14 +6,17 @@ import {
   BASE_FEE,
   rpc,
   authorizeEntry,
+  xdr,
 } from "@stellar/stellar-sdk";
 import { server, networkPassphrase } from "../src/stellar/rpc.js";
 import { submitSignedTransaction, type SubmitResult } from "../src/stellar/tx.js";
 
 /**
  * Test-only helper for contract methods that need more than one party's
- * Soroban auth in a single call (currently just `cancel` — see lib.rs).
- * This does NOT belong in src/: the production API never holds a buyer/
+ * Soroban auth in a single call (`cancel` — two parties, `reassign_buyer`
+ * — three; see lib.rs). Takes optional `args` since `reassign_buyer`
+ * needs one (the new buyer) and `cancel` doesn't. This does NOT belong
+ * in src/: the production API never holds a buyer/
  * cooperative/warehouse private key (api/README.md's architecture
  * section), so it can't orchestrate multi-party signing itself — a real
  * frontend flow has each party's own wallet do this piece, one entry at a
@@ -48,13 +51,14 @@ import { submitSignedTransaction, type SubmitResult } from "../src/stellar/tx.js
 export async function submitMultiPartyCall(opts: {
   contractId: string;
   method: string;
+  args?: xdr.ScVal[];
   sourceSigner: Keypair;
   otherSigners: Keypair[];
 }): Promise<SubmitResult> {
   const account = await server.getAccount(opts.sourceSigner.publicKey());
   const contract = new Contract(opts.contractId);
   const tx = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase })
-    .addOperation(contract.call(opts.method))
+    .addOperation(contract.call(opts.method, ...(opts.args ?? [])))
     .setTimeout(60)
     .build();
 
