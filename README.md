@@ -12,10 +12,20 @@ harvest. Each member farmer's share is recorded on chain at lock-in.
 
 ## Status
 
-Pre-validation. The public site (`site/`) is built; the API and both product
-frontends are not. See `ROADMAP.md` for what happens first and in what order,
-and Open Questions in the PRD (§12) for what has to be resolved before this
-can move past testnet.
+Pre-validation, no pilot partner announced yet — but not just a spec. The
+contract, API, and both product frontends are real, tested, and testnet-
+verified for their current (deliberately partial) scope:
+
+- **Contract**: full happy-path state machine plus mutual cancellation, 30/30 tests, deployed and exercised live on testnet.
+- **`site/`**: built, public, includes a live badge reading the reference contract's real current state.
+- **`api/`**: the full lifecycle (deploy through settle, including cancel's two-party signing) builds and submits against live testnet — not mocked.
+- **`coop-pwa`/`buyer-app`**: read-only dashboards against the live API, browser-verified.
+
+None of this is "feature-complete" — see `HANDOFF.md` for the honest
+current-state breakdown (what's real vs. deliberately deferred, per
+component) and `ROADMAP.md` for what happens next and in what order. Open
+Questions in the PRD (§12) are what has to be resolved before this can move
+past testnet regardless of how much gets built.
 
 ## Repositories
 
@@ -31,9 +41,9 @@ cadence from application code. This repo is everything else.
 
 ```
 site/         Public site (React/Vite) — the project's public face, not a logged-in product surface
-api/          HarvestLock API (TypeScript/Node) — contracts, allocation, vouchers, attestation intake
-coop-pwa/     Cooperative-facing PWA (React/Vite) — offline-tolerant, phone-auth
-buyer-app/    Buyer/off-taker web app — desktop, eventual ERP integration
+api/          HarvestLock API (TypeScript/Node, Fastify) — contract lifecycle is real today; allocation/vouchers/attestation intake are planned, not built (see api/HANDOFF.md)
+coop-pwa/     Cooperative-facing dashboard (React/Vite) — read-only today; phone-auth and offline-tolerance still ahead
+buyer-app/    Buyer/off-taker dashboard (React/Vite) — read-only today; ERP integration still ahead
 docs/         PRD pointer and supporting research notes
 ```
 
