@@ -18,6 +18,12 @@ import { buildServer } from "../src/server.js";
  * once" on the second test, since every instance shares that same pool.
  */
 
+// Valid StrKey checksums (so requireValidContractId lets requests past to
+// the check each test actually means to exercise) but never deployed —
+// generated once, not meant to resolve to anything real.
+const FAKE_CONTRACT_ID = "CBCEGSHJYB7MKQ7BMWM62LXW4SV2NWNLEYJT6GLGZS3EIV7LO73AZPJI";
+const FAKE_PUBLIC_KEY = "GAJLI2MLTLHYPF4H2SCHQ7TJI6XHMHKIG6N5ZHONSTCKK4SWMGLDNLI5";
+
 let app: FastifyInstance;
 
 beforeAll(() => {
@@ -53,12 +59,41 @@ describe("server (HTTP layer)", () => {
   );
 
   it(
+    "rejects a malformed contract ID with 400, not 500",
+    async () => {
+      // The exact bug this guards against: before requireValidContractId
+      // existed, a bad contract ID reached the Stellar SDK unfiltered,
+      // which throws a plain Error with no status code -- Fastify's
+      // default handling of that is 500, which is wrong for what's
+      // unambiguously bad client input, not a server fault.
+      const res = await app.inject({ method: "GET", url: "/commitments/not-a-real-contract-id" });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().message).toMatch(/not a valid contract ID/);
+    },
+    15_000,
+  );
+
+  it(
+    "rejects a malformed refreshContractId on submit before submitting anything",
+    async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: "/transactions/submit",
+        payload: { xdr: "AAAA", refreshContractId: "not-a-real-contract-id" },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().message).toMatch(/not a valid contract ID/);
+    },
+    15_000,
+  );
+
+  it(
     "rejects an unsupported method name on the generic tx builder",
     async () => {
       const res = await app.inject({
         method: "POST",
-        url: "/commitments/CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC/tx/not_a_real_method",
-        payload: { sourcePublicKey: "GCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC" },
+        url: `/commitments/${FAKE_CONTRACT_ID}/tx/not_a_real_method`,
+        payload: { sourcePublicKey: FAKE_PUBLIC_KEY },
       });
       expect(res.statusCode).toBe(400);
       expect(res.json().error).toMatch(/unknown or unsupported method/);
@@ -71,17 +106,17 @@ describe("server (HTTP layer)", () => {
     async () => {
       const res = await app.inject({
         method: "POST",
-        url: "/commitments/CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC/tx/initialize",
+        url: `/commitments/${FAKE_CONTRACT_ID}/tx/initialize`,
         payload: {
-          buyer: "GCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
-          cooperative: "GCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
-          warehouseOperator: "GCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
-          token: "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+          buyer: FAKE_PUBLIC_KEY,
+          cooperative: FAKE_PUBLIC_KEY,
+          warehouseOperator: FAKE_PUBLIC_KEY,
+          token: FAKE_CONTRACT_ID,
           totalAmount: "1000000000",
           advance1Bps: 1500,
           advance2Bps: 2000,
           claimWindowSecs: "60",
-          sourcePublicKey: "GCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+          sourcePublicKey: FAKE_PUBLIC_KEY,
         },
       });
       expect(res.statusCode).toBe(400);
@@ -95,17 +130,17 @@ describe("server (HTTP layer)", () => {
     async () => {
       const res = await app.inject({
         method: "POST",
-        url: "/commitments/CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC/tx/initialize",
+        url: `/commitments/${FAKE_CONTRACT_ID}/tx/initialize`,
         payload: {
-          buyer: "GCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
-          cooperative: "GCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
-          warehouseOperator: "GCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
-          token: "CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+          buyer: FAKE_PUBLIC_KEY,
+          cooperative: FAKE_PUBLIC_KEY,
+          warehouseOperator: FAKE_PUBLIC_KEY,
+          token: FAKE_CONTRACT_ID,
           totalAmount: "1000000000",
           advance1Bps: 1500,
           advance2Bps: 2000,
           claimWindowSecs: String(60 * 60 * 24 * 365),
-          sourcePublicKey: "GCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+          sourcePublicKey: FAKE_PUBLIC_KEY,
         },
       });
       expect(res.statusCode).toBe(400);
