@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0B120F" />
+    <meta name="description" content="HarvestLock -- escrow infrastructure for agricultural forward contracts on Stellar." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,600;1,9..144,400&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <title>HarvestLock</title>
+    <style>
+      :root {
+        --void: #0b120f;
+        --void-raised: #121a16;
+        --void-line: #23302a;
+        --bone: #f3f1e9;
+        --bone-dim: #c9c6ba;
+        --bone-faint: #8a897f;
+        --pine: #1e6b4e;
+        --gold: #d4a937;
+        --gold-bright: #eec765;
+        --display: "Fraunces", ui-serif, Georgia, serif;
+        --body: "Inter", -apple-system, "Segoe UI", sans-serif;
+        --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 40px;
+        background: var(--void);
+        color: var(--bone);
+        font-family: var(--body);
+        -webkit-font-smoothing: antialiased;
+        padding: 24px;
+      }
+      h1 {
+        font-family: var(--display);
+        font-weight: 600;
+        font-size: 2rem;
+        margin: 0;
+        text-align: center;
+      }
+      .tag {
+        font-family: var(--mono);
+        font-size: 0.8rem;
+        color: var(--bone-faint);
+        text-align: center;
+        margin-top: -24px;
+      }
+      .apps {
+        display: flex;
+        gap: 20px;
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+      .app-card {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        width: 260px;
+        padding: 24px;
+        background: var(--void-raised);
+        border: 1px solid var(--void-line);
+        border-radius: 10px;
+        text-decoration: none;
+        color: inherit;
+        transition: border-color 0.15s ease;
+      }
+      .app-card:hover {
+        border-color: var(--pine);
+      }
+      .app-card h2 {
+        font-family: var(--display);
+        font-weight: 600;
+        font-size: 1.1rem;
+        margin: 0;
+        color: var(--gold-bright);
+      }
+      .app-card p {
+        margin: 0;
+        font-size: 0.85rem;
+        color: var(--bone-dim);
+      }
+    </style>
+  </head>
+  <body>
+    <div>
+      <h1>HarvestLock</h1>
+      <p class="tag">testnet · pick a dashboard</p>
+    </div>
+    <div class="apps">
+      <a class="app-card" href="/buyer/">
+        <h2>Buyer Dashboard</h2>
+        <p>Lock a deposit, create a commitment, settle on delivery.</p>
+      </a>
+      <a class="app-card" href="/coop/">
+        <h2>Cooperative Dashboard</h2>
+        <p>Track commitments, claim advance tranches.</p>
+      </a>
+    </div>
+  </body>
+</html>
