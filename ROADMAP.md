@@ -107,7 +107,7 @@ This does not wait on Track A's outcome (PRD §17.3) — it's needed whichever
 counterparty type you land on, and a deployed testnet contract is what
 reaches **Builder tier** for Instawards eligibility.
 
-**Live status lives in [`HarvestLock-Contracts/HANDOFF.md`](https://github.com/agrisettle/HarvestLock-Contracts/blob/main/HANDOFF.md)
+**Live status lives in [`HarvestLock-Contracts/HANDOFF.md`](https://github.com/Agrisettle/HarvestLock-Contracts/blob/main/HANDOFF.md)
 — check that file for the current as-built state, not just these
 checkboxes.** They'll drift; HANDOFF.md is maintained to stay accurate.
 
@@ -216,7 +216,7 @@ funding gate, not just an internal milestone — target them explicitly.
 - [x] Track B's escrow contract, deployed and exercised on testnet. **Done**
       — happy path only (no claimable-balance expiry, no allocation ledger,
       no real attestation-driven settlement yet; see
-      [`HarvestLock-Contracts/HANDOFF.md`](https://github.com/agrisettle/HarvestLock-Contracts/blob/main/HANDOFF.md)
+      [`HarvestLock-Contracts/HANDOFF.md`](https://github.com/Agrisettle/HarvestLock-Contracts/blob/main/HANDOFF.md)
       for exactly what that means). Contract address in that file's
       "Verified on testnet" section — treat it as a validation artifact,
       redeploy fresh rather than building on top of that specific instance.
@@ -341,7 +341,7 @@ cd /path/to/HarvestLock
 git init
 git add -A
 git commit -m "chore: scaffold repo, seed roadmap and PRD pointer"
-gh repo create agrisettle/harvestlock --public --source=. --remote=origin --push
+gh repo create Agrisettle/HarvestLock --public --source=. --remote=origin --push
 ```
 
 Replace `--public` with `--private` if you'd rather the repo not be visible

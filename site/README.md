@@ -7,7 +7,7 @@ copy standing in for a product that doesn't exist yet.
 
 Design system: dark-first, `Fraunces` (display) + `Inter` (body) +
 `IBM Plex Mono` (data/addresses), extending the Agrisettle brand palette
-from [`BRANDING.md`](https://github.com/agrisettle/.github/blob/main/BRANDING.md)
+from [`BRANDING.md`](https://github.com/Agrisettle/.github/blob/main/BRANDING.md)
 in the org profile repo.
 
 ## Running it

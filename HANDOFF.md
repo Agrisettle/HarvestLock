@@ -2,7 +2,7 @@
 
 **Read this before anything else if you're new here** — human or AI agent. It exists so anyone can pick up exactly where this stopped, without re-deriving decisions someone already made. Update it whenever you finish a work session — a stale HANDOFF.md actively misleads the next person, which is worse than no HANDOFF.md at all.
 
-This file covers the whole project. The Soroban contract has its own, more detailed handoff at [`HarvestLock-Contracts/HANDOFF.md`](https://github.com/agrisettle/HarvestLock-Contracts/blob/main/HANDOFF.md) — read that one too if you're touching the contract specifically; this file won't duplicate its level of detail.
+This file covers the whole project. The Soroban contract has its own, more detailed handoff at [`HarvestLock-Contracts/HANDOFF.md`](https://github.com/Agrisettle/HarvestLock-Contracts/blob/main/HANDOFF.md) — read that one too if you're touching the contract specifically; this file won't duplicate its level of detail.
 
 ---
 
