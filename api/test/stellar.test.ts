@@ -447,7 +447,7 @@ describe("stellar/deploy (live testnet writes)", () => {
   );
 });
 
-describe("staged multi-party cancel (propose / sign / finalize, live testnet + real HTTP layer)", () => {
+describe("staged multi-party proposals (propose / sign / finalize, live testnet + real HTTP layer)", () => {
   // Own Fastify instance for this describe block specifically -- the only
   // place in this file that needs the HTTP layer (server.test.ts covers
   // validation-only routes without touching the network; every other test
@@ -538,7 +538,7 @@ describe("staged multi-party cancel (propose / sign / finalize, live testnet + r
       const signedEntryXdr = await simulateFreighterSignAuthEntry(proposal.pending_entries[0].entry_xdr, cooperative);
       const signRes = await app.inject({
         method: "POST",
-        url: `/commitments/${contractId}/tx/cancel/propose/${proposal.id}/sign`,
+        url: `/commitments/${contractId}/tx/propose/${proposal.id}/sign`,
         payload: { signerPublicKey: cooperative.publicKey(), signedEntryXdr },
       });
       expect(signRes.statusCode).toBe(200);
@@ -551,7 +551,7 @@ describe("staged multi-party cancel (propose / sign / finalize, live testnet + r
       // left pending for that address.
       const doubleSignRes = await app.inject({
         method: "POST",
-        url: `/commitments/${contractId}/tx/cancel/propose/${proposal.id}/sign`,
+        url: `/commitments/${contractId}/tx/propose/${proposal.id}/sign`,
         payload: { signerPublicKey: cooperative.publicKey(), signedEntryXdr },
       });
       expect(doubleSignRes.statusCode).toBe(400);
@@ -574,6 +574,126 @@ describe("staged multi-party cancel (propose / sign / finalize, live testnet + r
       // The proposal is completed, not lingering as "ready" for a future
       // viewer to trip over.
       const afterCompleteRes = await app.inject({ method: "GET", url: `/commitments/${contractId}/tx/cancel/propose` });
+      expect(afterCompleteRes.json().proposal).toBeNull();
+    },
+    180_000,
+  );
+
+  it(
+    "reassign_buyer: outgoing buyer proposes, cooperative and incoming buyer each sign their own entry, buyer finalizes -- actually changes the buyer",
+    async () => {
+      // Three parties, not two -- reassign_buyer needs the outgoing
+      // buyer's, the cooperative's, AND the incoming buyer's auth (see
+      // lib.rs's doc comment for why one more than the PRD line alone
+      // implies). The outgoing buyer is the proposer/source here, per
+      // server.ts's rule that only the current buyer may propose a
+      // reassignment -- so this proposal has TWO pending entries
+      // (cooperative, incoming buyer), not cancel's one.
+      const outgoingBuyer = Keypair.random();
+      const cooperative = Keypair.random();
+      const incomingBuyer = Keypair.random();
+      await Promise.all([
+        fundTestnetAccount(outgoingBuyer.publicKey()),
+        fundTestnetAccount(cooperative.publicKey()),
+        fundTestnetAccount(incomingBuyer.publicKey()),
+      ]);
+
+      const contractId = await deployContractInstance();
+      const initXdr = await buildInvokeTransaction({
+        contractId,
+        method: "initialize",
+        sourcePublicKey: outgoingBuyer.publicKey(),
+        args: initializeArgs({
+          buyer: outgoingBuyer.publicKey(),
+          cooperative: cooperative.publicKey(),
+          warehouseOperator: outgoingBuyer.publicKey(),
+          token: PLACEHOLDER_TOKEN,
+          totalAmount: 1_000_000_000n,
+          advance1Bps: 1500,
+          advance2Bps: 2000,
+          claimWindowSecs: 3600n,
+          remainderWindowSecs: 3600n,
+          deliveryWindowSecs: 86_400n,
+        }),
+      });
+      const initTx = TransactionBuilder.fromXDR(initXdr, networkPassphrase);
+      initTx.sign(outgoingBuyer);
+      await submitSignedTransaction(initTx.toXDR());
+
+      // An unrelated third party -- not the current buyer -- can't
+      // propose a reassignment on someone else's commitment.
+      const unrelatedThirdParty = Keypair.random();
+      const rejectedProposeRes = await app.inject({
+        method: "POST",
+        url: `/commitments/${contractId}/tx/reassign-buyer/propose`,
+        payload: { proposerPublicKey: unrelatedThirdParty.publicKey(), newBuyer: incomingBuyer.publicKey() },
+      });
+      expect(rejectedProposeRes.statusCode).toBe(403);
+      // The cooperative can't propose it either -- reassignment is
+      // specifically the outgoing buyer's own decision to initiate (see
+      // server.ts's route comment), unlike cancel which either party can.
+      const rejectedCoopProposeRes = await app.inject({
+        method: "POST",
+        url: `/commitments/${contractId}/tx/reassign-buyer/propose`,
+        payload: { proposerPublicKey: cooperative.publicKey(), newBuyer: incomingBuyer.publicKey() },
+      });
+      expect(rejectedCoopProposeRes.statusCode).toBe(403);
+
+      const proposeRes = await app.inject({
+        method: "POST",
+        url: `/commitments/${contractId}/tx/reassign-buyer/propose`,
+        payload: { proposerPublicKey: outgoingBuyer.publicKey(), newBuyer: incomingBuyer.publicKey() },
+      });
+      expect(proposeRes.statusCode).toBe(201);
+      const proposal = proposeRes.json();
+      expect(proposal.status).toBe("pending");
+      expect(proposal.method).toBe("reassign_buyer");
+      const pendingAddresses = proposal.pending_entries.map((e: { address: string }) => e.address).sort();
+      expect(pendingAddresses).toEqual([cooperative.publicKey(), incomingBuyer.publicKey()].sort());
+
+      // Cooperative signs their entry first.
+      const coopEntry = proposal.pending_entries.find((e: { address: string }) => e.address === cooperative.publicKey());
+      const coopSignedEntryXdr = await simulateFreighterSignAuthEntry(coopEntry.entry_xdr, cooperative);
+      const afterCoopSignRes = await app.inject({
+        method: "POST",
+        url: `/commitments/${contractId}/tx/propose/${proposal.id}/sign`,
+        payload: { signerPublicKey: cooperative.publicKey(), signedEntryXdr: coopSignedEntryXdr },
+      });
+      expect(afterCoopSignRes.statusCode).toBe(200);
+      expect(afterCoopSignRes.json().status).toBe("pending"); // one entry still outstanding
+
+      // Incoming buyer signs the remaining entry -- now every non-source
+      // party has acted, so this call is what flips it to ready.
+      const newBuyerEntry = afterCoopSignRes.json().pending_entries[0];
+      const newBuyerSignedEntryXdr = await simulateFreighterSignAuthEntry(newBuyerEntry.entry_xdr, incomingBuyer);
+      const afterBothSignRes = await app.inject({
+        method: "POST",
+        url: `/commitments/${contractId}/tx/propose/${proposal.id}/sign`,
+        payload: { signerPublicKey: incomingBuyer.publicKey(), signedEntryXdr: newBuyerSignedEntryXdr },
+      });
+      expect(afterBothSignRes.statusCode).toBe(200);
+      const ready = afterBothSignRes.json();
+      expect(ready.status).toBe("ready");
+      expect(ready.pending_entries).toHaveLength(0);
+
+      // Outgoing buyer finalizes.
+      const finalTx = TransactionBuilder.fromXDR(ready.ready_xdr, networkPassphrase);
+      finalTx.sign(outgoingBuyer);
+      const submitRes = await app.inject({
+        method: "POST",
+        url: "/transactions/submit",
+        payload: { xdr: finalTx.toXDR(), refreshContractId: contractId, completeProposalId: proposal.id },
+      });
+      expect(submitRes.statusCode).toBe(200);
+      expect(submitRes.json().status).toBe("SUCCESS");
+
+      // The functional proof, not just "submission succeeded": the buyer
+      // field genuinely changed, read back fresh from chain.
+      const commitment = await getCommitment(contractId);
+      expect(commitment.buyer).toBe(incomingBuyer.publicKey());
+      expect(commitment.buyer).not.toBe(outgoingBuyer.publicKey());
+
+      const afterCompleteRes = await app.inject({ method: "GET", url: `/commitments/${contractId}/tx/reassign-buyer/propose` });
       expect(afterCompleteRes.json().proposal).toBeNull();
     },
     180_000,

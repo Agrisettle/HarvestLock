@@ -3,8 +3,8 @@ import { server, networkPassphrase } from "./rpc.js";
 import { withRetry } from "./retry.js";
 
 /**
- * Builds the pieces needed to stage a multi-party contract call (currently
- * only `cancel`, see server.ts) across separate HTTP requests from
+ * Builds the pieces needed to stage a multi-party contract call (`cancel`
+ * and `reassign_buyer`, see server.ts) across separate HTTP requests from
  * separate parties' wallets, instead of one script holding every key the
  * way `test/helpers.ts`'s `submitMultiPartyCall` does for tests.
  *
@@ -90,11 +90,13 @@ export async function buildMultiPartyProposal(opts: {
   contractId: string;
   method: string;
   sourcePublicKey: string;
+  /** e.g. reassign_buyer's new_buyer address. Omit for a no-arg method like cancel. */
+  args?: xdr.ScVal[];
 }): Promise<ProposalPieces> {
   const account = await withRetry(() => server.getAccount(opts.sourcePublicKey));
   const contract = new Contract(opts.contractId);
   const tx = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase })
-    .addOperation(contract.call(opts.method))
+    .addOperation(contract.call(opts.method, ...(opts.args ?? [])))
     .setTimeout(60)
     .build();
 

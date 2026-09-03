@@ -16,8 +16,8 @@ import {
   signProposalEntry,
   markReady,
   markCompleted,
-  type PendingCancellationRow,
-} from "./db/pendingCancellations.js";
+  type PendingMultisigProposal,
+} from "./db/pendingMultisigProposals.js";
 
 /**
  * Every route below takes a contract ID at some point. Before this
@@ -146,22 +146,23 @@ const MAX_REMAINDER_WINDOW_SECS = 60 * 60 * 24 * 30;
 const MIN_DELIVERY_WINDOW_SECS = 60 * 60 * 24;
 const MAX_DELIVERY_WINDOW_SECS = 60 * 60 * 24 * 365;
 
-// How long a proposed cancellation stays open for the other party to sign
-// before a fresh one can be proposed instead. Generous, matching the
-// ~24-hour ledger-sequence window multiParty.ts already sets on the auth
-// entries themselves (VALID_LEDGERS_AHEAD) -- the two should stay roughly
-// in sync, since an "active" Postgres row referencing already-expired
+// How long a proposal stays open for the other parties to sign before a
+// fresh one can be proposed instead. Generous, matching the ~24-hour
+// ledger-sequence window multiParty.ts already sets on the auth entries
+// themselves (VALID_LEDGERS_AHEAD) -- the two should stay roughly in
+// sync, since an "active" Postgres row referencing already-expired
 // on-chain auth entries would be pointless.
-const PENDING_CANCELLATION_TTL_MS = 24 * 60 * 60 * 1000;
+const MULTISIG_PROPOSAL_TTL_MS = 24 * 60 * 60 * 1000;
 
-/** Public shape of a pending-cancellation proposal -- hides internal fields (func/sorobanData XDR, already-signed entries) a client never needs. */
-function serializeProposal(row: PendingCancellationRow) {
+/** Public shape of a multisig proposal -- hides internal fields (func/sorobanData XDR, already-signed entries) a client never needs. */
+function serializeProposal(row: PendingMultisigProposal) {
   const pendingEntries = row.auth_entries
     .filter((e) => e.address !== null && e.signedEntryXdr === null)
     .map((e) => ({ address: e.address, entry_xdr: e.entryXdr }));
   return {
     id: row.id,
     contract_id: row.contract_id,
+    method: row.method,
     proposer_address: row.proposer_address,
     status: row.status,
     pending_entries: pendingEntries,
@@ -298,14 +299,20 @@ export function buildServer() {
     },
   );
 
-  // Staged multi-party signing for cancel() -- see src/stellar/multiParty.ts
-  // and db/pendingCancellations.ts for the mechanism and schema. Either
-  // party (buyer or cooperative) can propose; the OTHER party signs their
-  // own auth entry via their own wallet (Freighter's signAuthEntry, not
+  // Staged multi-party signing -- see src/stellar/multiParty.ts and
+  // db/pendingMultisigProposals.ts for the mechanism and schema. One
+  // party proposes; the OTHER non-source parties each sign their own
+  // auth entry via their own wallet (Freighter's signAuthEntry, not
   // signTransaction -- this is a single auth entry, not a whole tx) in a
   // separate request, at a separate time, from a separate device. Once
-  // ready, the proposer signs the final XDR through the *existing*
-  // sign -> /transactions/submit path below -- nothing new needed there.
+  // every entry is signed, the proposer signs the final XDR through the
+  // *existing* sign -> /transactions/submit path below -- nothing new
+  // needed there. `cancel` (two parties) and `reassign_buyer` (three)
+  // both use this same mechanism; the sign step is fully method-agnostic
+  // (a proposalId already uniquely identifies which method/table row is
+  // involved), only propose/read need a route per method, since each
+  // takes different arguments and has different "who's allowed to
+  // propose" rules.
   app.post<{ Params: { contractId: string }; Body: { proposerPublicKey: string } }>(
     "/commitments/:contractId/tx/cancel/propose",
     async (req, reply) => {
@@ -313,7 +320,7 @@ export function buildServer() {
       requireValidContractId(contractId);
       requireValidPublicKey(req.body.proposerPublicKey, "proposerPublicKey");
 
-      const existing = await findActiveProposal(contractId);
+      const existing = await findActiveProposal(contractId, "cancel");
       if (existing) {
         return reply.code(200).send(serializeProposal(existing));
       }
@@ -330,39 +337,89 @@ export function buildServer() {
       });
       const row = await createProposal({
         contractId,
+        method: "cancel",
         proposerAddress: req.body.proposerPublicKey,
         funcXdr: pieces.funcXdr,
         sorobanDataXdr: pieces.sorobanDataXdr,
         entries: pieces.entries.map((e) => ({ address: e.address, entryXdr: e.entryXdr, signedEntryXdr: null })),
-        expiresAt: new Date(Date.now() + PENDING_CANCELLATION_TTL_MS),
+        expiresAt: new Date(Date.now() + MULTISIG_PROPOSAL_TTL_MS),
       });
       return reply.code(201).send(serializeProposal(row));
     },
   );
 
-  // The active proposal for a contract, if any -- what a viewer's UI polls
-  // to show "X wants to cancel this commitment, approve?" or "waiting on
-  // the other party" or "ready to finalize."
+  // The active cancel proposal for a contract, if any -- what a viewer's
+  // UI polls to show "X wants to cancel this commitment, approve?" or
+  // "waiting on the other party" or "ready to finalize."
   app.get<{ Params: { contractId: string } }>("/commitments/:contractId/tx/cancel/propose", async (req) => {
     requireValidContractId(req.params.contractId);
-    const proposal = await findActiveProposal(req.params.contractId);
+    const proposal = await findActiveProposal(req.params.contractId, "cancel");
+    return { proposal: proposal ? serializeProposal(proposal) : null };
+  });
+
+  // reassign_buyer's propose route: same shape as cancel's, but the
+  // proposer must specifically be the CURRENT (outgoing) buyer -- unlike
+  // cancel, which either party can initiate, reassignment is fundamentally
+  // the outgoing buyer's own decision to give up the position (PRD §4.8:
+  // "with cooperative consent," not "cooperative-initiated"). Takes
+  // newBuyer since reassign_buyer, unlike cancel, needs an argument.
+  app.post<{ Params: { contractId: string }; Body: { proposerPublicKey: string; newBuyer: string } }>(
+    "/commitments/:contractId/tx/reassign-buyer/propose",
+    async (req, reply) => {
+      const { contractId } = req.params;
+      requireValidContractId(contractId);
+      requireValidPublicKey(req.body.proposerPublicKey, "proposerPublicKey");
+      requireValidPublicKey(req.body.newBuyer, "newBuyer");
+
+      const existing = await findActiveProposal(contractId, "reassign_buyer");
+      if (existing) {
+        return reply.code(200).send(serializeProposal(existing));
+      }
+
+      const commitment = await getCommitment(contractId);
+      if (req.body.proposerPublicKey !== commitment.buyer) {
+        throw new ForbiddenError(`proposerPublicKey must be the commitment's current buyer to propose reassigning it`);
+      }
+
+      const pieces = await buildMultiPartyProposal({
+        contractId,
+        method: "reassign_buyer",
+        sourcePublicKey: req.body.proposerPublicKey,
+        args: [new Address(req.body.newBuyer).toScVal()],
+      });
+      const row = await createProposal({
+        contractId,
+        method: "reassign_buyer",
+        proposerAddress: req.body.proposerPublicKey,
+        funcXdr: pieces.funcXdr,
+        sorobanDataXdr: pieces.sorobanDataXdr,
+        entries: pieces.entries.map((e) => ({ address: e.address, entryXdr: e.entryXdr, signedEntryXdr: null })),
+        expiresAt: new Date(Date.now() + MULTISIG_PROPOSAL_TTL_MS),
+      });
+      return reply.code(201).send(serializeProposal(row));
+    },
+  );
+
+  app.get<{ Params: { contractId: string } }>("/commitments/:contractId/tx/reassign-buyer/propose", async (req) => {
+    requireValidContractId(req.params.contractId);
+    const proposal = await findActiveProposal(req.params.contractId, "reassign_buyer");
     return { proposal: proposal ? serializeProposal(proposal) : null };
   });
 
   app.post<{
     Params: { contractId: string; proposalId: string };
     Body: { signerPublicKey: string; signedEntryXdr: string };
-  }>("/commitments/:contractId/tx/cancel/propose/:proposalId/sign", async (req) => {
+  }>("/commitments/:contractId/tx/propose/:proposalId/sign", async (req) => {
     const { contractId, proposalId } = req.params;
     requireValidContractId(contractId);
     requireValidPublicKey(req.body.signerPublicKey, "signerPublicKey");
 
     const proposal = await getProposalById(proposalId);
     if (!proposal || proposal.contract_id !== contractId) {
-      throw new BadRequestError(`no pending cancellation proposal ${proposalId} for contract ${contractId}`);
+      throw new BadRequestError(`no pending proposal ${proposalId} for contract ${contractId}`);
     }
     if (new Date(proposal.expires_at).getTime() <= Date.now()) {
-      throw new BadRequestError(`proposal ${proposalId} has expired -- propose a fresh cancellation`);
+      throw new BadRequestError(`proposal ${proposalId} has expired -- propose a fresh one`);
     }
     if (proposal.status !== "pending") {
       throw new BadRequestError(`proposal ${proposalId} is already ${proposal.status}, not awaiting a signature`);
@@ -370,7 +427,7 @@ export function buildServer() {
 
     const result = await signProposalEntry(proposalId, req.body.signerPublicKey, req.body.signedEntryXdr);
     if (result.outcome === "not_found") {
-      throw new BadRequestError(`no pending cancellation proposal ${proposalId}`);
+      throw new BadRequestError(`no pending proposal ${proposalId}`);
     }
     if (result.outcome === "no_matching_pending_entry") {
       throw new BadRequestError(
@@ -418,7 +475,7 @@ export function buildServer() {
       // funds-moving submission above already succeeded.
       if (req.body.completeProposalId) {
         await markCompleted(req.body.completeProposalId).catch((err: unknown) => {
-          req.log.warn({ err }, "failed to mark cancellation proposal completed");
+          req.log.warn({ err }, "failed to mark multisig proposal completed");
         });
       }
       return result;

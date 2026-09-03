@@ -410,15 +410,67 @@ describe("server (HTTP layer)", () => {
   );
 
   it(
+    "rejects a malformed contract ID on reassign-buyer/propose before touching the network",
+    async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: "/commitments/not-a-real-contract-id/tx/reassign-buyer/propose",
+        payload: { proposerPublicKey: FAKE_PUBLIC_KEY, newBuyer: FAKE_PUBLIC_KEY },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().message).toMatch(/not a valid contract ID/);
+    },
+    15_000,
+  );
+
+  it(
+    "rejects a malformed proposerPublicKey on reassign-buyer/propose before touching the network",
+    async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: `/commitments/${FAKE_CONTRACT_ID}/tx/reassign-buyer/propose`,
+        payload: { proposerPublicKey: "not-a-real-address", newBuyer: FAKE_PUBLIC_KEY },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().message).toMatch(/proposerPublicKey is not a valid public key/);
+    },
+    15_000,
+  );
+
+  it(
+    "rejects a malformed newBuyer on reassign-buyer/propose before touching the network",
+    async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: `/commitments/${FAKE_CONTRACT_ID}/tx/reassign-buyer/propose`,
+        payload: { proposerPublicKey: FAKE_PUBLIC_KEY, newBuyer: "not-a-real-address" },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().message).toMatch(/newBuyer is not a valid public key/);
+    },
+    15_000,
+  );
+
+  it(
+    "GET reassign-buyer/propose returns no active proposal for a contract that's never had one",
+    async () => {
+      const res = await app.inject({ method: "GET", url: `/commitments/${FAKE_CONTRACT_ID}/tx/reassign-buyer/propose` });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ proposal: null });
+    },
+    15_000,
+  );
+
+  it(
     "rejects signing a proposal that doesn't exist",
     async () => {
       const res = await app.inject({
         method: "POST",
-        url: `/commitments/${FAKE_CONTRACT_ID}/tx/cancel/propose/00000000-0000-0000-0000-000000000000/sign`,
+        url: `/commitments/${FAKE_CONTRACT_ID}/tx/propose/00000000-0000-0000-0000-000000000000/sign`,
         payload: { signerPublicKey: FAKE_PUBLIC_KEY, signedEntryXdr: "AAAA" },
       });
       expect(res.statusCode).toBe(400);
-      expect(res.json().message).toMatch(/no pending cancellation proposal/);
+      expect(res.json().message).toMatch(/no pending proposal/);
     },
     15_000,
   );
@@ -428,7 +480,7 @@ describe("server (HTTP layer)", () => {
     async () => {
       const res = await app.inject({
         method: "POST",
-        url: `/commitments/${FAKE_CONTRACT_ID}/tx/cancel/propose/00000000-0000-0000-0000-000000000000/sign`,
+        url: `/commitments/${FAKE_CONTRACT_ID}/tx/propose/00000000-0000-0000-0000-000000000000/sign`,
         payload: { signerPublicKey: "not-a-real-address", signedEntryXdr: "AAAA" },
       });
       expect(res.statusCode).toBe(400);
