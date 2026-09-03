@@ -147,7 +147,8 @@ the system. `GET /parties/:address/standing` exposes the read side.
 | POST | `/commitments/deploy` | Deploys a fresh, uninitialized escrow contract instance. Deployer-paid, no party auth. |
 | POST | `/commitments/:contractId/tx/initialize` | Builds unsigned `initialize` XDR. Must be signed by the intended buyer. Address fields are validated (`StrKey`) before building. |
 | POST | `/commitments/:contractId/tx/reassign-buyer` | Builds unsigned `reassign_buyer` XDR. Needs three-party auth — see above. |
-| POST | `/commitments/:contractId/tx/:method` | Builds unsigned XDR for any no-argument lifecycle method (`lock`, `release_advance_1/2`, `claim_advance_1/2`, `reclaim_advance_1/2`, `mark_checkpoint`, `confirm_delivery`, `settle`, `cancel`, `ready_for_delivery`, `fund_remainder`, `expire_remainder_window`, `reclaim_on_nondelivery`). `cancel` needs two-party auth — see above, not just a second signature on the same XDR. The four two-phase-funding/forfeiture additions are all single-signer or fully permissionless, so they need nothing extra — see below. |
+| POST | `/commitments/:contractId/tx/confirm-delivery` | Builds unsigned `confirm_delivery` XDR. Takes `deliveredQuantity`/`gradeIndex` (PRD §7 shortfall/grade adjustment — see below). Single-signer (warehouse operator). |
+| POST | `/commitments/:contractId/tx/:method` | Builds unsigned XDR for any no-argument lifecycle method (`lock`, `release_advance_1/2`, `claim_advance_1/2`, `reclaim_advance_1/2`, `mark_checkpoint`, `settle`, `cancel`, `ready_for_delivery`, `fund_remainder`, `expire_remainder_window`, `reclaim_on_nondelivery`). `cancel` needs two-party auth — see above, not just a second signature on the same XDR. The four two-phase-funding/forfeiture additions are all single-signer or fully permissionless, so they need nothing extra — see below. |
 | POST | `/commitments/:contractId/tx/cancel/propose` | Proposes (or, idempotently, returns the already-active) staged multi-party cancellation. Buyer or cooperative may propose. See above. |
 | GET | `/commitments/:contractId/tx/cancel/propose` | The active cancel proposal for a contract, if any — what a viewer's UI polls. |
 | POST | `/commitments/:contractId/tx/reassign-buyer/propose` | Proposes (or, idempotently, returns the already-active) staged multi-party reassignment. Only the *current* buyer may propose. Takes `newBuyer`. See above. |
@@ -157,6 +158,25 @@ the system. `GET /parties/:address/standing` exposes the read side.
 | GET | `/commitments/:contractId` | Live read straight from chain (source of truth), refreshes the cache as a side effect. Also applies any reputation consequence from a fresh transition into `Defaulted`/`Forfeited` — see above. |
 | GET | `/commitments` | Lists the Postgres-cached mirror — the only way to list commitments at all, since the chain has no such query. |
 | GET | `/parties/:address/standing` | A party's current reputation: strike count, whether they're barred, and why. Returns a clean default (not 404) for an address with no history. |
+
+### Shortfall/grade adjustment (PRD §7)
+
+`initialize` now also takes `contractedQuantity` (a plain number — kg,
+or whatever unit the parties agree on off-chain) and `gradePriceBps`
+(a pre-agreed grade -> price-multiplier table, in basis points of the
+full unit price; index 0 is the top grade). Both are mirrored exactly
+from `lib.rs`'s own validation (positive quantity, non-empty schedule,
+every entry <= 10_000) — no extra API-level narrowing the way the
+three window values get, since there's no business judgment call on
+top of what the contract itself already enforces.
+
+`confirm-delivery` takes `deliveredQuantity`/`gradeIndex`; the contract
+computes `settlement_bps` (the combined quantity x grade multiplier)
+and `settle` pays the cooperative only what's still owed against it —
+already-claimed advances are never clawed back, and the buyer gets
+back whatever of the funded remainder isn't owed as a shortfall
+refund. See `HarvestLock-Contracts/HANDOFF.md`'s Deployment 6 entry for
+the exact math, live-verified on testnet.
 
 ## Setup
 
@@ -247,9 +267,5 @@ doesn't give on its own.
   there's no inbox automation or reinstatement workflow here yet,
   deliberately — matches this project's bias against over-building ahead
   of real usage.
-- `reassign_buyer`'s multi-party UX — only `cancel` got the staged
-  propose/sign/finalize treatment above. The same mechanism would extend
-  to `reassign_buyer`'s three-party case, but nothing's built for it yet.
-
 See `../TASKS.md` for the full, current backlog and `../HANDOFF.md` for
 project-wide state.

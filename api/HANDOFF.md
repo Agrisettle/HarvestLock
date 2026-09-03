@@ -52,10 +52,27 @@ During `coop-pwa`'s browser check, one `GET /commitments/:contractId` call faile
 4. ~~A "Cancel this commitment" UI in `coop-pwa` and `buyer-app`~~ — **done**: `CancelSection.tsx` in both apps, propose/approve/finalize, `wallet.ts` gained `signAuthEntry`. See both apps' READMEs.
 5. ~~The same staged-signing treatment for `reassign_buyer`~~ — **done, API side**: see above.
 6. ~~A "Propose reassignment" UI in `coop-pwa` and `buyer-app`~~ — **done**: `ReassignBuyerSection.tsx` in both apps, same propose/approve/finalize shape as `CancelSection.tsx` generalized to a form (new buyer's address) and two pending signers. See both apps' READMEs.
-7. A background cache-refresh job, once there's a real reason to care about `GET /commitments`/reputation freshness beyond what's already been read.
+7. ~~Real attestation-driven settlement (PRD §7 shortfall/grade adjustment)~~ — **done, API side**: `POST .../tx/confirm-delivery` (new route, `deliveredQuantity`/`gradeIndex`), `initialize` gained `contractedQuantity`/`gradePriceBps`. See the endpoints table above and `HarvestLock-Contracts/HANDOFF.md`'s Deployment 6.
+8. A background cache-refresh job, once there's a real reason to care about `GET /commitments`/reputation freshness beyond what's already been read.
 
 ---
-*Last updated: 3 Sept 2026 — generalized the staged multi-party
+*Last updated: 3 Sept 2026 — wired the contract's PRD §7 shortfall/grade
+adjustment schedule (`HarvestLock-Contracts` Deployment 6) into the API:
+`initialize` gained `contractedQuantity`/`gradePriceBps` (mirrored
+exactly from `lib.rs`'s own validation — positive quantity, non-empty
+schedule, every entry <= 10_000, no extra API-level narrowing since
+there's no business judgment call on top of what the contract already
+enforces). `confirm_delivery` moved out of `NO_ARG_METHODS` into its own
+route (`POST .../tx/confirm-delivery`, `deliveredQuantity`/`gradeIndex`)
+— same reason `initialize`/`reassign_buyer` already have their own
+routes, once a method takes arguments the generic no-arg builder can't
+serve it. Single-signer (warehouse operator only), no multi-party
+staging needed. `stellar.test.ts`'s existing two-phase-funding scenario
+updated to pass real args through `confirm_delivery` instead of none;
+6 new validation tests in `server.test.ts`. `ESCROW_WASM_HASH` bumped
+to the new deployment's hash in both `.env` and the root `render.yaml`
+blueprint.
+Prior entry: generalized the staged multi-party
 propose/sign/finalize mechanism from `cancel`-only to also cover
 `reassign_buyer`'s three-party case (`src/db/pendingMultisigProposals.ts`,
 migration `004_generalize_multisig_proposals.sql`, renaming
