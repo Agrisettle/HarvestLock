@@ -113,5 +113,27 @@ been manually verified, only the component logic against a mocked one —
 the API side of this flow *has* been verified live end to end (see
 `api/HANDOFF.md`).
 
+**Propose reassignment** (`src/components/ReassignBuyerSection.tsx`,
+added 3 Sept 2026): the same staged propose/sign/finalize shape as
+`CancelSection.tsx`, for `reassign_buyer()` — see `api/HANDOFF.md`. Two
+real differences: only the commitment's *current* buyer may propose (the
+API rejects anyone else with 403, per PRD §4.8 framing reassignment as
+the outgoing buyer's own decision), so the propose step here is a form
+collecting the new buyer's address rather than a bare button; and there
+are two pending signers, not one — the cooperative and the incoming
+buyer. The incoming buyer isn't a party to the commitment at all until
+they view it with a pending proposal — they're identified purely by
+appearing in the fetched proposal's `pending_entries`, which stops
+naming them the moment they've signed (the API only lists still-unsigned
+entries). `justApproved` is local, per-session component state that
+keeps a signer in the "waiting" state after they act without needing the
+server to remember who they were; this deliberately doesn't survive a
+page reload — an acknowledged gap, not an oversight. Rendered inside
+`CommitmentDetail` for any reassignable status (same range as `cancel`'s)
+when the connected wallet is the current buyer or a pending signer;
+hidden otherwise. 7 new component tests, same conventions as
+`CancelSection.test.tsx`'s. Same Freighter-extension honesty note as
+every write action here applies — see above.
+
 **Deferred**: auth, ERP integration (see above) — neither exists yet,
 don't assume it does.

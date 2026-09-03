@@ -99,6 +99,22 @@ exists in this environment, so `signAuthEntry`'s actual on-extension
 behavior hasn't been manually verified — the API side of this flow *has*
 been verified live end to end (see `api/HANDOFF.md`).
 
+**Propose reassignment** (`src/components/ReassignBuyerSection.tsx`,
+added 3 Sept 2026): the same staged propose/sign/finalize shape as
+`CancelSection.tsx`, for `reassign_buyer()` — see `api/HANDOFF.md`. Two
+real differences: only the commitment's *current* buyer may propose (the
+API rejects anyone else with 403, per PRD §4.8), so this app — where the
+cooperative is the connected party, never the buyer — only ever sees the
+*approve* side of the flow, never the propose form; and there are two
+pending signers, not one (cooperative and incoming buyer). `justApproved`
+is local, per-session component state that keeps a signer in the
+"waiting" state after they approve, since the API's `pending_entries`
+stops naming a signer once they've signed — deliberately doesn't survive
+a page reload, an acknowledged gap. Identical to `buyer-app`'s copy of
+this component — same small-duplication call as `CancelSection.tsx`'s.
+7 new component tests, same conventions as `CancelSection.test.tsx`'s.
+Same Freighter-extension honesty note as the action above applies.
+
 **Deferred, per `TASKS.md`**:
 - Phone-based auth (PRD §4.6) — needs the API's identity/session model decided first. Freighter is a stand-in, not this.
 - Offline-tolerant queue for depot connectivity loss (PRD §7/§16.3).

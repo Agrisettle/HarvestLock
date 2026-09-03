@@ -46,12 +46,12 @@ During `coop-pwa`'s browser check, one `GET /commitments/:contractId` call faile
 
 ## Next steps, in priority order
 
-1. A "Propose reassignment" UI in `coop-pwa` and `buyer-app` — the API side is done and live-tested (see above), `wallet.ts` already has `signAuthEntry` from the `cancel` UI work; what's missing is a form for the new buyer's address plus a propose/approve/finalize UI, likely reusing large parts of `CancelSection.tsx`'s shape.
-2. The appeals process's actual reinstatement path — today it's "email a human, they update `party_standing` by hand." Fine for zero real users; revisit once there's a first real appeal to learn from.
-3. Allocation-ledger schema + salt-scheme decision (blocks `allocation_members`, blocks a real off-chain identity map).
-4. ~~A real write action in a frontend~~ — **done**: `coop-pwa` can claim an advance tranche, `buyer-app` can lock, settle, and create a commitment end to end, all via Freighter. Manual QA against a real, installed Freighter extension is still outstanding — see `coop-pwa/README.md`/`buyer-app/README.md`.
-5. ~~A "Cancel this commitment" UI in `coop-pwa` and `buyer-app`~~ — **done**: `CancelSection.tsx` in both apps, propose/approve/finalize, `wallet.ts` gained `signAuthEntry`. See both apps' READMEs.
-6. ~~The same staged-signing treatment for `reassign_buyer`~~ — **done, API side**: see above. Frontend is item 1.
+1. The appeals process's actual reinstatement path — today it's "email a human, they update `party_standing` by hand." Fine for zero real users; revisit once there's a first real appeal to learn from.
+2. Allocation-ledger schema + salt-scheme decision (blocks `allocation_members`, blocks a real off-chain identity map).
+3. ~~A real write action in a frontend~~ — **done**: `coop-pwa` can claim an advance tranche, `buyer-app` can lock, settle, and create a commitment end to end, all via Freighter. Manual QA against a real, installed Freighter extension is still outstanding — see `coop-pwa/README.md`/`buyer-app/README.md`.
+4. ~~A "Cancel this commitment" UI in `coop-pwa` and `buyer-app`~~ — **done**: `CancelSection.tsx` in both apps, propose/approve/finalize, `wallet.ts` gained `signAuthEntry`. See both apps' READMEs.
+5. ~~The same staged-signing treatment for `reassign_buyer`~~ — **done, API side**: see above.
+6. ~~A "Propose reassignment" UI in `coop-pwa` and `buyer-app`~~ — **done**: `ReassignBuyerSection.tsx` in both apps, same propose/approve/finalize shape as `CancelSection.tsx` generalized to a form (new buyer's address) and two pending signers. See both apps' READMEs.
 7. A background cache-refresh job, once there's a real reason to care about `GET /commitments`/reputation freshness beyond what's already been read.
 
 ---
@@ -76,6 +76,20 @@ layer proving both the propose-rejection rule (cooperative's own
 attempt rejected, not just an unrelated party's) and the end-to-end
 propose → cooperative signs → incoming buyer signs → finalize → submit
 → buyer-actually-changed loop on real testnet.
+*Addendum, later same day: frontend UI followed* — `ReassignBuyerSection.tsx`
+in both `coop-pwa` and `buyer-app` (identical, same convention as
+`CancelSection.tsx`), reusing `signAuthEntry`/`signTransactionXdr` from
+`wallet.ts`. Two real differences from `CancelSection.tsx`'s shape: the
+propose step is a form (collects the new buyer's address, since only the
+current buyer may propose) rather than a bare button, and there are two
+pending signers instead of one. `justApproved` local component state
+covers a real gap — the API's `pending_entries` stops naming a signer
+once they've signed, so without it a signer who'd just approved would
+appear to drop out of the flow entirely; not solved for page-reload
+recovery, a deliberate, documented gap. 7 new component tests each app;
+both apps' `App.test.tsx` fetch-mock chains updated for the new
+component's background poll, same fix shape `CancelSection`'s rollout
+needed. See both apps' READMEs and `TASKS.md`.
 Prior entry: staged
 multi-party signing for `cancel`: propose/sign/finalize
 (`src/stellar/multiParty.ts`, `src/db/pendingCancellations.ts`, migration
