@@ -43,51 +43,73 @@ their own `SorobanAuthorizationEntry` specifically (`authorizeEntry()` in
 expose this for exactly this case), not just sign the envelope.
 `test/helpers.ts`'s `submitMultiPartyCall` is a worked, live-tested
 example of the correct mechanism for both — sufficient when one script
-(a test) holds both keys, but not when the two parties are on genuinely
-separate devices. **`cancel` now also has a real multi-party UX for
-that case** — see the next section. `reassign_buyer` (three parties)
-doesn't yet; the same mechanism would extend to it, not built.
+(a test) holds both keys, but not when the parties are on genuinely
+separate devices. **Both `cancel` and `reassign_buyer` now have a real
+staged multi-party UX for that case** — see the next section.
 
-### Staged multi-party signing for `cancel` — propose / sign / finalize
+### Staged multi-party signing — propose / sign / finalize
 
-Either party proposes; the *other* party signs their own auth entry from
-their own wallet, on their own device, in a separate request, at a
-separate time — no script or process ever holds both keys.
+One party proposes; every *other* required party signs their own auth
+entry from their own wallet, on their own device, in a separate request,
+at a separate time — no script or process ever holds more than one key.
+Generalized (migration `004_generalize_multisig_proposals.sql`,
+`db/pendingMultisigProposals.ts`) to cover both `cancel` (two parties,
+one pending entry) and `reassign_buyer` (three parties, two pending
+entries) with the same table and the same sign/finalize logic — neither
+`src/stellar/multiParty.ts`'s propose/finalize functions nor the sign
+route care how many pending entries a proposal has, they just iterate
+the array.
 
-1. `POST /commitments/:contractId/tx/cancel/propose { proposerPublicKey }`
-   — simulates `cancel()` sourced from the proposer, sets a ~24-hour
-   `signatureExpirationLedger` on the non-source auth entry (simulation
+1. **Propose** — `POST /commitments/:contractId/tx/cancel/propose { proposerPublicKey }`
+   or `POST /commitments/:contractId/tx/reassign-buyer/propose { proposerPublicKey, newBuyer }`.
+   Simulates the call sourced from the proposer, sets a ~24-hour
+   `signatureExpirationLedger` on each non-source auth entry (simulation
    doesn't set one sensibly on its own — see `src/stellar/multiParty.ts`'s
-   doc comment for why that has to happen server-side, before the entry's
-   XDR ever reaches a wallet), and stages it in Postgres
-   (`pending_cancellations`, migration `003_pending_cancellations.sql`).
-   Rejects (403) if the proposer isn't the commitment's buyer or
-   cooperative. Idempotent: proposing again while one's already active
-   for that contract returns the existing one, not a duplicate.
-2. The other party's wallet signs the returned entry XDR directly —
-   Freighter's `signAuthEntry(entryXdr)`, **not** `signTransaction` (this
-   is one auth entry, not a whole transaction) — and
-   `POST .../propose/:proposalId/sign { signerPublicKey, signedEntryXdr }`
-   sends it back. Once every pending entry is signed, the API rebuilds
-   the final transaction (reusing the original simulation's resource
-   footprint, same reasoning `submitMultiPartyCall` documents for why
-   re-simulating would mint fresh, unsigned nonces and undo the signing)
-   and the proposal flips to `ready`.
-3. The proposer signs the `ready_xdr` classically — an ordinary signature,
-   no different from any other write in this API — and submits it through
-   the **existing** `POST /transactions/submit`, passing
-   `completeProposalId` so the proposal gets marked finished rather than
-   lingering as "ready" for a future viewer to trip over.
-4. `GET /commitments/:contractId/tx/cancel/propose` is what a viewer's UI
-   polls to render the right state: no active proposal, "X wants to
-   cancel, approve?", "waiting on the other party," or "ready to
-   finalize."
+   doc comment for why that has to happen server-side, before any entry's
+   XDR ever reaches a wallet), and stages it in Postgres. Idempotent:
+   proposing again while one's already active *for that method* on that
+   contract returns the existing one, not a duplicate — `cancel` and
+   `reassign_buyer` proposals don't block each other, only proposals of
+   the *same* method do. Who's allowed to propose differs by method and
+   is checked server-side (403 otherwise): `cancel` accepts the buyer or
+   the cooperative; `reassign_buyer` accepts only the *current* buyer
+   specifically — reassignment is fundamentally their own decision to
+   initiate (PRD §4.8: "with cooperative consent," not
+   cooperative-initiated), not something the cooperative or the incoming
+   buyer can kick off on someone else's behalf.
+2. **Sign** — each other party's wallet signs their own returned entry
+   XDR directly, Freighter's `signAuthEntry(entryXdr)`, **not**
+   `signTransaction` (this is one auth entry, not a whole transaction) —
+   and `POST /commitments/:contractId/tx/propose/:proposalId/sign { signerPublicKey, signedEntryXdr }`
+   sends it back. This route is fully method-agnostic (a `proposalId` is
+   already a globally unique key, so it doesn't need a method in the
+   URL). Once every pending entry across every required party is signed,
+   the API rebuilds the final transaction (reusing the original
+   simulation's resource footprint, same reasoning `submitMultiPartyCall`
+   documents for why re-simulating would mint fresh, unsigned nonces and
+   undo the signing already done) and the proposal flips to `ready`.
+3. **Finalize** — the proposer signs the `ready_xdr` classically — an
+   ordinary signature, no different from any other write in this API —
+   and submits it through the **existing** `POST /transactions/submit`,
+   passing `completeProposalId` so the proposal gets marked finished
+   rather than lingering as "ready" for a future viewer to trip over.
+4. **Read** — `GET /commitments/:contractId/tx/cancel/propose` or
+   `GET /commitments/:contractId/tx/reassign-buyer/propose` is what a
+   viewer's UI polls to render the right state: no active proposal, "X
+   wants to [cancel this / reassign this to Y], approve?", "waiting on
+   the other party," or "ready to finalize."
 
-Verified live end to end (`test/stellar.test.ts`) with two genuinely
-different signers, through the real HTTP layer (`app.inject`, not the
-SDK functions called directly) — propose, an unrelated third party
-rejected, sign, a double-sign rejected, finalize, submit, confirmed
-`Cancelled` on chain, confirmed the proposal no longer shows as active.
+Verified live end to end (`test/stellar.test.ts`), through the real HTTP
+layer (`app.inject`, not the SDK functions called directly), for both:
+`cancel` with two genuinely different signers (propose, an unrelated
+third party rejected, sign, a double-sign rejected, finalize, submit,
+confirmed `Cancelled` on chain); `reassign_buyer` with three (propose
+rejected from an unrelated third party *and* from the cooperative —
+proving the "only the current buyer may propose" rule — then a full
+propose → cooperative signs → incoming buyer signs → finalize → submit
+walk, confirmed the buyer field genuinely changed on a fresh chain read,
+not just that submission returned success). Both confirm the proposal no
+longer shows as active once completed.
 
 **Two-phase funding, and the default/forfeiture paths built on top of it**
 (contracts `HANDOFF.md` has the full detail): `initialize` now also takes
@@ -126,10 +148,12 @@ the system. `GET /parties/:address/standing` exposes the read side.
 | POST | `/commitments/:contractId/tx/initialize` | Builds unsigned `initialize` XDR. Must be signed by the intended buyer. Address fields are validated (`StrKey`) before building. |
 | POST | `/commitments/:contractId/tx/reassign-buyer` | Builds unsigned `reassign_buyer` XDR. Needs three-party auth — see above. |
 | POST | `/commitments/:contractId/tx/:method` | Builds unsigned XDR for any no-argument lifecycle method (`lock`, `release_advance_1/2`, `claim_advance_1/2`, `reclaim_advance_1/2`, `mark_checkpoint`, `confirm_delivery`, `settle`, `cancel`, `ready_for_delivery`, `fund_remainder`, `expire_remainder_window`, `reclaim_on_nondelivery`). `cancel` needs two-party auth — see above, not just a second signature on the same XDR. The four two-phase-funding/forfeiture additions are all single-signer or fully permissionless, so they need nothing extra — see below. |
-| POST | `/commitments/:contractId/tx/cancel/propose` | Proposes (or, idempotently, returns the already-active) staged multi-party cancellation. See above. |
-| GET | `/commitments/:contractId/tx/cancel/propose` | The active proposal for a contract, if any — what a viewer's UI polls. |
-| POST | `/commitments/:contractId/tx/cancel/propose/:proposalId/sign` | Records one party's signed auth entry; flips to `ready` once every pending entry is signed. |
-| POST | `/transactions/submit` | Submits a signed envelope, polls for confirmation, optionally refreshes the Postgres cache (`refreshContractId`) and/or marks a cancellation proposal completed (`completeProposalId`). |
+| POST | `/commitments/:contractId/tx/cancel/propose` | Proposes (or, idempotently, returns the already-active) staged multi-party cancellation. Buyer or cooperative may propose. See above. |
+| GET | `/commitments/:contractId/tx/cancel/propose` | The active cancel proposal for a contract, if any — what a viewer's UI polls. |
+| POST | `/commitments/:contractId/tx/reassign-buyer/propose` | Proposes (or, idempotently, returns the already-active) staged multi-party reassignment. Only the *current* buyer may propose. Takes `newBuyer`. See above. |
+| GET | `/commitments/:contractId/tx/reassign-buyer/propose` | The active reassignment proposal for a contract, if any. |
+| POST | `/commitments/:contractId/tx/propose/:proposalId/sign` | Records one party's signed auth entry against any proposal (method-agnostic — the proposal ID is already unique); flips to `ready` once every pending entry across every method is signed. |
+| POST | `/transactions/submit` | Submits a signed envelope, polls for confirmation, optionally refreshes the Postgres cache (`refreshContractId`) and/or marks a multisig proposal completed (`completeProposalId`). |
 | GET | `/commitments/:contractId` | Live read straight from chain (source of truth), refreshes the cache as a side effect. Also applies any reputation consequence from a fresh transition into `Defaulted`/`Forfeited` — see above. |
 | GET | `/commitments` | Lists the Postgres-cached mirror — the only way to list commitments at all, since the chain has no such query. |
 | GET | `/parties/:address/standing` | A party's current reputation: strike count, whether they're barred, and why. Returns a clean default (not 404) for an address with no history. |
@@ -164,16 +188,22 @@ unrelated third-party signer (proving it's really permissionless, not
 just "works when I'm also a party"), waited out over a deliberately short
 `remainderWindowSecs` in real time; and `reclaim_on_nondelivery` after a
 deliberately short `deliveryWindowSecs` lapses with the cooperative never
-having acted. A third scenario proves the staged multi-party `cancel`
-flow end to end **through the real HTTP layer** (its own `buildServer()`
-instance, `app.inject()` — not the SDK functions called directly, the
-way every other live scenario in this file works): propose, an unrelated
-third party rejected, `test/helpers.ts`'s `simulateFreighterSignAuthEntry`
-(a stand-in for a real Freighter extension, which doesn't exist in this
-environment — same honesty caveat every frontend's `wallet.ts` carries)
-signs the cooperative's entry, a double-sign rejected, the proposer
-finalizes and submits, confirmed `Cancelled` on chain, confirmed the
-proposal no longer shows as active. `retry.test.ts` covers the retry
+having acted. Two more scenarios prove the staged multi-party propose/
+sign/finalize flow end to end **through the real HTTP layer** (its own
+`buildServer()` instance, `app.inject()` — not the SDK functions called
+directly, the way every other live scenario in this file works): for
+`cancel` — propose, an unrelated third party rejected,
+`test/helpers.ts`'s `simulateFreighterSignAuthEntry` (a stand-in for a
+real Freighter extension, which doesn't exist in this environment — same
+honesty caveat every frontend's `wallet.ts` carries) signs the
+cooperative's entry, a double-sign rejected, the proposer finalizes and
+submits, confirmed `Cancelled` on chain; for `reassign_buyer` — propose
+rejected from an unrelated third party *and* from the cooperative
+(proving only the current buyer may propose), then the full three-party
+walk (propose → cooperative signs → incoming buyer signs → finalize →
+submit), confirmed the buyer field genuinely changed on a fresh chain
+read. Both confirm the proposal no longer shows as active once
+completed. `retry.test.ts` covers the retry
 helper's own logic with deterministic fakes, no network needed;
 `server.test.ts` exercises the HTTP layer via Fastify's `.inject()`,
 covering validation paths that reject before ever reaching the
