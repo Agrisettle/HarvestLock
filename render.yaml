@@ -1,0 +1,38 @@
+databases:
+  - name: harvestlock-pg
+    databaseName: harvestlock
+    user: harvestlock
+    plan: free
+
+services:
+  - type: web
+    name: harvestlock-api
+    runtime: node
+    rootDir: api
+    plan: free
+    buildCommand: npm ci && npm run build
+    preDeployCommand: npm run migrate:prod
+    startCommand: npm start
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: harvestlock-pg
+          property: connectionString
+      - key: STELLAR_NETWORK
+        value: testnet
+      - key: STELLAR_RPC_URL
+        value: https://soroban-testnet.stellar.org
+      - key: STELLAR_NETWORK_PASSPHRASE
+        value: "Test SDF Network ; September 2015"
+      # The escrow WASM's hash -- see api/.env.example for what this is
+      # and how to regenerate it if the contract ever changes. Matches
+      # HarvestLock-Contracts' current testnet deployment.
+      - key: ESCROW_WASM_HASH
+        value: 3351e0de0edc918130fb2f88973b90cc717307a789bb0b7ee0802c50f3bd6832
+      # Secret -- not set here. Fill in from the Render dashboard after
+      # the blueprint deploys (Environment tab on the harvestlock-api
+      # service). See api/.env.example for what this key is.
+      - key: DEPLOYER_SECRET_KEY
+        sync: false
+      - key: PORT
+        value: "3000"
