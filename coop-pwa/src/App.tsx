@@ -136,6 +136,7 @@ export default function App() {
                 claimingTranche={claimingTranche}
                 claimError={claimError}
                 onCancelled={() => loadDetail(selectedId)}
+                onReassigned={() => loadDetail(selectedId)}
               />
             )}
           </section>

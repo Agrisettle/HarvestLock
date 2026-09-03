@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import type { CancelProposal, CommitmentDetail as CommitmentDetailType } from "../api";
-import { getCancelProposal, proposeCancel, signCancelProposal, submitTx } from "../api";
+import type { MultisigProposal, CommitmentDetail as CommitmentDetailType } from "../api";
+import { getCancelProposal, proposeCancel, signMultisigProposal, submitTx } from "../api";
 import { signAuthEntry, signTransactionXdr } from "../wallet";
 
 /** Mirrors lib.rs's cancel() reachable-state range — Draft through ReadyForDelivery, never after Delivered. */
@@ -37,7 +37,7 @@ export function CancelSection({
   walletAddress: string | null;
   onCancelled: () => void;
 }) {
-  const [proposal, setProposal] = useState<CancelProposal | null>(null);
+  const [proposal, setProposal] = useState<MultisigProposal | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -86,7 +86,7 @@ export function CancelSection({
     setBusy(true);
     setError(null);
     signAuthEntry(myEntry.entry_xdr, walletAddress!)
-      .then((signedEntryXdr) => signCancelProposal(contractId, proposal!.id, walletAddress!, signedEntryXdr))
+      .then((signedEntryXdr) => signMultisigProposal(contractId, proposal!.id, walletAddress!, signedEntryXdr))
       .then(setProposal)
       .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
       .finally(() => setBusy(false));

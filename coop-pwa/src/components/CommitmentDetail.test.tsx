@@ -36,6 +36,7 @@ const noopProps = {
   claimingTranche: null as 1 | 2 | null,
   claimError: null as string | null,
   onCancelled: vi.fn(),
+  onReassigned: vi.fn(),
 };
 
 describe("CommitmentDetail", () => {

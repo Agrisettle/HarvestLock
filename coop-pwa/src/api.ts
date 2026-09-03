@@ -89,10 +89,11 @@ export function submitTx(signedXdr: string, refreshContractId?: string, complete
   return post<SubmitResult>("/transactions/submit", { xdr: signedXdr, refreshContractId, completeProposalId });
 }
 
-/** Mirrors api/src/server.ts's serializeProposal — the staged multi-party cancel flow's public shape. */
-export interface CancelProposal {
+/** Mirrors api/src/server.ts's serializeProposal — the staged multi-party propose/sign/finalize flow's public shape, shared by `cancel` and `reassign_buyer`. */
+export interface MultisigProposal {
   id: string;
   contract_id: string;
+  method: "cancel" | "reassign_buyer";
   proposer_address: string;
   status: "pending" | "ready" | "completed";
   pending_entries: { address: string; entry_xdr: string }[];
@@ -100,23 +101,36 @@ export interface CancelProposal {
 }
 
 /** The active proposed cancellation for a commitment, if any — poll this to render "X wants to cancel, approve?" / "waiting" / "ready to finalize." */
-export function getCancelProposal(contractId: string): Promise<{ proposal: CancelProposal | null }> {
-  return get<{ proposal: CancelProposal | null }>(`/commitments/${encodeURIComponent(contractId)}/tx/cancel/propose`);
+export function getCancelProposal(contractId: string): Promise<{ proposal: MultisigProposal | null }> {
+  return get<{ proposal: MultisigProposal | null }>(`/commitments/${encodeURIComponent(contractId)}/tx/cancel/propose`);
 }
 
 /** Proposes a cancellation, or idempotently returns the already-active one for this commitment. */
-export function proposeCancel(contractId: string, proposerPublicKey: string): Promise<CancelProposal> {
-  return post<CancelProposal>(`/commitments/${encodeURIComponent(contractId)}/tx/cancel/propose`, { proposerPublicKey });
+export function proposeCancel(contractId: string, proposerPublicKey: string): Promise<MultisigProposal> {
+  return post<MultisigProposal>(`/commitments/${encodeURIComponent(contractId)}/tx/cancel/propose`, { proposerPublicKey });
 }
 
-/** Records one party's signed auth entry against a proposal. Once every pending entry is signed, the response's status flips to "ready". */
-export function signCancelProposal(
+/** The active proposed buyer reassignment for a commitment, if any. */
+export function getReassignBuyerProposal(contractId: string): Promise<{ proposal: MultisigProposal | null }> {
+  return get<{ proposal: MultisigProposal | null }>(`/commitments/${encodeURIComponent(contractId)}/tx/reassign-buyer/propose`);
+}
+
+/** Proposes reassigning the buyer position to `newBuyer`, or idempotently returns the already-active proposal. Only the commitment's *current* buyer may call this — the API rejects (403) anyone else. */
+export function proposeReassignBuyer(contractId: string, proposerPublicKey: string, newBuyer: string): Promise<MultisigProposal> {
+  return post<MultisigProposal>(`/commitments/${encodeURIComponent(contractId)}/tx/reassign-buyer/propose`, {
+    proposerPublicKey,
+    newBuyer,
+  });
+}
+
+/** Records one party's signed auth entry against a proposal — method-agnostic, works for both `cancel` and `reassign_buyer` proposals, since a proposal ID is already unique. Once every pending entry is signed, the response's status flips to "ready". */
+export function signMultisigProposal(
   contractId: string,
   proposalId: string,
   signerPublicKey: string,
   signedEntryXdr: string,
-): Promise<CancelProposal> {
-  return post<CancelProposal>(`/commitments/${encodeURIComponent(contractId)}/tx/cancel/propose/${proposalId}/sign`, {
+): Promise<MultisigProposal> {
+  return post<MultisigProposal>(`/commitments/${encodeURIComponent(contractId)}/tx/propose/${proposalId}/sign`, {
     signerPublicKey,
     signedEntryXdr,
   });

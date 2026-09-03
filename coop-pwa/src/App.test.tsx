@@ -166,11 +166,13 @@ describe("App", () => {
     fetchMock.mockResolvedValueOnce(jsonResponse([summary])); // initial list
     fetchMock.mockResolvedValueOnce(jsonResponse(openDetail)); // click row -> detail
     fetchMock.mockResolvedValueOnce(jsonResponse({ proposal: null })); // CancelSection's background poll (Locked is cancellable)
+    fetchMock.mockResolvedValueOnce(jsonResponse({ proposal: null })); // ReassignBuyerSection's background poll (Locked is reassignable)
     fetchMock.mockResolvedValueOnce(jsonResponse({ xdr: "UNSIGNED_XDR" })); // buildTx
     fetchMock.mockResolvedValueOnce(jsonResponse({ status: "SUCCESS", hash: "abc" })); // submitTx
     fetchMock.mockResolvedValueOnce(jsonResponse(claimedDetail)); // post-claim refresh
-    // No second CancelSection poll expected: refresh() is memoized on
-    // [contractId, cancellable], and this claim doesn't change either.
+    // No second CancelSection/ReassignBuyerSection poll expected: their
+    // refresh()es are memoized on [contractId, cancellable]/[contractId,
+    // reassignable], and this claim doesn't change either.
 
     vi.mocked(wallet.connectWallet).mockResolvedValueOnce(detail.cooperative);
     vi.mocked(wallet.signTransactionXdr).mockResolvedValueOnce("SIGNED_XDR");
@@ -197,6 +199,7 @@ describe("App", () => {
     fetchMock.mockResolvedValueOnce(jsonResponse([summary]));
     fetchMock.mockResolvedValueOnce(jsonResponse(openDetail));
     fetchMock.mockResolvedValueOnce(jsonResponse({ proposal: null })); // CancelSection's background poll (Locked is cancellable)
+    fetchMock.mockResolvedValueOnce(jsonResponse({ proposal: null })); // ReassignBuyerSection's background poll (Locked is reassignable)
     fetchMock.mockResolvedValueOnce(jsonResponse({ xdr: "UNSIGNED_XDR" }));
 
     vi.mocked(wallet.connectWallet).mockResolvedValueOnce(detail.cooperative);

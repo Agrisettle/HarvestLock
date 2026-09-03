@@ -1,6 +1,7 @@
 import type { CommitmentDetail as CommitmentDetailType } from "../api";
 import { StatusBadge } from "./StatusBadge";
 import { CancelSection } from "./CancelSection";
+import { ReassignBuyerSection } from "./ReassignBuyerSection";
 
 function formatDeadline(unixSecs: string): string {
   const n = Number(unixSecs);
@@ -46,6 +47,7 @@ export function CommitmentDetail({
   claimingTranche,
   claimError,
   onCancelled,
+  onReassigned,
 }: {
   commitment: CommitmentDetailType;
   contractId: string;
@@ -54,6 +56,7 @@ export function CommitmentDetail({
   claimingTranche: 1 | 2 | null;
   claimError: string | null;
   onCancelled: () => void;
+  onReassigned: () => void;
 }) {
   // claim_advance_* is cooperative-auth-gated (lib.rs) — offering the
   // button to a connected wallet that isn't the cooperative would just
@@ -68,6 +71,12 @@ export function CommitmentDetail({
       </div>
 
       <CancelSection commitment={commitment} contractId={contractId} walletAddress={walletAddress} onCancelled={onCancelled} />
+      <ReassignBuyerSection
+        commitment={commitment}
+        contractId={contractId}
+        walletAddress={walletAddress}
+        onReassigned={onReassigned}
+      />
 
       <dl className="party-grid">
         <div>
