@@ -255,6 +255,135 @@ describe("server (HTTP layer)", () => {
     15_000,
   );
 
+  // A payload that clears all three window checks, so these tests
+  // actually exercise the quantity/grade-schedule validation below them,
+  // not an earlier guard.
+  const validWindows = {
+    claimWindowSecs: "3600",
+    remainderWindowSecs: String(60 * 60 * 24 * 7),
+    deliveryWindowSecs: String(60 * 60 * 24 * 120),
+  };
+
+  it(
+    "rejects a zero contractedQuantity before touching the network",
+    async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: `/commitments/${FAKE_CONTRACT_ID}/tx/initialize`,
+        payload: {
+          buyer: FAKE_PUBLIC_KEY,
+          cooperative: FAKE_PUBLIC_KEY,
+          warehouseOperator: FAKE_PUBLIC_KEY,
+          token: FAKE_CONTRACT_ID,
+          totalAmount: "1000000000",
+          advance1Bps: 1500,
+          advance2Bps: 2000,
+          ...validWindows,
+          contractedQuantity: 0,
+          gradePriceBps: [10_000],
+          sourcePublicKey: FAKE_PUBLIC_KEY,
+        },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toMatch(/contractedQuantity must be a positive integer/);
+    },
+    15_000,
+  );
+
+  it(
+    "rejects an empty gradePriceBps array before touching the network",
+    async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: `/commitments/${FAKE_CONTRACT_ID}/tx/initialize`,
+        payload: {
+          buyer: FAKE_PUBLIC_KEY,
+          cooperative: FAKE_PUBLIC_KEY,
+          warehouseOperator: FAKE_PUBLIC_KEY,
+          token: FAKE_CONTRACT_ID,
+          totalAmount: "1000000000",
+          advance1Bps: 1500,
+          advance2Bps: 2000,
+          ...validWindows,
+          contractedQuantity: 1_000,
+          gradePriceBps: [],
+          sourcePublicKey: FAKE_PUBLIC_KEY,
+        },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toMatch(/gradePriceBps must be a non-empty array/);
+    },
+    15_000,
+  );
+
+  it(
+    "rejects a gradePriceBps entry over 10000 before touching the network",
+    async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: `/commitments/${FAKE_CONTRACT_ID}/tx/initialize`,
+        payload: {
+          buyer: FAKE_PUBLIC_KEY,
+          cooperative: FAKE_PUBLIC_KEY,
+          warehouseOperator: FAKE_PUBLIC_KEY,
+          token: FAKE_CONTRACT_ID,
+          totalAmount: "1000000000",
+          advance1Bps: 1500,
+          advance2Bps: 2000,
+          ...validWindows,
+          contractedQuantity: 1_000,
+          gradePriceBps: [10_000, 10_001],
+          sourcePublicKey: FAKE_PUBLIC_KEY,
+        },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toMatch(/gradePriceBps must be a non-empty array/);
+    },
+    15_000,
+  );
+
+  it(
+    "rejects a malformed contract ID on confirm-delivery before touching the network",
+    async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: "/commitments/not-a-real-contract-id/tx/confirm-delivery",
+        payload: { deliveredQuantity: 500, gradeIndex: 0, sourcePublicKey: FAKE_PUBLIC_KEY },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().message).toMatch(/not a valid contract ID/);
+    },
+    15_000,
+  );
+
+  it(
+    "rejects a negative deliveredQuantity on confirm-delivery before touching the network",
+    async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: `/commitments/${FAKE_CONTRACT_ID}/tx/confirm-delivery`,
+        payload: { deliveredQuantity: -1, gradeIndex: 0, sourcePublicKey: FAKE_PUBLIC_KEY },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toMatch(/deliveredQuantity must be a non-negative integer/);
+    },
+    15_000,
+  );
+
+  it(
+    "rejects a negative gradeIndex on confirm-delivery before touching the network",
+    async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: `/commitments/${FAKE_CONTRACT_ID}/tx/confirm-delivery`,
+        payload: { deliveredQuantity: 500, gradeIndex: -1, sourcePublicKey: FAKE_PUBLIC_KEY },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toMatch(/gradeIndex must be a non-negative integer/);
+    },
+    15_000,
+  );
+
   it(
     "rejects a malformed buyer address on initialize before touching the network",
     async () => {

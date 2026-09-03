@@ -28,7 +28,7 @@ services:
       # and how to regenerate it if the contract ever changes. Matches
       # HarvestLock-Contracts' current testnet deployment.
       - key: ESCROW_WASM_HASH
-        value: 3351e0de0edc918130fb2f88973b90cc717307a789bb0b7ee0802c50f3bd6832
+        value: f935d469a6714a0c00075dab1fb26dd4a309d85cc4e321be1256d3be1ff28c8f
       # Secret -- not set here. Fill in from the Render dashboard after
       # the blueprint deploys (Environment tab on the harvestlock-api
       # service). See api/.env.example for what this key is.

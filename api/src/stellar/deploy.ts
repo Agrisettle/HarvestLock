@@ -114,6 +114,9 @@ export interface InitializeArgs {
   claimWindowSecs: bigint;
   remainderWindowSecs: bigint;
   deliveryWindowSecs: bigint;
+  contractedQuantity: number;
+  /** Pre-agreed grade -> price-multiplier table, in bps (10_000 = full price). See lib.rs's Commitment.grade_price_bps doc comment. */
+  gradePriceBps: number[];
 }
 
 /** Builds the `initialize` args in the exact order lib.rs declares them. */
@@ -129,5 +132,7 @@ export function initializeArgs(a: InitializeArgs): xdr.ScVal[] {
     nativeToScVal(a.claimWindowSecs, { type: "u64" }),
     nativeToScVal(a.remainderWindowSecs, { type: "u64" }),
     nativeToScVal(a.deliveryWindowSecs, { type: "u64" }),
+    nativeToScVal(a.contractedQuantity, { type: "u32" }),
+    xdr.ScVal.scvVec(a.gradePriceBps.map((bps) => nativeToScVal(bps, { type: "u32" }))),
   ];
 }

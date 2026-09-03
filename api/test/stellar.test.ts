@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { describe, it, expect, afterAll } from "vitest";
-import { Keypair, TransactionBuilder, Address } from "@stellar/stellar-sdk";
+import { Keypair, TransactionBuilder, Address, nativeToScVal } from "@stellar/stellar-sdk";
 import { getStatus, getCommitment } from "../src/stellar/client.js";
 import { deployContractInstance, initializeArgs } from "../src/stellar/deploy.js";
 import { buildInvokeTransaction, submitSignedTransaction } from "../src/stellar/tx.js";
@@ -91,6 +91,8 @@ describe("stellar/deploy (live testnet writes)", () => {
           claimWindowSecs: 3600n,
           remainderWindowSecs: 3600n,
           deliveryWindowSecs: 86_400n,
+          contractedQuantity: 1_000,
+          gradePriceBps: [10_000, 9_000, 7_500],
         }),
       });
 
@@ -142,6 +144,8 @@ describe("stellar/deploy (live testnet writes)", () => {
           claimWindowSecs: 3600n,
           remainderWindowSecs: 3600n,
           deliveryWindowSecs: 86_400n,
+          contractedQuantity: 1_000,
+          gradePriceBps: [10_000, 9_000, 7_500],
         }),
       });
       const initTx = TransactionBuilder.fromXDR(initXdr, networkPassphrase);
@@ -201,6 +205,8 @@ describe("stellar/deploy (live testnet writes)", () => {
           claimWindowSecs: 3600n,
           remainderWindowSecs: 3600n,
           deliveryWindowSecs: 86_400n,
+          contractedQuantity: 1_000,
+          gradePriceBps: [10_000, 9_000, 7_500],
         }),
       });
       const initTx = TransactionBuilder.fromXDR(initXdr, networkPassphrase);
@@ -260,6 +266,8 @@ describe("stellar/deploy (live testnet writes)", () => {
           claimWindowSecs: 3600n,
           remainderWindowSecs: 3600n,
           deliveryWindowSecs: 86_400n,
+          contractedQuantity: 1_000,
+          gradePriceBps: [10_000, 9_000, 7_500],
         }),
       });
       const initTx = TransactionBuilder.fromXDR(initXdr, networkPassphrase);
@@ -278,16 +286,21 @@ describe("stellar/deploy (live testnet writes)", () => {
       await submitSingleSignerCall({ contractId, method: "ready_for_delivery", signer: deployer });
       expect(await getStatus(contractId)).toBe("ReadyForDelivery");
 
+      const confirmDeliveryArgs = [
+        nativeToScVal(1_000, { type: "u32" }), // delivered_quantity -- full contracted amount
+        nativeToScVal(0, { type: "u32" }), // grade_index 0 -- top of gradePriceBps, full price
+      ];
+
       // Not funded yet -- confirm_delivery must still be rejected.
       await expect(
-        submitSingleSignerCall({ contractId, method: "confirm_delivery", signer: deployer }),
+        submitSingleSignerCall({ contractId, method: "confirm_delivery", args: confirmDeliveryArgs, signer: deployer }),
       ).rejects.toThrow();
 
       await submitSingleSignerCall({ contractId, method: "fund_remainder", signer: deployer });
       const afterFund = await getCommitment(contractId);
       expect(afterFund.remainder_funded).toBe(true);
 
-      await submitSingleSignerCall({ contractId, method: "confirm_delivery", signer: deployer });
+      await submitSingleSignerCall({ contractId, method: "confirm_delivery", args: confirmDeliveryArgs, signer: deployer });
       await submitSingleSignerCall({ contractId, method: "settle", signer: deployer });
       expect(await getStatus(contractId)).toBe("Settled");
     },
@@ -336,6 +349,8 @@ describe("stellar/deploy (live testnet writes)", () => {
           claimWindowSecs: 3600n,
           remainderWindowSecs: 12n, // seconds -- deliberately short, see above
           deliveryWindowSecs: 86_400n,
+          contractedQuantity: 1_000,
+          gradePriceBps: [10_000, 9_000, 7_500],
         }),
       });
       const initTx = TransactionBuilder.fromXDR(initXdr, networkPassphrase);
@@ -415,6 +430,8 @@ describe("stellar/deploy (live testnet writes)", () => {
           claimWindowSecs: 3600n,
           remainderWindowSecs: 3600n,
           deliveryWindowSecs: 12n, // seconds -- deliberately short, see the previous test's comment
+          contractedQuantity: 1_000,
+          gradePriceBps: [10_000, 9_000, 7_500],
         }),
       });
       const initTx = TransactionBuilder.fromXDR(initXdr, networkPassphrase);
@@ -488,6 +505,8 @@ describe("staged multi-party proposals (propose / sign / finalize, live testnet 
           claimWindowSecs: 3600n,
           remainderWindowSecs: 3600n,
           deliveryWindowSecs: 86_400n,
+          contractedQuantity: 1_000,
+          gradePriceBps: [10_000, 9_000, 7_500],
         }),
       });
       const initTx = TransactionBuilder.fromXDR(initXdr, networkPassphrase);
@@ -614,6 +633,8 @@ describe("staged multi-party proposals (propose / sign / finalize, live testnet 
           claimWindowSecs: 3600n,
           remainderWindowSecs: 3600n,
           deliveryWindowSecs: 86_400n,
+          contractedQuantity: 1_000,
+          gradePriceBps: [10_000, 9_000, 7_500],
         }),
       });
       const initTx = TransactionBuilder.fromXDR(initXdr, networkPassphrase);

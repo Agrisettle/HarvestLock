@@ -40,6 +40,11 @@ function baseCommitment(overrides: Partial<Commitment>): Commitment {
     advance2_expired: false,
     remainder_deadline: 0n,
     remainder_funded: false,
+    contracted_quantity: 1_000,
+    grade_price_bps: [10_000],
+    delivered_quantity: 0,
+    grade_index: 0,
+    settlement_bps: 0,
     ...overrides,
   };
 }

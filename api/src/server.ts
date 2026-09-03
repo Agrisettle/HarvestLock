@@ -1,6 +1,6 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
-import { StrKey, Address } from "@stellar/stellar-sdk";
+import { StrKey, Address, nativeToScVal } from "@stellar/stellar-sdk";
 import { getCommitment, type Commitment } from "./stellar/client.js";
 import { deployContractInstance, initializeArgs } from "./stellar/deploy.js";
 import { buildInvokeTransaction, submitSignedTransaction } from "./stellar/tx.js";
@@ -74,7 +74,10 @@ const NO_ARG_METHODS = new Set([
   "release_advance_2",
   "claim_advance_2",
   "reclaim_advance_2",
-  "confirm_delivery",
+  // confirm_delivery moved out of this set once it started taking
+  // arguments (delivered_quantity/grade_index, PRD §7 shortfall/grade
+  // adjustment) — see its own route below, same reason initialize and
+  // reassign_buyer aren't in this set either.
   "settle",
   // Needs TWO signatures on the same submitted envelope (buyer AND
   // cooperative — see lib.rs's cancel()), not one. The generic build/
@@ -181,6 +184,8 @@ interface InitializeBody {
   claimWindowSecs: string;
   remainderWindowSecs: string;
   deliveryWindowSecs: string;
+  contractedQuantity: number;
+  gradePriceBps: number[];
   sourcePublicKey: string;
 }
 
@@ -235,6 +240,23 @@ export function buildServer() {
           error: `deliveryWindowSecs must be between ${MIN_DELIVERY_WINDOW_SECS} and ${MAX_DELIVERY_WINDOW_SECS} seconds, got ${b.deliveryWindowSecs}`,
         });
       }
+      // Mirrors lib.rs's initialize() guards exactly -- no API-specific
+      // narrowing here the way the three windows above have, since there's
+      // no business judgment call to make on top of the contract's own
+      // validation (unlike the windows, which are genuinely a product
+      // decision, not just mirroring).
+      if (!Number.isInteger(b.contractedQuantity) || b.contractedQuantity <= 0) {
+        return reply.code(400).send({ error: `contractedQuantity must be a positive integer, got ${b.contractedQuantity}` });
+      }
+      if (
+        !Array.isArray(b.gradePriceBps) ||
+        b.gradePriceBps.length === 0 ||
+        b.gradePriceBps.some((bps) => !Number.isInteger(bps) || bps < 0 || bps > 10_000)
+      ) {
+        return reply.code(400).send({
+          error: `gradePriceBps must be a non-empty array of integers between 0 and 10000, got ${JSON.stringify(b.gradePriceBps)}`,
+        });
+      }
 
       const xdr = await buildInvokeTransaction({
         contractId,
@@ -251,6 +273,8 @@ export function buildServer() {
           claimWindowSecs: BigInt(b.claimWindowSecs),
           remainderWindowSecs: BigInt(b.remainderWindowSecs),
           deliveryWindowSecs: BigInt(b.deliveryWindowSecs),
+          contractedQuantity: b.contractedQuantity,
+          gradePriceBps: b.gradePriceBps,
         }),
       });
       return { xdr };
@@ -298,6 +322,35 @@ export function buildServer() {
       return { xdr };
     },
   );
+
+  // confirm_delivery now takes delivered_quantity/grade_index (PRD §7
+  // shortfall/grade adjustment — lib.rs's settle() pays out against the
+  // settlement_bps this computes), so like initialize/reassign_buyer it
+  // needs its own route instead of the generic no-arg one. Single-signer
+  // (warehouse_operator only, per lib.rs's require_auth) — no multi-party
+  // staging needed, unlike cancel/reassign_buyer.
+  app.post<{
+    Params: { contractId: string };
+    Body: { deliveredQuantity: number; gradeIndex: number; sourcePublicKey: string };
+  }>("/commitments/:contractId/tx/confirm-delivery", async (req, reply) => {
+    const { contractId } = req.params;
+    requireValidContractId(contractId);
+    const { deliveredQuantity, gradeIndex } = req.body;
+    if (!Number.isInteger(deliveredQuantity) || deliveredQuantity < 0) {
+      return reply.code(400).send({ error: `deliveredQuantity must be a non-negative integer, got ${deliveredQuantity}` });
+    }
+    if (!Number.isInteger(gradeIndex) || gradeIndex < 0) {
+      return reply.code(400).send({ error: `gradeIndex must be a non-negative integer, got ${gradeIndex}` });
+    }
+
+    const xdr = await buildInvokeTransaction({
+      contractId,
+      method: "confirm_delivery",
+      sourcePublicKey: req.body.sourcePublicKey,
+      args: [nativeToScVal(deliveredQuantity, { type: "u32" }), nativeToScVal(gradeIndex, { type: "u32" })],
+    });
+    return { xdr };
+  });
 
   // Staged multi-party signing -- see src/stellar/multiParty.ts and
   // db/pendingMultisigProposals.ts for the mechanism and schema. One

@@ -79,6 +79,11 @@ export interface Commitment {
   advance2_expired: boolean;
   remainder_deadline: bigint;
   remainder_funded: boolean;
+  contracted_quantity: number;
+  grade_price_bps: number[];
+  delivered_quantity: number;
+  grade_index: number;
+  settlement_bps: number;
 }
 
 /**
