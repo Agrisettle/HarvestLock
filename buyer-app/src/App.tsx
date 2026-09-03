@@ -198,6 +198,7 @@ export default function App() {
                 actionInFlight={actionInFlight}
                 actionError={actionError}
                 onCancelled={() => loadDetail(selectedId)}
+                onReassigned={() => loadDetail(selectedId)}
               />
             )}
           </section>

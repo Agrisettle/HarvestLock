@@ -1,6 +1,7 @@
 import type { CommitmentDetail as CommitmentDetailType } from "../api";
 import { StatusBadge } from "./StatusBadge";
 import { CancelSection } from "./CancelSection";
+import { ReassignBuyerSection } from "./ReassignBuyerSection";
 
 function formatDeadline(unixSecs: string): string {
   const n = Number(unixSecs);
@@ -60,6 +61,7 @@ export function CommitmentDetail({
   actionInFlight,
   actionError,
   onCancelled,
+  onReassigned,
 }: {
   commitment: CommitmentDetailType;
   contractId: string;
@@ -68,6 +70,7 @@ export function CommitmentDetail({
   actionInFlight: boolean;
   actionError: string | null;
   onCancelled: () => void;
+  onReassigned: () => void;
 }) {
   const action = primaryAction(commitment, walletAddress);
 
@@ -95,6 +98,12 @@ export function CommitmentDetail({
       )}
 
       <CancelSection commitment={commitment} contractId={contractId} walletAddress={walletAddress} onCancelled={onCancelled} />
+      <ReassignBuyerSection
+        commitment={commitment}
+        contractId={contractId}
+        walletAddress={walletAddress}
+        onReassigned={onReassigned}
+      />
 
       <dl className="party-grid">
         <div>

@@ -183,6 +183,33 @@ main {
   margin: 0 0 10px;
 }
 
+.reassign-section {
+  margin-bottom: 20px;
+}
+
+.reassign-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 420px;
+  margin-bottom: 10px;
+}
+
+.reassign-form label {
+  font-size: 0.78rem;
+  color: var(--bone-faint);
+}
+
+.reassign-form input {
+  background: var(--void);
+  border: 1px solid var(--void-line);
+  color: var(--bone);
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  padding: 8px 10px;
+  border-radius: 6px;
+}
+
 .create-commitment-form {
   display: flex;
   flex-direction: column;
