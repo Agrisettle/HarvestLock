@@ -57,16 +57,16 @@ export function Status() {
         <Reveal as="div" delay={140} className="status-links">
           <a
             className="status-link"
-            href="https://github.com/agrisettle/harvestlock"
+            href="https://github.com/Agrisettle/HarvestLock"
             target="_blank"
             rel="noreferrer"
           >
             <span className="status-link-label">Repository</span>
-            <span className="mono status-link-value">agrisettle/harvestlock</span>
+            <span className="mono status-link-value">Agrisettle/HarvestLock</span>
           </a>
           <a
             className="status-link"
-            href="https://github.com/agrisettle/HarvestLock-Contracts"
+            href="https://github.com/Agrisettle/HarvestLock-Contracts"
             target="_blank"
             rel="noreferrer"
           >

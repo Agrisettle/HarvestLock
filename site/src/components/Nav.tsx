@@ -13,7 +13,7 @@ export function Nav() {
           <a href="#status">Status</a>
           <a href="#partners">Partners</a>
           <a
-            href="https://github.com/agrisettle/harvestlock"
+            href="https://github.com/Agrisettle/HarvestLock"
             target="_blank"
             rel="noreferrer"
             className="nav-github"

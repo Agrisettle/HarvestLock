@@ -28,7 +28,7 @@ export function Partners() {
             <div className="partners-cta">
               <a
                 className="btn btn-primary"
-                href="https://github.com/agrisettle/harvestlock/issues"
+                href="https://github.com/Agrisettle/HarvestLock/issues"
                 target="_blank"
                 rel="noreferrer"
               >
@@ -36,7 +36,7 @@ export function Partners() {
               </a>
               <a
                 className="btn btn-ghost"
-                href="https://github.com/agrisettle/harvestlock/blob/main/docs/PRD.md"
+                href="https://github.com/Agrisettle/HarvestLock/blob/main/docs/PRD.md"
                 target="_blank"
                 rel="noreferrer"
               >

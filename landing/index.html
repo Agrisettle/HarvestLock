@@ -4,11 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0B120F" />
-    <meta name="description" content="HarvestLock -- escrow infrastructure for agricultural forward contracts on Stellar." />
+    <meta name="description" content="HarvestLock — escrow infrastructure for agricultural forward contracts on Stellar. A cooperative and a buyer agree a price before harvest; an independent warehouse receipt, not either party's word, releases the money." />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,600;1,9..144,400&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,600;1,9..144,400&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
     <title>HarvestLock</title>
@@ -21,8 +21,10 @@
         --bone-dim: #c9c6ba;
         --bone-faint: #8a897f;
         --pine: #1e6b4e;
+        --pine-soft: #163f30;
         --gold: #d4a937;
         --gold-bright: #eec765;
+        --signal: #c1432e;
         --display: "Fraunces", ui-serif, Georgia, serif;
         --body: "Inter", -apple-system, "Segoe UI", sans-serif;
         --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
@@ -30,84 +32,407 @@
       * {
         box-sizing: border-box;
       }
+      html {
+        scroll-behavior: smooth;
+      }
       body {
         margin: 0;
-        min-height: 100vh;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        gap: 40px;
         background: var(--void);
         color: var(--bone);
         font-family: var(--body);
         -webkit-font-smoothing: antialiased;
-        padding: 24px;
+        line-height: 1.55;
       }
-      h1 {
+      a {
+        color: var(--gold-bright);
+      }
+      .wrap {
+        max-width: 880px;
+        margin: 0 auto;
+        padding: 0 24px;
+      }
+
+      /* ---- status strip ---- */
+      .status-strip {
+        background: var(--pine-soft);
+        border-bottom: 1px solid var(--void-line);
+        padding: 10px 24px;
+        text-align: center;
+        font-family: var(--mono);
+        font-size: 0.78rem;
+        color: var(--bone-dim);
+      }
+      .status-strip strong {
+        color: var(--gold-bright);
+        font-weight: 600;
+      }
+
+      /* ---- header ---- */
+      header {
+        padding: 20px 0;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .brand-name {
         font-family: var(--display);
         font-weight: 600;
-        font-size: 2rem;
-        margin: 0;
-        text-align: center;
+        font-size: 1.2rem;
       }
-      .tag {
-        font-family: var(--mono);
-        font-size: 0.8rem;
-        color: var(--bone-faint);
-        text-align: center;
-        margin-top: -24px;
-      }
-      .apps {
+      .brand-nav {
         display: flex;
         gap: 20px;
-        flex-wrap: wrap;
-        justify-content: center;
+        font-size: 0.85rem;
+      }
+      .brand-nav a {
+        color: var(--bone-dim);
+        text-decoration: none;
+      }
+      .brand-nav a:hover {
+        color: var(--bone);
+      }
+
+      /* ---- hero ---- */
+      .hero {
+        padding: 56px 0 48px;
+        text-align: center;
+      }
+      .hero h1 {
+        font-family: var(--display);
+        font-weight: 600;
+        font-size: clamp(1.8rem, 4vw, 2.6rem);
+        margin: 0 0 16px;
+        line-height: 1.2;
+      }
+      .hero-lede {
+        max-width: 620px;
+        margin: 0 auto;
+        color: var(--bone-dim);
+        font-size: 1.05rem;
+      }
+
+      /* ---- sections ---- */
+      section {
+        padding: 48px 0;
+        border-top: 1px solid var(--void-line);
+      }
+      .section-head {
+        text-align: center;
+        max-width: 560px;
+        margin: 0 auto 32px;
+      }
+      .eyebrow {
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--gold);
+        margin-bottom: 8px;
+      }
+      .section-head h2 {
+        font-family: var(--display);
+        font-weight: 600;
+        font-size: 1.5rem;
+        margin: 0 0 10px;
+      }
+      .section-head p {
+        color: var(--bone-dim);
+        margin: 0;
+      }
+
+      /* ---- how it works ---- */
+      .steps {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+        gap: 16px;
+      }
+      .step {
+        background: var(--void-raised);
+        border: 1px solid var(--void-line);
+        border-radius: 10px;
+        padding: 18px;
+      }
+      .step-num {
+        font-family: var(--mono);
+        font-size: 0.8rem;
+        color: var(--gold);
+        margin-bottom: 8px;
+      }
+      .step h3 {
+        font-family: var(--display);
+        font-weight: 600;
+        font-size: 1rem;
+        margin: 0 0 6px;
+      }
+      .step p {
+        margin: 0;
+        font-size: 0.88rem;
+        color: var(--bone-dim);
+      }
+
+      /* ---- who's who ---- */
+      .roles {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 20px;
+      }
+      .role-card {
+        background: var(--void-raised);
+        border: 1px solid var(--void-line);
+        border-radius: 12px;
+        padding: 24px;
+      }
+      .role-card h3 {
+        font-family: var(--display);
+        font-weight: 600;
+        font-size: 1.15rem;
+        margin: 0 0 10px;
+        color: var(--gold-bright);
+      }
+      .role-card p {
+        margin: 0 0 10px;
+        color: var(--bone-dim);
+        font-size: 0.92rem;
+      }
+      .role-card p:last-child {
+        margin-bottom: 0;
+      }
+      .role-card .role-tag {
+        display: inline-block;
+        font-family: var(--mono);
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--bone-faint);
+        border: 1px solid var(--void-line);
+        border-radius: 999px;
+        padding: 3px 10px;
+        margin-bottom: 12px;
+      }
+      .role-note {
+        margin-top: 20px;
+        font-size: 0.85rem;
+        color: var(--bone-faint);
+        text-align: center;
+      }
+
+      /* ---- app picker ---- */
+      .apps {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 20px;
       }
       .app-card {
         display: flex;
         flex-direction: column;
-        gap: 8px;
-        width: 260px;
-        padding: 24px;
+        gap: 10px;
+        padding: 26px;
         background: var(--void-raised);
         border: 1px solid var(--void-line);
-        border-radius: 10px;
+        border-radius: 12px;
         text-decoration: none;
         color: inherit;
-        transition: border-color 0.15s ease;
+        transition: border-color 0.15s ease, transform 0.15s ease;
       }
       .app-card:hover {
         border-color: var(--pine);
+        transform: translateY(-2px);
+      }
+      .app-card .role-tag {
+        display: inline-block;
+        width: fit-content;
+        font-family: var(--mono);
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--gold);
+        border: 1px solid var(--void-line);
+        border-radius: 999px;
+        padding: 3px 10px;
       }
       .app-card h2 {
         font-family: var(--display);
         font-weight: 600;
-        font-size: 1.1rem;
+        font-size: 1.2rem;
         margin: 0;
-        color: var(--gold-bright);
       }
       .app-card p {
         margin: 0;
-        font-size: 0.85rem;
+        font-size: 0.9rem;
+        color: var(--bone-dim);
+      }
+      .app-card .go {
+        margin-top: 4px;
+        font-family: var(--mono);
+        font-size: 0.8rem;
+        color: var(--gold-bright);
+      }
+
+      /* ---- getting started ---- */
+      .checklist {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        max-width: 520px;
+        margin: 0 auto;
+      }
+      .checklist li {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        font-size: 0.92rem;
+        color: var(--bone-dim);
+      }
+      .checklist li::before {
+        content: "→";
+        color: var(--gold);
+        flex-shrink: 0;
+      }
+      .checklist strong {
+        color: var(--bone);
+      }
+
+      /* ---- footer ---- */
+      footer {
+        border-top: 1px solid var(--void-line);
+        padding: 28px 0 40px;
+        text-align: center;
+        font-size: 0.8rem;
+        color: var(--bone-faint);
+      }
+      footer a {
         color: var(--bone-dim);
       }
     </style>
   </head>
   <body>
-    <div>
-      <h1>HarvestLock</h1>
-      <p class="tag">testnet · pick a dashboard</p>
+    <div class="status-strip">
+      <strong>Testnet demo, pre-pilot.</strong> No real money moves here — see the note at the bottom before you connect a wallet.
     </div>
-    <div class="apps">
-      <a class="app-card" href="/buyer/">
-        <h2>Buyer Dashboard</h2>
-        <p>Lock a deposit, create a commitment, settle on delivery.</p>
-      </a>
-      <a class="app-card" href="/coop/">
-        <h2>Cooperative Dashboard</h2>
-        <p>Track commitments, claim advance tranches.</p>
-      </a>
+
+    <header class="wrap">
+      <div class="brand">
+        <span class="brand-name">HarvestLock</span>
+        <nav class="brand-nav">
+          <a href="#how-it-works">How it works</a>
+          <a href="#roles">Cooperative &amp; buyer</a>
+          <a href="#dashboards">Dashboards</a>
+        </nav>
+      </div>
+    </header>
+
+    <div class="hero wrap">
+      <h1>Commit before harvest.<br />Settle on delivery — not on anyone's word.</h1>
+      <p class="hero-lede">
+        HarvestLock lets an agricultural cooperative and a buyer agree a price before the
+        season starts, then holds the buyer's money in a neutral escrow contract until an
+        independent warehouse confirms the harvest actually arrived. Neither side can move
+        the money alone.
+      </p>
     </div>
+
+    <section id="how-it-works" class="wrap">
+      <div class="section-head">
+        <div class="eyebrow">How it works</div>
+        <h2>Four steps, one contract per deal</h2>
+        <p>No jargon required — this is the whole idea, in plain terms.</p>
+      </div>
+      <ol class="steps">
+        <li class="step">
+          <div class="step-num">01</div>
+          <h3>Agree the deal</h3>
+          <p>A cooperative and a buyer agree a price and quantity before harvest. Nothing has moved yet.</p>
+        </li>
+        <li class="step">
+          <div class="step-num">02</div>
+          <h3>Lock the funds</h3>
+          <p>The buyer's deposit moves into escrow — a contract that belongs to neither party.</p>
+        </li>
+        <li class="step">
+          <div class="step-num">03</div>
+          <h3>Advance the cooperative</h3>
+          <p>Capped pre-harvest payments release to the cooperative in tranches, so farmers aren't waiting on delivery to get paid at all.</p>
+        </li>
+        <li class="step">
+          <div class="step-num">04</div>
+          <h3>Deliver &amp; settle</h3>
+          <p>An independent warehouse operator confirms the harvest arrived. Only then does the remaining balance pay out.</p>
+        </li>
+      </ol>
+    </section>
+
+    <section id="roles" class="wrap">
+      <div class="section-head">
+        <div class="eyebrow">Who's who</div>
+        <h2>Two parties, one shared contract</h2>
+        <p>Every commitment has exactly one cooperative and one buyer on opposite sides of the same escrow.</p>
+      </div>
+      <div class="roles">
+        <div class="role-card">
+          <span class="role-tag">Seller side</span>
+          <h3>The Cooperative</h3>
+          <p>Represents the farmers actually growing the crop. Agrees the price, commits to delivering the harvest, and receives advance payments before delivery to help fund the season.</p>
+          <p>Gets paid in tranches — some upfront, the rest once the warehouse confirms delivery.</p>
+        </div>
+        <div class="role-card">
+          <span class="role-tag">Buyer side</span>
+          <h3>The Buyer</h3>
+          <p>Commits to purchase the harvest at an agreed price. Funds the escrow upfront, locking in supply and price before the season's uncertainty plays out.</p>
+          <p>Gets the crop at delivery — and gets a shortfall refund automatically if less arrives than agreed.</p>
+        </div>
+      </div>
+      <p class="role-note">
+        A third, independent party — the <strong>warehouse operator</strong> — grades and confirms
+        the actual delivery. Neither the cooperative nor the buyer can trigger settlement on their
+        own say-so.
+      </p>
+    </section>
+
+    <section id="dashboards" class="wrap">
+      <div class="section-head">
+        <div class="eyebrow">Get started</div>
+        <h2>Pick the dashboard that's you</h2>
+        <p>Each app is built for one side of the deal — pick whichever one matches your role.</p>
+      </div>
+      <div class="apps">
+        <a class="app-card" href="/buyer/">
+          <span class="role-tag">I'm a buyer</span>
+          <h2>Buyer Dashboard</h2>
+          <p>Create a commitment, lock your deposit, track delivery, and settle once the harvest arrives.</p>
+          <span class="go">Open the buyer dashboard →</span>
+        </a>
+        <a class="app-card" href="/coop/">
+          <span class="role-tag">I'm a cooperative</span>
+          <h2>Cooperative Dashboard</h2>
+          <p>Track your commitments, claim advance tranches as they open, and manage delivery status.</p>
+          <span class="go">Open the cooperative dashboard →</span>
+        </a>
+      </div>
+
+      <ul class="checklist" style="margin-top: 32px;">
+        <li><strong>A Stellar wallet.</strong> Both dashboards connect via the <a href="https://www.freighter.app/" target="_blank" rel="noreferrer">Freighter</a> browser extension — install it and switch it to Testnet first.</li>
+        <li><strong>Testnet funds.</strong> Freighter can fund a fresh testnet account for free — real money is never involved here.</li>
+        <li><strong>A contract ID, if you're joining an existing deal.</strong> Whoever created the commitment can share its contract ID (starts with <code>C…</code>) so you can look it up.</li>
+      </ul>
+    </section>
+
+    <footer class="wrap">
+      <p>
+        This is pre-pilot software running on Stellar <strong>testnet</strong> only — no cooperative
+        or buyer has used HarvestLock with real funds yet, and nothing here is financial advice
+        or a real offer. Part of
+        <a href="https://github.com/Agrisettle" target="_blank" rel="noreferrer">Agrisettle</a>.
+      </p>
+    </footer>
   </body>
 </html>

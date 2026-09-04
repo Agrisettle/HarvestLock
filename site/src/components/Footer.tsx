@@ -9,7 +9,7 @@ export function Footer() {
           <span>HarvestLock</span>
           <span className="footer-org">
             part of{" "}
-            <a href="https://github.com/agrisettle" target="_blank" rel="noreferrer">
+            <a href="https://github.com/Agrisettle" target="_blank" rel="noreferrer">
               Agrisettle
             </a>
           </span>
@@ -17,18 +17,18 @@ export function Footer() {
 
         <div className="footer-links">
           <a href="/roles.html">Roles &amp; responsibilities</a>
-          <a href="https://github.com/agrisettle/harvestlock" target="_blank" rel="noreferrer">
+          <a href="https://github.com/Agrisettle/HarvestLock" target="_blank" rel="noreferrer">
             GitHub
           </a>
           <a
-            href="https://github.com/agrisettle/harvestlock/blob/main/docs/PRD.md"
+            href="https://github.com/Agrisettle/HarvestLock/blob/main/docs/PRD.md"
             target="_blank"
             rel="noreferrer"
           >
             PRD
           </a>
           <a
-            href="https://github.com/agrisettle/harvestlock/blob/main/LICENSE"
+            href="https://github.com/Agrisettle/HarvestLock/blob/main/LICENSE"
             target="_blank"
             rel="noreferrer"
           >
