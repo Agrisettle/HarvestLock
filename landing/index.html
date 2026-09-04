@@ -2,6 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23eec765'/%3E%3Crect x='18' y='30' width='28' height='22' rx='5' fill='%230b120f'/%3E%3Cpath d='M24 30V22a8 8 0 0 1 16 0v8' fill='none' stroke='%230b120f' stroke-width='6' stroke-linecap='round'/%3E%3Ccircle cx='32' cy='39' r='3.2' fill='%23eec765'/%3E%3Crect x='30.6' y='41' width='2.8' height='6' rx='1.2' fill='%23eec765'/%3E%3C/svg%3E"
+    />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0B120F" />
     <meta name="description" content="HarvestLock — escrow infrastructure for agricultural forward contracts on Stellar. A cooperative and a buyer agree a price before harvest; an independent warehouse receipt, not either party's word, releases the money." />
@@ -585,52 +590,74 @@
         color: var(--bone);
       }
 
-      /* ---- site map ---- */
-      .sitemap-cols {
+      /* ---- footer / site map ----
+         The site map used to be its own full section (eyebrow, h2, lede)
+         sitting above the footer -- structurally it *was* a footer
+         (a directory of links to the rest of the page), it just wasn't
+         styled or placed like one. Folded directly into <footer> instead,
+         laid out with generous column gaps and taller link spacing so it
+         reads like a directory listing rather than a cramped card grid. */
+      footer {
+        border-top: 1px solid var(--void-line-soft);
+        padding: 56px 0 40px;
+        scroll-margin-top: 24px;
+      }
+      footer a {
+        color: var(--bone-dim);
+      }
+      .footer-directory {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-        gap: 28px;
-        max-width: 760px;
-        margin: 0 auto;
+        grid-template-columns: 1.3fr repeat(4, 1fr);
+        gap: 40px;
+        padding-bottom: 44px;
       }
-      .sitemap-col h3 {
-        font-family: var(--mono);
-        font-size: 0.72rem;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
-        color: var(--gold);
-        margin: 0 0 12px;
+      .footer-directory-brand .brand-name {
+        display: block;
+        font-family: var(--display);
+        font-weight: 600;
+        font-size: 1.15rem;
+        margin-bottom: 12px;
       }
-      .sitemap-col ul {
-        list-style: none;
+      .footer-directory-brand p {
         margin: 0;
-        padding: 0;
+        max-width: 240px;
+        font-size: 0.85rem;
+        line-height: 1.6;
+        color: var(--bone-faint);
+      }
+      .footer-directory-col {
         display: flex;
         flex-direction: column;
-        gap: 8px;
       }
-      .sitemap-col a {
-        color: var(--bone-dim);
+      .footer-directory-col h3 {
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        color: var(--gold);
+        margin: 0 0 18px;
+      }
+      .footer-directory-col a {
         text-decoration: none;
-        font-size: 0.88rem;
+        font-size: 0.92rem;
+        padding: 7px 0;
+        border-top: 1px solid var(--void-line-soft);
       }
-      .sitemap-col a:hover {
+      .footer-directory-col a:first-of-type {
+        border-top: none;
+      }
+      .footer-directory-col a:hover {
         color: var(--bone);
         text-decoration: underline;
         text-decoration-color: var(--gold);
         text-underline-offset: 3px;
       }
-
-      /* ---- footer ---- */
-      footer {
-        border-top: 1px solid var(--void-line);
-        padding: 28px 0 40px;
+      .footer-legal {
+        border-top: 1px solid var(--void-line-soft);
+        padding-top: 26px;
         text-align: center;
         font-size: 0.8rem;
         color: var(--bone-faint);
-      }
-      footer a {
-        color: var(--bone-dim);
       }
       .footer-love {
         font-family: var(--mono);
@@ -641,6 +668,18 @@
       .footer-love strong {
         color: var(--gold-bright);
         font-weight: 500;
+      }
+      @media (max-width: 760px) {
+        .footer-directory {
+          grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+          row-gap: 32px;
+        }
+        .footer-directory-brand {
+          grid-column: 1 / -1;
+        }
+        .footer-directory-brand p {
+          max-width: 420px;
+        }
       }
 
       /* ---- back to top ---- */
@@ -861,57 +900,48 @@
       </ul>
     </section>
 
-    <section id="sitemap" class="wrap section-alt reveal">
-      <div class="section-head">
-        <div class="eyebrow">Site map</div>
-        <h2>Every section, one click away</h2>
-        <p>The same headings used above — jump straight to any of them.</p>
-      </div>
-      <div class="sitemap-cols">
-        <div class="sitemap-col">
+    <footer id="sitemap" class="wrap">
+      <div class="footer-directory">
+        <div class="footer-directory-brand">
+          <span class="brand-name">HarvestLock</span>
+          <p>Escrow for agricultural forward contracts, settled against an independent warehouse receipt — not on anyone's word.</p>
+        </div>
+        <nav class="footer-directory-col">
           <h3>Overview</h3>
-          <ul>
-            <li><a href="#top">Home</a></li>
-            <li><a href="#how-it-works">How it works</a></li>
-            <li><a href="#roles">Cooperative &amp; buyer</a></li>
-            <li><a href="#dashboards">Dashboards</a></li>
-          </ul>
-        </div>
-        <div class="sitemap-col">
+          <a href="#top">Home</a>
+          <a href="#how-it-works">How it works</a>
+          <a href="#roles">Cooperative &amp; buyer</a>
+          <a href="#dashboards">Dashboards</a>
+        </nav>
+        <nav class="footer-directory-col">
           <h3>How it works</h3>
-          <ul>
-            <li><a href="#agree-the-deal">01 — Agree the deal</a></li>
-            <li><a href="#lock-the-funds">02 — Lock the funds</a></li>
-            <li><a href="#advance-the-cooperative">03 — Advance the cooperative</a></li>
-            <li><a href="#deliver-and-settle">04 — Deliver &amp; settle</a></li>
-          </ul>
-        </div>
-        <div class="sitemap-col">
+          <a href="#agree-the-deal">01 — Agree the deal</a>
+          <a href="#lock-the-funds">02 — Lock the funds</a>
+          <a href="#advance-the-cooperative">03 — Advance the cooperative</a>
+          <a href="#deliver-and-settle">04 — Deliver &amp; settle</a>
+        </nav>
+        <nav class="footer-directory-col">
           <h3>Who's who</h3>
-          <ul>
-            <li><a href="#cooperative">The Cooperative</a></li>
-            <li><a href="#buyer">The Buyer</a></li>
-          </ul>
-        </div>
-        <div class="sitemap-col">
+          <a href="#cooperative">The Cooperative</a>
+          <a href="#buyer">The Buyer</a>
+        </nav>
+        <nav class="footer-directory-col">
           <h3>Get started</h3>
-          <ul>
-            <li><a href="#buyer-dashboard">Buyer Dashboard</a></li>
-            <li><a href="#cooperative-dashboard">Cooperative Dashboard</a></li>
-            <li><a href="https://www.freighter.app/" target="_blank" rel="noreferrer">Freighter wallet ↗</a></li>
-          </ul>
-        </div>
+          <a href="#buyer-dashboard">Buyer Dashboard</a>
+          <a href="#cooperative-dashboard">Cooperative Dashboard</a>
+          <a href="https://www.freighter.app/" target="_blank" rel="noreferrer">Freighter wallet ↗</a>
+        </nav>
       </div>
-    </section>
 
-    <footer class="wrap">
-      <p class="footer-love">Built with <strong>&hearts;</strong> for Stellar.</p>
-      <p>
-        This is pre-pilot software running on Stellar <strong>testnet</strong> only — no cooperative
-        or buyer has used HarvestLock with real funds yet, and nothing here is financial advice
-        or a real offer. Part of
-        <a href="https://github.com/Agrisettle" target="_blank" rel="noreferrer">Agrisettle</a>.
-      </p>
+      <div class="footer-legal">
+        <p class="footer-love">Built with <strong>&hearts;</strong> for Stellar.</p>
+        <p>
+          This is pre-pilot software running on Stellar <strong>testnet</strong> only — no cooperative
+          or buyer has used HarvestLock with real funds yet, and nothing here is financial advice
+          or a real offer. Part of
+          <a href="https://github.com/Agrisettle" target="_blank" rel="noreferrer">Agrisettle</a>.
+        </p>
+      </div>
     </footer>
 
     <a class="to-top" href="#top" aria-label="Back to top">
