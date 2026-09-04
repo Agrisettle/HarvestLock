@@ -87,7 +87,7 @@ describe("App", () => {
     fetchMock.mockResolvedValueOnce(jsonResponse([summary]));
     render(<App />);
 
-    expect(await screen.findByText(summary.contract_id)).toBeInTheDocument();
+    expect(await screen.findByTitle(summary.contract_id)).toBeInTheDocument();
     expect(screen.getByText("What you've locked")).toBeInTheDocument();
   });
 
@@ -104,7 +104,7 @@ describe("App", () => {
     const user = userEvent.setup();
     render(<App />);
 
-    const row = await screen.findByText(summary.contract_id);
+    const row = await screen.findByTitle(summary.contract_id);
     await user.click(row);
 
     expect(await screen.findByText(/Pending: advance 1/)).toBeInTheDocument();
@@ -149,7 +149,7 @@ describe("App", () => {
     render(<App />);
 
     await user.click(await screen.findByRole("button", { name: "Connect wallet" }));
-    await user.click(await screen.findByText(draftSummary.contract_id));
+    await user.click(await screen.findByTitle(draftSummary.contract_id));
     await user.click(await screen.findByRole("button", { name: "Lock deposit" }));
 
     await waitFor(() => expect(screen.getByText("Locked")).toBeInTheDocument());
@@ -178,7 +178,7 @@ describe("App", () => {
     render(<App />);
 
     await user.click(await screen.findByRole("button", { name: "Connect wallet" }));
-    await user.click(await screen.findByText(deliveredSummary.contract_id));
+    await user.click(await screen.findByTitle(deliveredSummary.contract_id));
     await user.click(await screen.findByRole("button", { name: "Settle" }));
 
     await waitFor(() => expect(screen.getByText("Settled")).toBeInTheDocument());
@@ -202,7 +202,7 @@ describe("App", () => {
     render(<App />);
 
     await user.click(await screen.findByRole("button", { name: "Connect wallet" }));
-    await user.click(await screen.findByText(draftSummary.contract_id));
+    await user.click(await screen.findByTitle(draftSummary.contract_id));
     await user.click(await screen.findByRole("button", { name: "Lock deposit" }));
 
     expect(await screen.findByText("User declined to sign")).toBeInTheDocument();
@@ -246,7 +246,7 @@ describe("App", () => {
 
     await user.click(screen.getByRole("button", { name: "Create commitment" }));
 
-    expect(await screen.findByText(newContractId)).toBeInTheDocument();
+    expect(await screen.findByTitle(newContractId)).toBeInTheDocument();
     expect(wallet.signTransactionXdr).toHaveBeenCalledWith("UNSIGNED_INIT_XDR", "GNEWBUYER");
 
     const deployCall = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/commitments/deploy"));

@@ -2,6 +2,7 @@ import type { CommitmentDetail as CommitmentDetailType } from "../api";
 import { StatusBadge } from "./StatusBadge";
 import { CancelSection } from "./CancelSection";
 import { ReassignBuyerSection } from "./ReassignBuyerSection";
+import { AddressChip } from "./AddressChip";
 
 function formatDeadline(unixSecs: string): string {
   const n = Number(unixSecs);
@@ -67,7 +68,7 @@ export function CommitmentDetail({
     <div className="card">
       <div className="detail-header">
         <StatusBadge status={commitment.status} />
-        <span className="contract-id">{contractId}</span>
+        <AddressChip address={contractId} className="contract-id" />
       </div>
 
       <CancelSection commitment={commitment} contractId={contractId} walletAddress={walletAddress} onCancelled={onCancelled} />
@@ -81,19 +82,27 @@ export function CommitmentDetail({
       <dl className="party-grid">
         <div>
           <dt>Buyer</dt>
-          <dd>{commitment.buyer}</dd>
+          <dd>
+            <AddressChip address={commitment.buyer} />
+          </dd>
         </div>
         <div>
           <dt>Cooperative</dt>
-          <dd>{commitment.cooperative}</dd>
+          <dd>
+            <AddressChip address={commitment.cooperative} />
+          </dd>
         </div>
         <div>
           <dt>Warehouse operator</dt>
-          <dd>{commitment.warehouse_operator}</dd>
+          <dd>
+            <AddressChip address={commitment.warehouse_operator} />
+          </dd>
         </div>
         <div>
           <dt>Token</dt>
-          <dd>{commitment.token}</dd>
+          <dd>
+            <AddressChip address={commitment.token} />
+          </dd>
         </div>
         <div>
           <dt>Total amount</dt>

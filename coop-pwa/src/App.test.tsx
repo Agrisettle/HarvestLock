@@ -100,7 +100,7 @@ describe("App", () => {
     fetchMock.mockResolvedValueOnce(jsonResponse([summary]));
     render(<App />);
 
-    expect(await screen.findByText(summary.contract_id)).toBeInTheDocument();
+    expect(await screen.findByTitle(summary.contract_id)).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/commitments"));
   });
 
@@ -117,7 +117,7 @@ describe("App", () => {
     const user = userEvent.setup();
     render(<App />);
 
-    const row = await screen.findByText(summary.contract_id);
+    const row = await screen.findByTitle(summary.contract_id);
     await user.click(row);
 
     expect(await screen.findByText("15.00%")).toBeInTheDocument();
@@ -187,7 +187,7 @@ describe("App", () => {
     render(<App />);
 
     await user.click(await screen.findByRole("button", { name: "Connect wallet" }));
-    await user.click(await screen.findByText(summary.contract_id));
+    await user.click(await screen.findByTitle(summary.contract_id));
     await user.click(await screen.findByRole("button", { name: "Claim" }));
 
     expect(await screen.findByText("claimed")).toBeInTheDocument();
@@ -215,7 +215,7 @@ describe("App", () => {
     render(<App />);
 
     await user.click(await screen.findByRole("button", { name: "Connect wallet" }));
-    await user.click(await screen.findByText(summary.contract_id));
+    await user.click(await screen.findByTitle(summary.contract_id));
     await user.click(await screen.findByRole("button", { name: "Claim" }));
 
     expect(await screen.findByText("User declined to sign")).toBeInTheDocument();
@@ -248,7 +248,7 @@ describe("App", () => {
       render(<App />);
 
       await user.click(await screen.findByRole("button", { name: "Connect wallet" }));
-      await user.click(await screen.findByText(summary.contract_id));
+      await user.click(await screen.findByTitle(summary.contract_id));
       await user.click(await screen.findByRole("button", { name: "Claim" }));
 
       expect(await screen.findByText(/1 claim couldn't reach the network/)).toBeInTheDocument();

@@ -304,12 +304,37 @@ main {
 }
 
 .commitment-row .contract-id {
+  min-width: 0;
+}
+
+.address-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-family: var(--mono);
-  font-size: 0.78rem;
+  font-size: 0.8rem;
   color: var(--bone-dim);
-  overflow: hidden;
-  text-overflow: ellipsis;
+}
+
+.address-chip-text {
   white-space: nowrap;
+}
+
+.address-chip-copy {
+  background: transparent;
+  border: 1px solid var(--void-line);
+  color: var(--bone-faint);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-family: var(--body);
+  font-size: 0.68rem;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.address-chip-copy:hover {
+  border-color: var(--pine);
+  color: var(--bone);
 }
 
 .badge {
@@ -355,10 +380,7 @@ main {
 }
 
 .detail-header .contract-id {
-  font-family: var(--mono);
   font-size: 0.8rem;
-  color: var(--bone-dim);
-  word-break: break-all;
 }
 
 .party-grid {
@@ -378,9 +400,6 @@ main {
 
 .party-grid dd {
   margin: 0;
-  font-family: var(--mono);
-  font-size: 0.8rem;
-  word-break: break-all;
 }
 
 table.tranches {

@@ -1,5 +1,6 @@
 import type { CommitmentSummary } from "../api";
 import { StatusBadge } from "./StatusBadge";
+import { AddressChip } from "./AddressChip";
 
 export function CommitmentList({
   commitments,
@@ -20,7 +21,9 @@ export function CommitmentList({
     <div className="commitment-list">
       {commitments.map((c) => (
         <button key={c.id} className="commitment-row" onClick={() => onSelect(c.contract_id)}>
-          <span className="contract-id">{c.contract_id}</span>
+          {/* copyable=false: this row is itself a <button> -- a nested
+              <button> for the copy control would be invalid HTML. */}
+          <AddressChip address={c.contract_id} copyable={false} className="contract-id" />
           <StatusBadge status={c.status} />
         </button>
       ))}
