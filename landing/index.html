@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,600;1,9..144,400&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,600;0,9..144,700;1,9..144,400&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
     <title>HarvestLock</title>
@@ -16,7 +16,9 @@
       :root {
         --void: #0b120f;
         --void-raised: #121a16;
+        --void-raised-2: #16201b;
         --void-line: #23302a;
+        --void-line-soft: #1a2420;
         --bone: #f3f1e9;
         --bone-dim: #c9c6ba;
         --bone-faint: #8a897f;
@@ -37,7 +39,11 @@
       }
       body {
         margin: 0;
-        background: var(--void);
+        background:
+          radial-gradient(720px 420px at 12% -10%, rgba(30, 107, 78, 0.28), transparent 60%),
+          radial-gradient(640px 420px at 92% 18%, rgba(212, 169, 55, 0.1), transparent 60%),
+          var(--void);
+        background-attachment: fixed;
         color: var(--bone);
         font-family: var(--body);
         -webkit-font-smoothing: antialiased;
@@ -49,7 +55,7 @@
       h1[id],
       h2[id],
       h3[id] {
-        scroll-margin-top: 24px;
+        scroll-margin-top: 88px;
       }
       /* Every subhead is a self-link: click it to jump/share a direct
          anchor, and the same ids drive the site map at the bottom. */
@@ -76,9 +82,39 @@
         opacity: 1;
       }
       .wrap {
-        max-width: 880px;
+        max-width: 1080px;
         margin: 0 auto;
         padding: 0 24px;
+      }
+      .icon {
+        width: 22px;
+        height: 22px;
+        stroke: currentColor;
+        stroke-width: 1.7;
+        fill: none;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      /* ---- scroll reveal ---- */
+      .reveal {
+        opacity: 0;
+        transform: translateY(18px);
+        transition: opacity 0.6s ease, transform 0.6s ease;
+      }
+      .reveal.in-view {
+        opacity: 1;
+        transform: none;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .reveal {
+          opacity: 1;
+          transform: none;
+          transition: none;
+        }
+        html {
+          scroll-behavior: auto;
+        }
       }
 
       /* ---- status strip ---- */
@@ -98,7 +134,14 @@
 
       /* ---- header ---- */
       header {
-        padding: 20px 0;
+        padding: 16px 0;
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        background: rgba(11, 18, 15, 0.78);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        border-bottom: 1px solid var(--void-line-soft);
       }
       .brand {
         display: flex;
@@ -114,45 +157,170 @@
       }
       .brand-nav {
         display: flex;
-        gap: 20px;
+        gap: 22px;
         font-size: 0.85rem;
       }
       .brand-nav a {
+        position: relative;
         color: var(--bone-dim);
         text-decoration: none;
+        padding-bottom: 3px;
+      }
+      .brand-nav a::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 100%;
+        bottom: -2px;
+        height: 2px;
+        background: var(--gold);
+        transition: right 0.2s ease;
       }
       .brand-nav a:hover {
         color: var(--bone);
       }
+      .brand-nav a.active {
+        color: var(--gold-bright);
+      }
+      .brand-nav a.active::after {
+        right: 0;
+      }
 
       /* ---- hero ---- */
       .hero {
-        padding: 56px 0 48px;
+        padding: 64px 0 40px;
         text-align: center;
       }
       .hero h1 {
         font-family: var(--display);
-        font-weight: 600;
-        font-size: clamp(1.8rem, 4vw, 2.6rem);
-        margin: 0 0 16px;
-        line-height: 1.2;
+        font-weight: 700;
+        font-size: clamp(2rem, 4.4vw, 3rem);
+        margin: 0 0 18px;
+        line-height: 1.18;
+        letter-spacing: -0.01em;
       }
       .hero-lede {
         max-width: 620px;
         margin: 0 auto;
         color: var(--bone-dim);
-        font-size: 1.05rem;
+        font-size: 1.08rem;
+      }
+      .hero-ctas {
+        display: flex;
+        gap: 12px;
+        justify-content: center;
+        flex-wrap: wrap;
+        margin-top: 28px;
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-family: var(--body);
+        font-weight: 600;
+        font-size: 0.9rem;
+        text-decoration: none;
+        padding: 12px 20px;
+        border-radius: 8px;
+        transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+      }
+      .btn-primary {
+        color: var(--void);
+        background: linear-gradient(135deg, var(--gold-bright), var(--gold));
+        box-shadow: 0 8px 24px -8px rgba(212, 169, 55, 0.55);
+      }
+      .btn-primary:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 12px 28px -8px rgba(212, 169, 55, 0.7);
+      }
+      .btn-ghost {
+        color: var(--bone);
+        background: var(--void-raised);
+        border: 1px solid var(--void-line);
+      }
+      .btn-ghost:hover {
+        border-color: var(--pine);
+        transform: translateY(-1px);
+      }
+
+      /* ---- flow diagram ---- */
+      .flow {
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        gap: 0;
+        max-width: 620px;
+        margin: 44px auto 0;
+      }
+      .flow-node {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+        width: 108px;
+        flex-shrink: 0;
+      }
+      .flow-node .badge {
+        width: 52px;
+        height: 52px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--void-raised);
+        border: 1px solid var(--void-line);
+        color: var(--gold-bright);
+      }
+      .flow-node.is-escrow .badge {
+        border-color: var(--gold);
+        box-shadow: 0 0 0 6px rgba(212, 169, 55, 0.08);
+      }
+      .flow-node span {
+        font-family: var(--mono);
+        font-size: 0.68rem;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--bone-faint);
+      }
+      .flow-line {
+        flex: 1;
+        height: 2px;
+        margin-top: 25px;
+        background-image: linear-gradient(90deg, var(--gold) 0 9px, transparent 9px 20px);
+        background-size: 20px 2px;
+        background-repeat: repeat-x;
+        opacity: 0.6;
+        animation: flow-move 1.1s linear infinite;
+      }
+      @keyframes flow-move {
+        to {
+          background-position: 20px 0;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .flow-line {
+          animation: none;
+        }
+      }
+      @media (max-width: 560px) {
+        .flow {
+          display: none;
+        }
       }
 
       /* ---- sections ---- */
       section {
-        padding: 48px 0;
-        border-top: 1px solid var(--void-line);
+        padding: 64px 0;
+        border-top: 1px solid var(--void-line-soft);
+        position: relative;
+      }
+      .section-alt {
+        background: linear-gradient(180deg, var(--void-raised) 0%, rgba(18, 26, 22, 0) 100%);
       }
       .section-head {
         text-align: center;
         max-width: 560px;
-        margin: 0 auto 32px;
+        margin: 0 auto 36px;
       }
       .eyebrow {
         font-family: var(--mono);
@@ -160,12 +328,12 @@
         letter-spacing: 0.08em;
         text-transform: uppercase;
         color: var(--gold);
-        margin-bottom: 8px;
+        margin-bottom: 10px;
       }
       .section-head h2 {
         font-family: var(--display);
         font-weight: 600;
-        font-size: 1.5rem;
+        font-size: 1.65rem;
         margin: 0 0 10px;
       }
       .section-head p {
@@ -179,25 +347,46 @@
         margin: 0;
         padding: 0;
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-        gap: 16px;
+        grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+        gap: 18px;
+        counter-reset: step;
       }
       .step {
         background: var(--void-raised);
         border: 1px solid var(--void-line);
-        border-radius: 10px;
-        padding: 18px;
+        border-radius: 12px;
+        padding: 22px;
+        transition: border-color 0.15s ease, transform 0.15s ease;
+      }
+      .step:hover {
+        border-color: var(--pine);
+        transform: translateY(-2px);
+      }
+      .step-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 14px;
+      }
+      .step-icon {
+        width: 38px;
+        height: 38px;
+        border-radius: 9px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--pine-soft);
+        color: var(--gold-bright);
       }
       .step-num {
         font-family: var(--mono);
-        font-size: 0.8rem;
-        color: var(--gold);
-        margin-bottom: 8px;
+        font-size: 0.78rem;
+        color: var(--bone-faint);
       }
       .step h3 {
         font-family: var(--display);
         font-weight: 600;
-        font-size: 1rem;
+        font-size: 1.05rem;
         margin: 0 0 6px;
         color: var(--gold-bright);
       }
@@ -210,20 +399,42 @@
       /* ---- who's who ---- */
       .roles {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
         gap: 20px;
       }
       .role-card {
         background: var(--void-raised);
         border: 1px solid var(--void-line);
-        border-radius: 12px;
-        padding: 24px;
+        border-radius: 14px;
+        padding: 28px;
+        transition: border-color 0.15s ease, transform 0.15s ease;
+      }
+      .role-card:hover {
+        border-color: var(--pine);
+        transform: translateY(-2px);
+      }
+      .role-card-top {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin-bottom: 14px;
+      }
+      .role-icon {
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--pine-soft);
+        color: var(--gold-bright);
       }
       .role-card h3 {
         font-family: var(--display);
         font-weight: 600;
-        font-size: 1.15rem;
-        margin: 0 0 10px;
+        font-size: 1.2rem;
+        margin: 0 0 4px;
         color: var(--gold-bright);
       }
       .role-card p {
@@ -244,36 +455,67 @@
         border: 1px solid var(--void-line);
         border-radius: 999px;
         padding: 3px 10px;
-        margin-bottom: 12px;
       }
+      /* Deliberately not display:flex here, same reason as .checklist li
+         above: this mixes an icon element with plain text and a <strong>,
+         and flex would split each into its own column instead of letting
+         them wrap together as one paragraph. The icon is inline content
+         instead, vertically nudged to sit on the text baseline. */
       .role-note {
-        margin-top: 20px;
+        margin-top: 24px;
+        max-width: 640px;
+        margin-left: auto;
+        margin-right: auto;
         font-size: 0.85rem;
         color: var(--bone-faint);
         text-align: center;
+      }
+      .role-note .icon {
+        width: 18px;
+        height: 18px;
+        color: var(--gold);
+        vertical-align: -4px;
+        margin-right: 6px;
       }
 
       /* ---- app picker ---- */
       .apps {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
         gap: 20px;
       }
       .app-card {
         display: flex;
         flex-direction: column;
         gap: 10px;
-        padding: 26px;
+        padding: 28px;
         background: var(--void-raised);
         border: 1px solid var(--void-line);
-        border-radius: 12px;
+        border-radius: 14px;
         text-decoration: none;
         color: inherit;
-        transition: border-color 0.15s ease, transform 0.15s ease;
+        transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
       }
       .app-card:hover {
-        border-color: var(--pine);
-        transform: translateY(-2px);
+        border-color: var(--gold);
+        transform: translateY(-3px);
+        box-shadow: 0 16px 32px -16px rgba(212, 169, 55, 0.35);
+      }
+      .app-card-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .app-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--pine-soft);
+        color: var(--gold-bright);
       }
       .app-card .role-tag {
         display: inline-block;
@@ -290,8 +532,8 @@
       .app-card h3 {
         font-family: var(--display);
         font-weight: 600;
-        font-size: 1.2rem;
-        margin: 0;
+        font-size: 1.25rem;
+        margin: 4px 0 0;
         color: var(--gold-bright);
       }
       .app-card p {
@@ -300,7 +542,7 @@
         color: var(--bone-dim);
       }
       .app-card .go {
-        margin-top: 4px;
+        margin-top: 6px;
         font-family: var(--mono);
         font-size: 0.8rem;
         color: var(--gold-bright);
@@ -314,7 +556,7 @@
         display: flex;
         flex-direction: column;
         gap: 10px;
-        max-width: 520px;
+        max-width: 560px;
       }
       /* Deliberately not display:flex on the <li> itself: this list mixes
          plain text with inline elements (<strong>, <a>, <code>), and a
@@ -325,16 +567,19 @@
          "→ " look without touching how the inline content flows. */
       .checklist li {
         position: relative;
-        padding-left: 22px;
+        padding: 12px 14px 12px 38px;
         font-size: 0.92rem;
         color: var(--bone-dim);
+        background: var(--void-raised);
+        border: 1px solid var(--void-line);
+        border-radius: 8px;
       }
       .checklist li::before {
         content: "→";
         color: var(--gold);
         position: absolute;
-        left: 0;
-        top: 0;
+        left: 14px;
+        top: 12px;
       }
       .checklist strong {
         color: var(--bone);
@@ -345,7 +590,7 @@
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
         gap: 28px;
-        max-width: 720px;
+        max-width: 760px;
         margin: 0 auto;
       }
       .sitemap-col h3 {
@@ -397,6 +642,36 @@
         color: var(--gold-bright);
         font-weight: 500;
       }
+
+      /* ---- back to top ---- */
+      .to-top {
+        position: fixed;
+        right: 20px;
+        bottom: 20px;
+        width: 42px;
+        height: 42px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--void-raised);
+        border: 1px solid var(--void-line);
+        color: var(--bone);
+        text-decoration: none;
+        opacity: 0;
+        pointer-events: none;
+        transform: translateY(8px);
+        transition: opacity 0.2s ease, transform 0.2s ease, border-color 0.15s ease;
+        z-index: 20;
+      }
+      .to-top.visible {
+        opacity: 1;
+        pointer-events: auto;
+        transform: none;
+      }
+      .to-top:hover {
+        border-color: var(--gold);
+      }
     </style>
   </head>
   <body>
@@ -408,10 +683,10 @@
       <div class="brand">
         <span class="brand-name">HarvestLock</span>
         <nav class="brand-nav">
-          <a href="#how-it-works">How it works</a>
-          <a href="#roles">Cooperative &amp; buyer</a>
-          <a href="#dashboards">Dashboards</a>
-          <a href="#sitemap">Site map</a>
+          <a href="#how-it-works" data-nav="how-it-works">How it works</a>
+          <a href="#roles" data-nav="roles">Cooperative &amp; buyer</a>
+          <a href="#dashboards" data-nav="dashboards">Dashboards</a>
+          <a href="#sitemap" data-nav="sitemap">Site map</a>
         </nav>
       </div>
     </header>
@@ -424,94 +699,169 @@
         independent warehouse confirms the harvest actually arrived. Neither side can move
         the money alone.
       </p>
+      <div class="hero-ctas">
+        <a class="btn btn-primary" href="#dashboards">
+          Get started
+          <svg class="icon" viewBox="0 0 24 24" width="16" height="16"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+        </a>
+        <a class="btn btn-ghost" href="#how-it-works">See how it works</a>
+      </div>
+
+      <div class="flow" aria-hidden="true">
+        <div class="flow-node">
+          <div class="badge">
+            <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.4" /><path d="M5 19c0-4 3-6.6 7-6.6s7 2.6 7 6.6" /></svg>
+          </div>
+          <span>Buyer</span>
+        </div>
+        <div class="flow-line"></div>
+        <div class="flow-node is-escrow">
+          <div class="badge">
+            <svg class="icon" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
+          </div>
+          <span>Escrow</span>
+        </div>
+        <div class="flow-line"></div>
+        <div class="flow-node">
+          <div class="badge">
+            <svg class="icon" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3" /><circle cx="16.5" cy="9.5" r="2.4" /><path d="M4 19c0-3 2.4-5 5-5s5 2 5 5" /><path d="M14.3 19c.2-2.1 1.6-3.8 3.6-4.1" /></svg>
+          </div>
+          <span>Cooperative</span>
+        </div>
+      </div>
     </div>
 
-    <section id="how-it-works" class="wrap">
+    <section id="how-it-works" class="wrap reveal">
       <div class="section-head">
         <div class="eyebrow">How it works</div>
         <h2><a class="head-link" href="#how-it-works">Four steps, one contract per deal</a></h2>
         <p>No jargon required — this is the whole idea, in plain terms.</p>
       </div>
       <ol class="steps">
-        <li class="step">
-          <div class="step-num">01</div>
+        <li class="step reveal">
+          <div class="step-top">
+            <div class="step-icon">
+              <svg class="icon" viewBox="0 0 24 24"><circle cx="7" cy="9" r="2.6" /><circle cx="17" cy="9" r="2.6" /><path d="M9.6 9h4.8" /><path d="M9 14l2.5 2.5L16 12" /></svg>
+            </div>
+            <div class="step-num">01</div>
+          </div>
           <h3 id="agree-the-deal"><a class="head-link" href="#agree-the-deal">Agree the deal</a></h3>
           <p>A cooperative and a buyer agree a price and quantity before harvest. Nothing has moved yet.</p>
         </li>
-        <li class="step">
-          <div class="step-num">02</div>
+        <li class="step reveal">
+          <div class="step-top">
+            <div class="step-icon">
+              <svg class="icon" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
+            </div>
+            <div class="step-num">02</div>
+          </div>
           <h3 id="lock-the-funds"><a class="head-link" href="#lock-the-funds">Lock the funds</a></h3>
           <p>The buyer's deposit moves into escrow — a contract that belongs to neither party.</p>
         </li>
-        <li class="step">
-          <div class="step-num">03</div>
+        <li class="step reveal">
+          <div class="step-top">
+            <div class="step-icon">
+              <svg class="icon" viewBox="0 0 24 24"><path d="M4 17l5-5 4 4 7-7" /><path d="M14 8h6v6" /></svg>
+            </div>
+            <div class="step-num">03</div>
+          </div>
           <h3 id="advance-the-cooperative"><a class="head-link" href="#advance-the-cooperative">Advance the cooperative</a></h3>
           <p>Capped pre-harvest payments release to the cooperative in tranches, so farmers aren't waiting on delivery to get paid at all.</p>
         </li>
-        <li class="step">
-          <div class="step-num">04</div>
+        <li class="step reveal">
+          <div class="step-top">
+            <div class="step-icon">
+              <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" /><path d="M8.2 12.5l2.4 2.4L16 9.5" /></svg>
+            </div>
+            <div class="step-num">04</div>
+          </div>
           <h3 id="deliver-and-settle"><a class="head-link" href="#deliver-and-settle">Deliver &amp; settle</a></h3>
           <p>An independent warehouse operator confirms the harvest arrived. Only then does the remaining balance pay out.</p>
         </li>
       </ol>
     </section>
 
-    <section id="roles" class="wrap">
+    <section id="roles" class="wrap section-alt reveal">
       <div class="section-head">
         <div class="eyebrow">Who's who</div>
         <h2><a class="head-link" href="#roles">Two parties, one shared contract</a></h2>
         <p>Every commitment has exactly one cooperative and one buyer on opposite sides of the same escrow.</p>
       </div>
       <div class="roles">
-        <div class="role-card">
-          <span class="role-tag">Seller side</span>
-          <h3 id="cooperative"><a class="head-link" href="#cooperative">The Cooperative</a></h3>
+        <div class="role-card reveal">
+          <div class="role-card-top">
+            <div class="role-icon">
+              <svg class="icon" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3" /><circle cx="16.5" cy="9.5" r="2.4" /><path d="M4 19c0-3 2.4-5 5-5s5 2 5 5" /><path d="M14.3 19c.2-2.1 1.6-3.8 3.6-4.1" /></svg>
+            </div>
+            <div>
+              <span class="role-tag">Seller side</span>
+              <h3 id="cooperative"><a class="head-link" href="#cooperative">The Cooperative</a></h3>
+            </div>
+          </div>
           <p>Represents the farmers actually growing the crop. Agrees the price, commits to delivering the harvest, and receives advance payments before delivery to help fund the season.</p>
           <p>Gets paid in tranches — some upfront, the rest once the warehouse confirms delivery.</p>
         </div>
-        <div class="role-card">
-          <span class="role-tag">Buyer side</span>
-          <h3 id="buyer"><a class="head-link" href="#buyer">The Buyer</a></h3>
+        <div class="role-card reveal">
+          <div class="role-card-top">
+            <div class="role-icon">
+              <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.4" /><path d="M5 19c0-4 3-6.6 7-6.6s7 2.6 7 6.6" /></svg>
+            </div>
+            <div>
+              <span class="role-tag">Buyer side</span>
+              <h3 id="buyer"><a class="head-link" href="#buyer">The Buyer</a></h3>
+            </div>
+          </div>
           <p>Commits to purchase the harvest at an agreed price. Funds the escrow upfront, locking in supply and price before the season's uncertainty plays out.</p>
           <p>Gets the crop at delivery — and gets a shortfall refund automatically if less arrives than agreed.</p>
         </div>
       </div>
       <p class="role-note">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M12 3l8 4v5c0 4.5-3 7.5-8 9-5-1.5-8-4.5-8-9V7l8-4z" /></svg>
         A third, independent party — the <strong>warehouse operator</strong> — grades and confirms
         the actual delivery. Neither the cooperative nor the buyer can trigger settlement on their
         own say-so.
       </p>
     </section>
 
-    <section id="dashboards" class="wrap">
+    <section id="dashboards" class="wrap reveal">
       <div class="section-head">
         <div class="eyebrow">Get started</div>
         <h2><a class="head-link" href="#dashboards">Pick the dashboard that's you</a></h2>
         <p>Each app is built for one side of the deal — pick whichever one matches your role.</p>
       </div>
       <div class="apps">
-        <a class="app-card" href="/buyer/">
-          <span class="role-tag">I'm a buyer</span>
+        <a class="app-card reveal" href="/buyer/">
+          <div class="app-card-top">
+            <div class="app-icon">
+              <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.4" /><path d="M5 19c0-4 3-6.6 7-6.6s7 2.6 7 6.6" /></svg>
+            </div>
+            <span class="role-tag">I'm a buyer</span>
+          </div>
           <h3 id="buyer-dashboard">Buyer Dashboard</h3>
           <p>Create a commitment, lock your deposit, track delivery, and settle once the harvest arrives.</p>
           <span class="go">Open the buyer dashboard →</span>
         </a>
-        <a class="app-card" href="/coop/">
-          <span class="role-tag">I'm a cooperative</span>
+        <a class="app-card reveal" href="/coop/">
+          <div class="app-card-top">
+            <div class="app-icon">
+              <svg class="icon" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3" /><circle cx="16.5" cy="9.5" r="2.4" /><path d="M4 19c0-3 2.4-5 5-5s5 2 5 5" /><path d="M14.3 19c.2-2.1 1.6-3.8 3.6-4.1" /></svg>
+            </div>
+            <span class="role-tag">I'm a cooperative</span>
+          </div>
           <h3 id="cooperative-dashboard">Cooperative Dashboard</h3>
           <p>Track your commitments, claim advance tranches as they open, and manage delivery status.</p>
           <span class="go">Open the cooperative dashboard →</span>
         </a>
       </div>
 
-      <ul class="checklist" style="margin-top: 32px;">
+      <ul class="checklist reveal" style="margin-top: 32px;">
         <li><strong>A Stellar wallet.</strong> Both dashboards connect via the <a href="https://www.freighter.app/" target="_blank" rel="noreferrer">Freighter</a> browser extension — install it and switch it to Testnet first.</li>
         <li><strong>Testnet funds.</strong> Freighter can fund a fresh testnet account for free — real money is never involved here.</li>
         <li><strong>A contract ID, if you're joining an existing deal.</strong> Whoever created the commitment can share its contract ID (starts with <code>C…</code>) so you can look it up.</li>
       </ul>
     </section>
 
-    <section id="sitemap" class="wrap">
+    <section id="sitemap" class="wrap section-alt reveal">
       <div class="section-head">
         <div class="eyebrow">Site map</div>
         <h2>Every section, one click away</h2>
@@ -563,5 +913,79 @@
         <a href="https://github.com/Agrisettle" target="_blank" rel="noreferrer">Agrisettle</a>.
       </p>
     </footer>
+
+    <a class="to-top" href="#top" aria-label="Back to top">
+      <svg class="icon" viewBox="0 0 24 24" width="18" height="18"><path d="M6 15l6-6 6 6" /></svg>
+    </a>
+
+    <script>
+      // Scroll-reveal: fade sections/cards in as they enter view instead of
+      // dumping the whole page on screen at once. Respects
+      // prefers-reduced-motion via the .reveal CSS fallback above.
+      (function () {
+        var revealed = document.querySelectorAll(".reveal");
+        if (!("IntersectionObserver" in window) || revealed.length === 0) {
+          revealed.forEach(function (el) {
+            el.classList.add("in-view");
+          });
+          return;
+        }
+        var observer = new IntersectionObserver(
+          function (entries) {
+            entries.forEach(function (entry) {
+              if (entry.isIntersecting) {
+                entry.target.classList.add("in-view");
+                observer.unobserve(entry.target);
+              }
+            });
+          },
+          { threshold: 0.12, rootMargin: "0px 0px -40px 0px" }
+        );
+        revealed.forEach(function (el) {
+          observer.observe(el);
+        });
+      })();
+
+      // Scroll-spy: highlight the nav link for whichever section is
+      // currently in view, so the header always shows "you are here".
+      (function () {
+        var navLinks = document.querySelectorAll(".brand-nav a[data-nav]");
+        var sections = Array.prototype.slice
+          .call(navLinks)
+          .map(function (a) {
+            return document.getElementById(a.dataset.nav);
+          })
+          .filter(Boolean);
+        if (!("IntersectionObserver" in window) || sections.length === 0) return;
+        var current = null;
+        var spy = new IntersectionObserver(
+          function (entries) {
+            entries.forEach(function (entry) {
+              if (entry.isIntersecting) current = entry.target.id;
+            });
+            navLinks.forEach(function (a) {
+              a.classList.toggle("active", a.dataset.nav === current);
+            });
+          },
+          { rootMargin: "-15% 0px -70% 0px" }
+        );
+        sections.forEach(function (s) {
+          spy.observe(s);
+        });
+      })();
+
+      // Back-to-top button, shown once the hero has scrolled past.
+      (function () {
+        var btn = document.querySelector(".to-top");
+        if (!btn) return;
+        window.addEventListener(
+          "scroll",
+          function () {
+            btn.classList.toggle("visible", window.scrollY > 640);
+          },
+          { passive: true }
+        );
+      })();
+    </script>
   </body>
 </html>
