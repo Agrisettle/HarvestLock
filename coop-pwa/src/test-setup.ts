@@ -1,4 +1,9 @@
 import "@testing-library/jest-dom/vitest";
+// jsdom has no IndexedDB implementation at all (verified directly against
+// this project's jsdom version, not assumed) -- fake-indexeddb/auto
+// installs a real (in-memory) IndexedDB implementation onto `global`
+// before any test file runs, which offlineQueue.ts needs.
+import "fake-indexeddb/auto";
 import { afterEach } from "vitest";
 import { cleanup } from "@testing-library/react";
 

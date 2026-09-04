@@ -4,9 +4,9 @@ HarvestLock's cooperative-facing dashboard. React + Vite + TypeScript.
 Look up a commitment by contract ID, or pick one from the cached list, see
 its status and advance-tranche claim windows straight from chain, and —
 if a connected wallet matches the commitment's cooperative — claim an open
-advance tranche. No auth, no offline support yet — deliberately deferred,
-see below. Not a PWA yet either (no service worker/manifest) — that's tied
-to the offline-queue work.
+advance tranche, with the app shell installable and loadable offline and
+a queue for claims that can't reach the network (see below). No auth yet
+— deliberately deferred, see below.
 
 Note what this app is *not*, even once it's further along: individual
 farmers never get an app. They get SMS (and eventually USSD) only — PRD
@@ -115,10 +115,36 @@ this component — same small-duplication call as `CancelSection.tsx`'s.
 7 new component tests, same conventions as `CancelSection.test.tsx`'s.
 Same Freighter-extension honesty note as the action above applies.
 
+**Offline-tolerant queue** (`src/offlineQueue.ts`, `src/components/OfflineQueueBanner.tsx`,
+added 4 Sept 2026): PRD §7/§16.3's "connectivity loss at depot" edge case.
+The app shell itself is now installable and precached (`vite-plugin-pwa`,
+`vite.config.ts`) — the dashboard opens with no network at all, though a
+freshly-viewed commitment's live data obviously still needs one; nothing
+here fakes stale data as current. If a claim's *build* request can't
+even reach the network (`isOfflineError` — a `fetch` `TypeError`, not a
+rejection the server actually sent back), the *intent* (contract +
+tranche) is queued in IndexedDB and surfaced in a banner, instead of just
+failing. Deliberately **not** a pre-signed transaction queued for later,
+and deliberately **not** auto-retried on a `window.addEventListener("online")`
+listener — see `offlineQueue.ts`'s doc comment for why: the API's
+`buildInvokeTransaction` sets a 60-second transaction timeout, nowhere
+near enough to survive a real depot connectivity gap, and a queued
+signature would also go stale the moment any *other* transaction moved
+the source account's sequence number in the meantime. Retrying always
+rebuilds fresh (a current sequence number, a fresh window) and still
+needs the cooperative's own wallet to sign via Freighter — which needs
+the user present regardless — so a visible "Retry" button they tap when
+they believe they're reconnected is both simpler and more honest than
+trying to auto-detect it. A genuine rejection on retry (not just "still
+offline") removes the item from the queue and surfaces the real error,
+rather than retrying forever. 5 new tests against a real (in-memory)
+IndexedDB via `fake-indexeddb`, plus 2 new `App.test.tsx` scenarios
+(queues on a network failure, then a successful retry clears it) —
+same fetch-mocking conventions as every other write action here.
+
 **Deferred, per `TASKS.md`**:
 - Phone-based auth (PRD §4.6) — needs the API's identity/session model decided first. Freighter is a stand-in, not this.
-- Offline-tolerant queue for depot connectivity loss (PRD §7/§16.3).
-- Allocation-ledger / per-member display — the API doesn't have this data yet either.
+- Allocation-ledger / per-member display — the API side is done (`api/HANDOFF.md`), nothing built for this frontend yet.
 
 ## A real testnet flakiness observed, not a bug — now handled
 

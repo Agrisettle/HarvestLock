@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { IDBFactory } from "fake-indexeddb";
 import App from "./App";
 import type { CommitmentDetail, CommitmentSummary } from "./api";
 import * as wallet from "./wallet";
@@ -83,6 +84,11 @@ beforeEach(() => {
   vi.stubGlobal("fetch", fetchMock);
   vi.mocked(wallet.connectWallet).mockReset();
   vi.mocked(wallet.signTransactionXdr).mockReset();
+  // App reads the offline queue from IndexedDB on mount -- a fresh
+  // in-memory instance per test, same reasoning offlineQueue.test.ts's
+  // own beforeEach documents, so a claim queued in one test can't leak
+  // into the next.
+  indexedDB = new IDBFactory();
 });
 
 afterEach(() => {
@@ -214,4 +220,57 @@ describe("App", () => {
 
     expect(await screen.findByText("User declined to sign")).toBeInTheDocument();
   });
+
+  it("shows no offline-queue banner when nothing is queued", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse([]));
+    render(<App />);
+    await screen.findByText("Known commitments");
+    expect(screen.queryByText(/couldn't reach the network/)).not.toBeInTheDocument();
+  });
+
+  it(
+    "queues a claim when the build request can't reach the network, then retries it successfully once the app is back online",
+    async () => {
+      const openDetail: CommitmentDetail = { ...detail, advance1_deadline: String(Math.floor(Date.now() / 1000) + 3600) };
+      const claimedDetail: CommitmentDetail = { ...openDetail, advance1_claimed: true };
+
+      fetchMock.mockResolvedValueOnce(jsonResponse([summary])); // initial list
+      fetchMock.mockResolvedValueOnce(jsonResponse(openDetail)); // click row -> detail
+      fetchMock.mockResolvedValueOnce(jsonResponse({ proposal: null })); // CancelSection poll
+      fetchMock.mockResolvedValueOnce(jsonResponse({ proposal: null })); // ReassignBuyerSection poll
+      // buildTx never even reaches the network -- the exact failure mode
+      // isOfflineError exists to detect, not a rejection the server sent back.
+      fetchMock.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+
+      vi.mocked(wallet.connectWallet).mockResolvedValueOnce(detail.cooperative);
+
+      const user = userEvent.setup();
+      render(<App />);
+
+      await user.click(await screen.findByRole("button", { name: "Connect wallet" }));
+      await user.click(await screen.findByText(summary.contract_id));
+      await user.click(await screen.findByRole("button", { name: "Claim" }));
+
+      expect(await screen.findByText(/1 claim couldn't reach the network/)).toBeInTheDocument();
+      expect(screen.getAllByText(/Advance 1/).length).toBeGreaterThan(0);
+      // Never got far enough to even ask Freighter to sign anything.
+      expect(wallet.signTransactionXdr).not.toHaveBeenCalled();
+
+      // Retry: this time the network's there -- fresh build -> sign ->
+      // submit -> refresh, exactly the same shape as a first attempt,
+      // not a replay of the failed one (there was nothing to replay --
+      // it never got a signature or an XDR the first time).
+      fetchMock.mockResolvedValueOnce(jsonResponse({ xdr: "UNSIGNED_XDR" })); // buildTx
+      fetchMock.mockResolvedValueOnce(jsonResponse({ status: "SUCCESS", hash: "abc" })); // submitTx
+      fetchMock.mockResolvedValueOnce(jsonResponse(claimedDetail)); // post-claim refresh
+      vi.mocked(wallet.signTransactionXdr).mockResolvedValueOnce("SIGNED_XDR");
+
+      await user.click(await screen.findByRole("button", { name: "Retry" }));
+
+      await waitFor(() => expect(screen.queryByText(/couldn't reach the network/)).not.toBeInTheDocument());
+      expect(wallet.signTransactionXdr).toHaveBeenCalledWith("UNSIGNED_XDR", detail.cooperative);
+      expect(await screen.findByText("claimed")).toBeInTheDocument();
+    },
+    15_000,
+  );
 });

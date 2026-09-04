@@ -10,6 +10,8 @@ import {
 import { connectWallet, signTransactionXdr } from "./wallet";
 import { CommitmentDetail } from "./components/CommitmentDetail";
 import { CommitmentList } from "./components/CommitmentList";
+import { OfflineQueueBanner } from "./components/OfflineQueueBanner";
+import { enqueueClaim, listQueuedClaims, removeQueuedClaim, isOfflineError, type QueuedClaim } from "./offlineQueue";
 
 export default function App() {
   const [commitments, setCommitments] = useState<CommitmentSummary[]>([]);
@@ -26,6 +28,23 @@ export default function App() {
   const [walletError, setWalletError] = useState<string | null>(null);
   const [claimingTranche, setClaimingTranche] = useState<1 | 2 | null>(null);
   const [claimError, setClaimError] = useState<string | null>(null);
+
+  const [queuedClaims, setQueuedClaims] = useState<QueuedClaim[]>([]);
+  const [retryingId, setRetryingId] = useState<number | null>(null);
+
+  // Best-effort: IndexedDB can be unavailable (private-browsing mode in
+  // some browsers) without that being this app's problem to surface as
+  // a hard error -- the offline queue degrades to "just doesn't queue,"
+  // not "crashes the dashboard."
+  const refreshQueue = useCallback(() => {
+    listQueuedClaims()
+      .then(setQueuedClaims)
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    refreshQueue();
+  }, [refreshQueue]);
 
   const refreshList = useCallback(() => {
     setListLoading(true);
@@ -65,6 +84,11 @@ export default function App() {
   // write in this project follows (api/README.md's architecture section).
   // This is the first place that shape actually runs client-side, not
   // just in a Node test script.
+  //
+  // isOfflineError specifically means "the request never reached the
+  // network at all" (a fetch TypeError, not a rejection the server
+  // actually returned) -- see offlineQueue.ts for why that's the one
+  // case this queues the *intent* instead of just failing.
   const handleClaim = useCallback(
     (tranche: 1 | 2) => {
       if (!selectedId || !walletAddress) return;
@@ -76,10 +100,52 @@ export default function App() {
         .then((signedXdr) => submitTx(signedXdr, selectedId))
         .then(() => getCommitment(selectedId))
         .then(setDetail)
-        .catch((err: unknown) => setClaimError(err instanceof Error ? err.message : String(err)))
+        .catch((err: unknown) => {
+          if (isOfflineError(err)) {
+            return enqueueClaim(selectedId, tranche).then(refreshQueue);
+          }
+          setClaimError(err instanceof Error ? err.message : String(err));
+        })
         .finally(() => setClaimingTranche(null));
     },
-    [selectedId, walletAddress],
+    [selectedId, walletAddress, refreshQueue],
+  );
+
+  // Same build -> sign -> submit shape as handleClaim, run against a
+  // queued entry's own contractId/tranche rather than whatever's
+  // currently selected -- a queued claim can belong to a different
+  // commitment than the one open on screen. Always rebuilds fresh
+  // (never reuses anything from the original failed attempt): the
+  // original request never got far enough to produce a signature to
+  // reuse, and even if it had, api/'s build sets a 60-second transaction
+  // timeout, so anything old enough to have been sitting in the queue
+  // needs a new one regardless.
+  const retryQueuedClaim = useCallback(
+    (claim: QueuedClaim) => {
+      if (!walletAddress) return;
+      setRetryingId(claim.id);
+      const method = claim.tranche === 1 ? "claim_advance_1" : "claim_advance_2";
+      buildTx(claim.contractId, method, walletAddress)
+        .then(({ xdr }) => signTransactionXdr(xdr, walletAddress))
+        .then((signedXdr) => submitTx(signedXdr, claim.contractId))
+        .then(() => removeQueuedClaim(claim.id))
+        .then(() => {
+          refreshQueue();
+          if (claim.contractId === selectedId) {
+            getCommitment(claim.contractId).then(setDetail).catch(() => {});
+          }
+        })
+        .catch((err: unknown) => {
+          if (isOfflineError(err)) return; // still offline -- leave it queued, say nothing new
+          // A real rejection, not just "still offline" -- don't retry
+          // this forever, surface why and let the cooperative decide
+          // what to do next.
+          removeQueuedClaim(claim.id).then(refreshQueue);
+          setClaimError(err instanceof Error ? err.message : String(err));
+        })
+        .finally(() => setRetryingId(null));
+    },
+    [walletAddress, selectedId, refreshQueue],
   );
 
   return (
@@ -100,6 +166,8 @@ export default function App() {
 
       <main>
         {walletError && <div className="error-banner">{walletError}</div>}
+
+        <OfflineQueueBanner queuedClaims={queuedClaims} retryingId={retryingId} onRetry={retryQueuedClaim} />
 
         <form
           className="lookup"

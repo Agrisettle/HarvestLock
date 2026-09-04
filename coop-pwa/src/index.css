@@ -200,6 +200,40 @@ main {
   margin: 0 0 10px;
 }
 
+.offline-queue-banner {
+  background: rgba(212, 169, 55, 0.1);
+  border: 1px solid var(--gold);
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+
+.offline-queue-summary {
+  margin: 0 0 10px;
+  font-size: 0.85rem;
+  color: var(--bone-dim);
+}
+
+.offline-queue-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.offline-queue-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.offline-queue-item-label {
+  font-size: 0.85rem;
+  color: var(--bone);
+}
+
 .reassign-section {
   margin-bottom: 20px;
 }
