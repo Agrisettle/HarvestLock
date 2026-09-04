@@ -46,6 +46,35 @@
       a {
         color: var(--gold-bright);
       }
+      h1[id],
+      h2[id],
+      h3[id] {
+        scroll-margin-top: 24px;
+      }
+      /* Every subhead is a self-link: click it to jump/share a direct
+         anchor, and the same ids drive the site map at the bottom. */
+      .head-link {
+        color: inherit;
+        text-decoration: none;
+      }
+      .head-link:hover {
+        text-decoration: underline;
+        text-decoration-color: var(--gold);
+        text-underline-offset: 4px;
+      }
+      .head-link::after {
+        content: "#";
+        display: inline-block;
+        margin-left: 8px;
+        font-family: var(--mono);
+        font-size: 0.75em;
+        color: var(--gold);
+        opacity: 0;
+        transition: opacity 0.15s ease;
+      }
+      :is(h1, h2, h3):hover .head-link::after {
+        opacity: 1;
+      }
       .wrap {
         max-width: 880px;
         margin: 0 auto;
@@ -170,6 +199,7 @@
         font-weight: 600;
         font-size: 1rem;
         margin: 0 0 6px;
+        color: var(--gold-bright);
       }
       .step p {
         margin: 0;
@@ -257,11 +287,12 @@
         border-radius: 999px;
         padding: 3px 10px;
       }
-      .app-card h2 {
+      .app-card h3 {
         font-family: var(--display);
         font-weight: 600;
         font-size: 1.2rem;
         margin: 0;
+        color: var(--gold-bright);
       }
       .app-card p {
         margin: 0;
@@ -278,28 +309,71 @@
       /* ---- getting started ---- */
       .checklist {
         list-style: none;
-        margin: 0;
+        margin: 0 auto;
         padding: 0;
         display: flex;
         flex-direction: column;
         gap: 10px;
         max-width: 520px;
-        margin: 0 auto;
       }
+      /* Deliberately not display:flex on the <li> itself: this list mixes
+         plain text with inline elements (<strong>, <a>, <code>), and a
+         flex container turns EVERY child element plus each run of text
+         into its own flex item -- "Freighter" and the surrounding
+         sentence would each end up in a separate column instead of
+         wrapping together as one line. A hanging indent gets the same
+         "→ " look without touching how the inline content flows. */
       .checklist li {
-        display: flex;
-        gap: 10px;
-        align-items: flex-start;
+        position: relative;
+        padding-left: 22px;
         font-size: 0.92rem;
         color: var(--bone-dim);
       }
       .checklist li::before {
         content: "→";
         color: var(--gold);
-        flex-shrink: 0;
+        position: absolute;
+        left: 0;
+        top: 0;
       }
       .checklist strong {
         color: var(--bone);
+      }
+
+      /* ---- site map ---- */
+      .sitemap-cols {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 28px;
+        max-width: 720px;
+        margin: 0 auto;
+      }
+      .sitemap-col h3 {
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--gold);
+        margin: 0 0 12px;
+      }
+      .sitemap-col ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .sitemap-col a {
+        color: var(--bone-dim);
+        text-decoration: none;
+        font-size: 0.88rem;
+      }
+      .sitemap-col a:hover {
+        color: var(--bone);
+        text-decoration: underline;
+        text-decoration-color: var(--gold);
+        text-underline-offset: 3px;
       }
 
       /* ---- footer ---- */
@@ -312,6 +386,16 @@
       }
       footer a {
         color: var(--bone-dim);
+      }
+      .footer-love {
+        font-family: var(--mono);
+        font-size: 0.78rem;
+        color: var(--bone-dim);
+        margin: 0 0 10px;
+      }
+      .footer-love strong {
+        color: var(--gold-bright);
+        font-weight: 500;
       }
     </style>
   </head>
@@ -327,12 +411,13 @@
           <a href="#how-it-works">How it works</a>
           <a href="#roles">Cooperative &amp; buyer</a>
           <a href="#dashboards">Dashboards</a>
+          <a href="#sitemap">Site map</a>
         </nav>
       </div>
     </header>
 
     <div class="hero wrap">
-      <h1>Commit before harvest.<br />Settle on delivery — not on anyone's word.</h1>
+      <h1 id="top">Commit before harvest.<br />Settle on delivery — not on anyone's word.</h1>
       <p class="hero-lede">
         HarvestLock lets an agricultural cooperative and a buyer agree a price before the
         season starts, then holds the buyer's money in a neutral escrow contract until an
@@ -344,28 +429,28 @@
     <section id="how-it-works" class="wrap">
       <div class="section-head">
         <div class="eyebrow">How it works</div>
-        <h2>Four steps, one contract per deal</h2>
+        <h2><a class="head-link" href="#how-it-works">Four steps, one contract per deal</a></h2>
         <p>No jargon required — this is the whole idea, in plain terms.</p>
       </div>
       <ol class="steps">
         <li class="step">
           <div class="step-num">01</div>
-          <h3>Agree the deal</h3>
+          <h3 id="agree-the-deal"><a class="head-link" href="#agree-the-deal">Agree the deal</a></h3>
           <p>A cooperative and a buyer agree a price and quantity before harvest. Nothing has moved yet.</p>
         </li>
         <li class="step">
           <div class="step-num">02</div>
-          <h3>Lock the funds</h3>
+          <h3 id="lock-the-funds"><a class="head-link" href="#lock-the-funds">Lock the funds</a></h3>
           <p>The buyer's deposit moves into escrow — a contract that belongs to neither party.</p>
         </li>
         <li class="step">
           <div class="step-num">03</div>
-          <h3>Advance the cooperative</h3>
+          <h3 id="advance-the-cooperative"><a class="head-link" href="#advance-the-cooperative">Advance the cooperative</a></h3>
           <p>Capped pre-harvest payments release to the cooperative in tranches, so farmers aren't waiting on delivery to get paid at all.</p>
         </li>
         <li class="step">
           <div class="step-num">04</div>
-          <h3>Deliver &amp; settle</h3>
+          <h3 id="deliver-and-settle"><a class="head-link" href="#deliver-and-settle">Deliver &amp; settle</a></h3>
           <p>An independent warehouse operator confirms the harvest arrived. Only then does the remaining balance pay out.</p>
         </li>
       </ol>
@@ -374,19 +459,19 @@
     <section id="roles" class="wrap">
       <div class="section-head">
         <div class="eyebrow">Who's who</div>
-        <h2>Two parties, one shared contract</h2>
+        <h2><a class="head-link" href="#roles">Two parties, one shared contract</a></h2>
         <p>Every commitment has exactly one cooperative and one buyer on opposite sides of the same escrow.</p>
       </div>
       <div class="roles">
         <div class="role-card">
           <span class="role-tag">Seller side</span>
-          <h3>The Cooperative</h3>
+          <h3 id="cooperative"><a class="head-link" href="#cooperative">The Cooperative</a></h3>
           <p>Represents the farmers actually growing the crop. Agrees the price, commits to delivering the harvest, and receives advance payments before delivery to help fund the season.</p>
           <p>Gets paid in tranches — some upfront, the rest once the warehouse confirms delivery.</p>
         </div>
         <div class="role-card">
           <span class="role-tag">Buyer side</span>
-          <h3>The Buyer</h3>
+          <h3 id="buyer"><a class="head-link" href="#buyer">The Buyer</a></h3>
           <p>Commits to purchase the harvest at an agreed price. Funds the escrow upfront, locking in supply and price before the season's uncertainty plays out.</p>
           <p>Gets the crop at delivery — and gets a shortfall refund automatically if less arrives than agreed.</p>
         </div>
@@ -401,19 +486,19 @@
     <section id="dashboards" class="wrap">
       <div class="section-head">
         <div class="eyebrow">Get started</div>
-        <h2>Pick the dashboard that's you</h2>
+        <h2><a class="head-link" href="#dashboards">Pick the dashboard that's you</a></h2>
         <p>Each app is built for one side of the deal — pick whichever one matches your role.</p>
       </div>
       <div class="apps">
         <a class="app-card" href="/buyer/">
           <span class="role-tag">I'm a buyer</span>
-          <h2>Buyer Dashboard</h2>
+          <h3 id="buyer-dashboard">Buyer Dashboard</h3>
           <p>Create a commitment, lock your deposit, track delivery, and settle once the harvest arrives.</p>
           <span class="go">Open the buyer dashboard →</span>
         </a>
         <a class="app-card" href="/coop/">
           <span class="role-tag">I'm a cooperative</span>
-          <h2>Cooperative Dashboard</h2>
+          <h3 id="cooperative-dashboard">Cooperative Dashboard</h3>
           <p>Track your commitments, claim advance tranches as they open, and manage delivery status.</p>
           <span class="go">Open the cooperative dashboard →</span>
         </a>
@@ -426,7 +511,51 @@
       </ul>
     </section>
 
+    <section id="sitemap" class="wrap">
+      <div class="section-head">
+        <div class="eyebrow">Site map</div>
+        <h2>Every section, one click away</h2>
+        <p>The same headings used above — jump straight to any of them.</p>
+      </div>
+      <div class="sitemap-cols">
+        <div class="sitemap-col">
+          <h3>Overview</h3>
+          <ul>
+            <li><a href="#top">Home</a></li>
+            <li><a href="#how-it-works">How it works</a></li>
+            <li><a href="#roles">Cooperative &amp; buyer</a></li>
+            <li><a href="#dashboards">Dashboards</a></li>
+          </ul>
+        </div>
+        <div class="sitemap-col">
+          <h3>How it works</h3>
+          <ul>
+            <li><a href="#agree-the-deal">01 — Agree the deal</a></li>
+            <li><a href="#lock-the-funds">02 — Lock the funds</a></li>
+            <li><a href="#advance-the-cooperative">03 — Advance the cooperative</a></li>
+            <li><a href="#deliver-and-settle">04 — Deliver &amp; settle</a></li>
+          </ul>
+        </div>
+        <div class="sitemap-col">
+          <h3>Who's who</h3>
+          <ul>
+            <li><a href="#cooperative">The Cooperative</a></li>
+            <li><a href="#buyer">The Buyer</a></li>
+          </ul>
+        </div>
+        <div class="sitemap-col">
+          <h3>Get started</h3>
+          <ul>
+            <li><a href="#buyer-dashboard">Buyer Dashboard</a></li>
+            <li><a href="#cooperative-dashboard">Cooperative Dashboard</a></li>
+            <li><a href="https://www.freighter.app/" target="_blank" rel="noreferrer">Freighter wallet ↗</a></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
     <footer class="wrap">
+      <p class="footer-love">Built with <strong>&hearts;</strong> for Stellar.</p>
       <p>
         This is pre-pilot software running on Stellar <strong>testnet</strong> only — no cooperative
         or buyer has used HarvestLock with real funds yet, and nothing here is financial advice
