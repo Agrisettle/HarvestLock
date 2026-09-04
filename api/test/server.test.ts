@@ -385,6 +385,111 @@ describe("server (HTTP layer)", () => {
   );
 
   it(
+    "rejects an empty members array on set-allocation before touching the network",
+    async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: `/commitments/${FAKE_CONTRACT_ID}/tx/set-allocation`,
+        payload: { members: [], sourcePublicKey: FAKE_PUBLIC_KEY },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toMatch(/members must be a non-empty array/);
+    },
+    15_000,
+  );
+
+  it(
+    "rejects a member with an empty phoneNumber on set-allocation before touching the network",
+    async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: `/commitments/${FAKE_CONTRACT_ID}/tx/set-allocation`,
+        payload: { members: [{ phoneNumber: "", shareBps: 5_000 }], sourcePublicKey: FAKE_PUBLIC_KEY },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toMatch(/non-empty phoneNumber/);
+    },
+    15_000,
+  );
+
+  it(
+    "rejects a member with shareBps over 10000 on set-allocation before touching the network",
+    async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: `/commitments/${FAKE_CONTRACT_ID}/tx/set-allocation`,
+        payload: { members: [{ phoneNumber: "+2348012345678", shareBps: 10_001 }], sourcePublicKey: FAKE_PUBLIC_KEY },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toMatch(/shareBps must be an integer between 0 and 10000/);
+    },
+    15_000,
+  );
+
+  it(
+    "rejects members whose shareBps sum over 10000 on set-allocation before touching the network",
+    async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: `/commitments/${FAKE_CONTRACT_ID}/tx/set-allocation`,
+        payload: {
+          members: [
+            { phoneNumber: "+2348012345678", shareBps: 6_000 },
+            { phoneNumber: "+2348098765432", shareBps: 5_000 },
+          ],
+          sourcePublicKey: FAKE_PUBLIC_KEY,
+        },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toMatch(/shareBps sum to 11000/);
+    },
+    15_000,
+  );
+
+  it(
+    "rejects a malformed contract ID on set-allocation before touching the network",
+    async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: "/commitments/not-a-real-contract-id/tx/set-allocation",
+        payload: { members: [{ phoneNumber: "+2348012345678", shareBps: 5_000 }], sourcePublicKey: FAKE_PUBLIC_KEY },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().message).toMatch(/not a valid contract ID/);
+    },
+    15_000,
+  );
+
+  it(
+    "rejects a malformed contract ID on GET .../allocation before touching the network",
+    async () => {
+      const res = await app.inject({ method: "GET", url: "/commitments/not-a-real-contract-id/allocation" });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().message).toMatch(/not a valid contract ID/);
+    },
+    15_000,
+  );
+
+  it(
+    "rejects a malformed memberHash on the erasure endpoint",
+    async () => {
+      const res = await app.inject({ method: "DELETE", url: "/allocation-members/not-a-real-hash" });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toMatch(/64-character hex string/);
+    },
+    15_000,
+  );
+
+  it(
+    "returns 404 erasing a memberHash that was never recorded",
+    async () => {
+      const res = await app.inject({ method: "DELETE", url: `/allocation-members/${"0".repeat(64)}` });
+      expect(res.statusCode).toBe(404);
+    },
+    15_000,
+  );
+
+  it(
     "rejects a malformed buyer address on initialize before touching the network",
     async () => {
       const res = await app.inject({

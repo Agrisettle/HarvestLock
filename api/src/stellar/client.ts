@@ -110,3 +110,22 @@ export async function getCommitment(contractId: string): Promise<Commitment> {
   const result = (await simulateRead(contractId, "get_commitment")) as Commitment;
   return { ...result, status: unwrapStatus(result.status) };
 }
+
+export interface AllocationMember {
+  // scValToNative decodes BytesN as a Uint8Array, not a Node Buffer --
+  // callers that need hex must go through Buffer.from(member_hash), not
+  // member_hash.toString("hex") (which silently produces a comma-joined
+  // decimal list on a plain Uint8Array instead of throwing).
+  member_hash: Uint8Array;
+  share_bps: number;
+}
+
+/**
+ * Mirrors the contract's `get_allocation`. Throws (AllocationNotSet,
+ * contract error #23) if `set_allocation` has never been called for this
+ * commitment — same "let the contract error propagate" convention as
+ * `getStatus` on an uninitialized contract.
+ */
+export async function getAllocation(contractId: string): Promise<AllocationMember[]> {
+  return (await simulateRead(contractId, "get_allocation")) as AllocationMember[];
+}

@@ -1,7 +1,7 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
-import { StrKey, Address, nativeToScVal } from "@stellar/stellar-sdk";
-import { getCommitment, type Commitment } from "./stellar/client.js";
+import { StrKey, Address, nativeToScVal, xdr } from "@stellar/stellar-sdk";
+import { getAllocation, getCommitment, type Commitment } from "./stellar/client.js";
 import { deployContractInstance, initializeArgs } from "./stellar/deploy.js";
 import { buildInvokeTransaction, submitSignedTransaction } from "./stellar/tx.js";
 import { upsertCommitment, listCommitments } from "./db/commitments.js";
@@ -18,6 +18,12 @@ import {
   markCompleted,
   type PendingMultisigProposal,
 } from "./db/pendingMultisigProposals.js";
+import {
+  stageAllocationMembers,
+  recordAllocationMembers,
+  eraseAllocationMember,
+  type StagedAllocationMember,
+} from "./db/allocationMembers.js";
 
 /**
  * Every route below takes a contract ID at some point. Before this
@@ -343,13 +349,113 @@ export function buildServer() {
       return reply.code(400).send({ error: `gradeIndex must be a non-negative integer, got ${gradeIndex}` });
     }
 
-    const xdr = await buildInvokeTransaction({
+    const unsignedXdr = await buildInvokeTransaction({
       contractId,
       method: "confirm_delivery",
       sourcePublicKey: req.body.sourcePublicKey,
       args: [nativeToScVal(deliveredQuantity, { type: "u32" }), nativeToScVal(gradeIndex, { type: "u32" })],
     });
-    return { xdr };
+    return { xdr: unsignedXdr };
+  });
+
+  // set_allocation takes a Vec<AllocationMember> struct arg -- Soroban
+  // structs serialize as an ScMap keyed by field name (Symbol), sorted;
+  // nativeToScVal's automatic object->map inference gets the numeric
+  // type wrong (defaults share_bps to u64, the contract wants u32), so
+  // this builds each entry's map explicitly instead of trusting
+  // inference. Verified against a real deployed contract via
+  // simulateTransaction before ever wiring this into the route --
+  // wrong field order or types here would fail on-chain, not visibly.
+  function allocationMemberToScVal(memberHash: Buffer, shareBps: number): xdr.ScVal {
+    return xdr.ScVal.scvMap([
+      new xdr.ScMapEntry({
+        key: xdr.ScVal.scvSymbol("member_hash"),
+        val: nativeToScVal(memberHash, { type: "bytes" }),
+      }),
+      new xdr.ScMapEntry({
+        key: xdr.ScVal.scvSymbol("share_bps"),
+        val: nativeToScVal(shareBps, { type: "u32" }),
+      }),
+    ]);
+  }
+
+  // Builds the unsigned set_allocation XDR and stages (but does not yet
+  // persist) the phone-number mapping -- see
+  // db/allocationMembers.ts's stageAllocationMembers doc comment for why
+  // persisting waits until /transactions/submit confirms the tx actually
+  // landed. Cooperative-gated on-chain (lib.rs's require_auth); this
+  // route itself doesn't check who's calling, same as every other
+  // single-signer tx-builder route -- the contract is what actually
+  // enforces it.
+  app.post<{
+    Params: { contractId: string };
+    Body: { members: { phoneNumber: string; shareBps: number }[]; sourcePublicKey: string };
+  }>("/commitments/:contractId/tx/set-allocation", async (req, reply) => {
+    const { contractId } = req.params;
+    requireValidContractId(contractId);
+    const { members } = req.body;
+    if (!Array.isArray(members) || members.length === 0) {
+      return reply.code(400).send({ error: "members must be a non-empty array" });
+    }
+    let totalBps = 0;
+    for (const m of members) {
+      if (typeof m.phoneNumber !== "string" || m.phoneNumber.trim().length === 0) {
+        return reply.code(400).send({ error: "every member needs a non-empty phoneNumber" });
+      }
+      if (!Number.isInteger(m.shareBps) || m.shareBps < 0 || m.shareBps > 10_000) {
+        return reply.code(400).send({ error: `shareBps must be an integer between 0 and 10000, got ${m.shareBps}` });
+      }
+      totalBps += m.shareBps;
+    }
+    if (totalBps > 10_000) {
+      return reply.code(400).send({ error: `members' shareBps sum to ${totalBps}, over the 10000 bps ceiling` });
+    }
+
+    const staged = stageAllocationMembers(members);
+    const unsignedXdr = await buildInvokeTransaction({
+      contractId,
+      method: "set_allocation",
+      sourcePublicKey: req.body.sourcePublicKey,
+      args: [
+        xdr.ScVal.scvVec(staged.map((m) => allocationMemberToScVal(Buffer.from(m.memberHash, "hex"), m.shareBps))),
+      ],
+    });
+    return { xdr: unsignedXdr, members: staged };
+  });
+
+  // Live on-chain read -- source of truth, same convention as GET
+  // /commitments/:contractId. Never includes a phone number (this
+  // contract never stores one) -- pair with the off-chain identity map
+  // (db/allocationMembers.ts) only where that's actually needed, which
+  // this API doesn't expose over a read endpoint at all (see
+  // allocationMembers.ts's getAllocationMembers doc comment).
+  app.get<{ Params: { contractId: string } }>("/commitments/:contractId/allocation", async (req) => {
+    requireValidContractId(req.params.contractId);
+    const members = await getAllocation(req.params.contractId);
+    return {
+      // scValToNative decodes BytesN as a Uint8Array, not a Buffer --
+      // Uint8Array.toString("hex") silently ignores the argument and
+      // produces a comma-joined decimal list instead of a hex string,
+      // which is exactly wrong and doesn't throw. Buffer.from(...) first
+      // guarantees the real hex encoding regardless of which one it is.
+      members: members.map((m) => ({ memberHash: Buffer.from(m.member_hash).toString("hex"), shareBps: m.share_bps })),
+    };
+  });
+
+  // NDPA s.34 erasure: nulls out the phone number behind a member_hash,
+  // leaving the on-chain hash permanently unlinkable to a real person
+  // (see allocationMembers.ts's eraseAllocationMember doc comment).
+  // Idempotent -- erasing an already-erased hash still returns 200.
+  app.delete<{ Params: { memberHash: string } }>("/allocation-members/:memberHash", async (req, reply) => {
+    const { memberHash } = req.params;
+    if (!/^[0-9a-f]{64}$/i.test(memberHash)) {
+      return reply.code(400).send({ error: "memberHash must be a 64-character hex string (32 bytes)" });
+    }
+    const found = await eraseAllocationMember(memberHash.toLowerCase());
+    if (!found) {
+      return reply.code(404).send({ error: `no allocation member with hash ${memberHash}` });
+    }
+    return { erased: true };
   });
 
   // Staged multi-party signing -- see src/stellar/multiParty.ts and
@@ -506,34 +612,55 @@ export function buildServer() {
   // signed envelope back to this single endpoint. On success, optionally
   // refreshes the Postgres cache from a live chain read — never trusts
   // the submitted tx's own claims about the resulting state.
-  app.post<{ Body: { xdr: string; refreshContractId?: string; completeProposalId?: string } }>(
-    "/transactions/submit",
-    async (req) => {
-      // Validated before submitting, not after: a bad refreshContractId
-      // shouldn't leave the caller wondering whether their (real, funds-
-      // moving) transaction went through or not because the response came
-      // back an error either way.
-      if (req.body.refreshContractId) {
-        requireValidContractId(req.body.refreshContractId);
-      }
-      const result = await submitSignedTransaction(req.body.xdr);
-      if (req.body.refreshContractId) {
-        const commitment = await getCommitment(req.body.refreshContractId);
-        const { previousStatus } = await upsertCommitment(req.body.refreshContractId, commitment);
-        await applyReputationConsequences(req.body.refreshContractId, previousStatus, commitment);
-      }
-      // Marks the proposal finished so a stale "ready to finalize" state
-      // doesn't linger for other viewers once the cancel actually landed.
-      // Best-effort: a failure here shouldn't mask that the real,
-      // funds-moving submission above already succeeded.
-      if (req.body.completeProposalId) {
-        await markCompleted(req.body.completeProposalId).catch((err: unknown) => {
-          req.log.warn({ err }, "failed to mark multisig proposal completed");
-        });
-      }
-      return result;
-    },
-  );
+  app.post<{
+    Body: {
+      xdr: string;
+      refreshContractId?: string;
+      completeProposalId?: string;
+      allocationContractId?: string;
+      allocationMembers?: StagedAllocationMember[];
+    };
+  }>("/transactions/submit", async (req) => {
+    // Validated before submitting, not after: a bad refreshContractId
+    // shouldn't leave the caller wondering whether their (real, funds-
+    // moving) transaction went through or not because the response came
+    // back an error either way.
+    if (req.body.refreshContractId) {
+      requireValidContractId(req.body.refreshContractId);
+    }
+    if (req.body.allocationContractId) {
+      requireValidContractId(req.body.allocationContractId);
+    }
+    const result = await submitSignedTransaction(req.body.xdr);
+    if (req.body.refreshContractId) {
+      const commitment = await getCommitment(req.body.refreshContractId);
+      const { previousStatus } = await upsertCommitment(req.body.refreshContractId, commitment);
+      await applyReputationConsequences(req.body.refreshContractId, previousStatus, commitment);
+    }
+    // Marks the proposal finished so a stale "ready to finalize" state
+    // doesn't linger for other viewers once the cancel actually landed.
+    // Best-effort: a failure here shouldn't mask that the real,
+    // funds-moving submission above already succeeded.
+    if (req.body.completeProposalId) {
+      await markCompleted(req.body.completeProposalId).catch((err: unknown) => {
+        req.log.warn({ err }, "failed to mark multisig proposal completed");
+      });
+    }
+    // Persists the phone-number mapping only now that set_allocation has
+    // actually landed on-chain -- see stageAllocationMembers's doc
+    // comment for why this waits until here instead of writing at
+    // /tx/set-allocation build time. Best-effort, same reasoning as
+    // completeProposalId above: the on-chain write already succeeded,
+    // don't mask that behind an off-chain persistence failure.
+    if (req.body.allocationContractId && req.body.allocationMembers) {
+      await recordAllocationMembers(req.body.allocationContractId, req.body.allocationMembers).catch(
+        (err: unknown) => {
+          req.log.warn({ err }, "failed to persist allocation member phone numbers");
+        },
+      );
+    }
+    return result;
+  });
 
   // Live chain read — the source of truth, per PRD §17. Refreshes the
   // Postgres cache as a side effect so /commitments (list) stays current

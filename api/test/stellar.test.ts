@@ -9,6 +9,7 @@ import { submitMultiPartyCall, submitSingleSignerCall, fundTestnetAccount, simul
 import { upsertCommitment } from "../src/db/commitments.js";
 import { applyReputationConsequences } from "../src/reputation.js";
 import { getStanding } from "../src/db/reputation.js";
+import { getAllocationMembers } from "../src/db/allocationMembers.js";
 import { buildServer } from "../src/server.js";
 
 /**
@@ -23,6 +24,16 @@ const KNOWN_SETTLED_CONTRACT_ID = "CDVF6UVJOLF3OHCFSYSJ72RMG2T6DUQ42VRJ6IHL6MVEF
 // `initialize` only stores these as Addresses, it never touches the token
 // contract, so a real-but-otherwise-unrelated address is a valid stand-in here.
 const PLACEHOLDER_TOKEN = "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC";
+
+// Built once, closed once, at file scope -- shared by every describe block
+// below that needs the real HTTP layer. buildServer()'s onClose hook
+// calls pool.end() on the module-level Postgres pool singleton
+// (db/pool.ts), which is shared process-wide, not per-server-instance --
+// a second buildServer()/afterAll(() => app.close()) pair in a different
+// describe block would close that same pool out from under whichever
+// describe block runs after it (a real bug this file hit once already).
+const app = buildServer();
+afterAll(() => app.close());
 
 describe("stellar/client (live testnet reads)", () => {
   // Real testnet RPC latency varies enough under load that vitest's
@@ -465,15 +476,10 @@ describe("stellar/deploy (live testnet writes)", () => {
 });
 
 describe("staged multi-party proposals (propose / sign / finalize, live testnet + real HTTP layer)", () => {
-  // Own Fastify instance for this describe block specifically -- the only
-  // place in this file that needs the HTTP layer (server.test.ts covers
-  // validation-only routes without touching the network; every other test
-  // above calls src/stellar/*.ts directly). Built once, closed once, same
-  // reasoning server.test.ts documents for its own shared instance
-  // (buildServer()'s onClose calls pool.end() on the module-level
-  // Postgres pool -- closing per-test would double-close it).
-  const app = buildServer();
-  afterAll(() => app.close());
+  // Uses the file-scoped `app` declared above -- server.test.ts covers
+  // validation-only routes without touching the network; every test above
+  // this describe block calls src/stellar/*.ts directly, only this block
+  // and the allocation-ledger one below need the real HTTP layer.
 
   it(
     "buyer proposes, cooperative signs their own auth entry via a separate request, buyer finalizes -- ends in a real Cancelled commitment",
@@ -716,6 +722,105 @@ describe("staged multi-party proposals (propose / sign / finalize, live testnet 
 
       const afterCompleteRes = await app.inject({ method: "GET", url: `/commitments/${contractId}/tx/reassign-buyer/propose` });
       expect(afterCompleteRes.json().proposal).toBeNull();
+    },
+    180_000,
+  );
+});
+
+describe("allocation ledger (live testnet + real HTTP layer)", () => {
+  // Uses the file-scoped `app` declared near the top of this file.
+
+  it(
+    "records members through the real HTTP layer, reads them back on-chain, and erasure nulls the off-chain phone number",
+    async () => {
+      const buyer = Keypair.random();
+      const cooperative = Keypair.random();
+      await Promise.all([fundTestnetAccount(buyer.publicKey()), fundTestnetAccount(cooperative.publicKey())]);
+
+      const contractId = await deployContractInstance();
+      const initXdr = await buildInvokeTransaction({
+        contractId,
+        method: "initialize",
+        sourcePublicKey: buyer.publicKey(),
+        args: initializeArgs({
+          buyer: buyer.publicKey(),
+          cooperative: cooperative.publicKey(),
+          warehouseOperator: buyer.publicKey(),
+          token: PLACEHOLDER_TOKEN,
+          totalAmount: 1_000_000_000n,
+          advance1Bps: 1500,
+          advance2Bps: 2000,
+          claimWindowSecs: 3600n,
+          remainderWindowSecs: 3600n,
+          deliveryWindowSecs: 86_400n,
+          contractedQuantity: 1_000,
+          gradePriceBps: [10_000, 9_000, 7_500],
+        }),
+      });
+      const initTx = TransactionBuilder.fromXDR(initXdr, networkPassphrase);
+      initTx.sign(buyer);
+      await submitSignedTransaction(initTx.toXDR());
+
+      // Build via the real /tx/set-allocation route, not buildInvokeTransaction
+      // directly -- this is what actually exercises the manual struct
+      // encoding (allocationMemberToScVal) and the staged-salt response
+      // shape a real caller would round-trip through /transactions/submit.
+      const buildRes = await app.inject({
+        method: "POST",
+        url: `/commitments/${contractId}/tx/set-allocation`,
+        payload: {
+          members: [
+            { phoneNumber: "+2348012345678", shareBps: 6_000 },
+            { phoneNumber: "+2348098765432", shareBps: 4_000 },
+          ],
+          sourcePublicKey: cooperative.publicKey(),
+        },
+      });
+      expect(buildRes.statusCode).toBe(200);
+      const { xdr: unsignedXdr, members: staged } = buildRes.json();
+      expect(staged).toHaveLength(2);
+
+      const tx = TransactionBuilder.fromXDR(unsignedXdr, networkPassphrase);
+      tx.sign(cooperative);
+      const submitRes = await app.inject({
+        method: "POST",
+        url: "/transactions/submit",
+        payload: { xdr: tx.toXDR(), allocationContractId: contractId, allocationMembers: staged },
+      });
+      expect(submitRes.statusCode).toBe(200);
+      expect(submitRes.json().status).toBe("SUCCESS");
+
+      // On-chain read, source of truth: the hashes/shares genuinely landed.
+      const readRes = await app.inject({ method: "GET", url: `/commitments/${contractId}/allocation` });
+      expect(readRes.statusCode).toBe(200);
+      const onChainMembers = readRes.json().members as { memberHash: string; shareBps: number }[];
+      expect(onChainMembers).toHaveLength(2);
+      expect(onChainMembers.map((m) => m.shareBps).sort()).toEqual([4_000, 6_000]);
+      expect(onChainMembers.map((m) => m.memberHash).sort()).toEqual(
+        staged.map((m: { memberHash: string }) => m.memberHash).sort(),
+      );
+
+      // Off-chain side: the phone-number mapping was actually persisted
+      // (not just staged) once the on-chain call confirmed.
+      const dbRows = await getAllocationMembers(contractId);
+      expect(dbRows).toHaveLength(2);
+      expect(dbRows.every((r) => r.erased_at === null)).toBe(true);
+
+      // NDPA s.34 erasure, through the real HTTP layer: the on-chain hash
+      // is untouched (it's on-chain, nothing erases that), but the
+      // off-chain phone number behind it is gone.
+      const memberHashToErase = staged[0].memberHash as string;
+      const eraseRes = await app.inject({ method: "DELETE", url: `/allocation-members/${memberHashToErase}` });
+      expect(eraseRes.statusCode).toBe(200);
+      expect(eraseRes.json().erased).toBe(true);
+
+      const dbRowsAfterErase = await getAllocationMembers(contractId);
+      const erasedRow = dbRowsAfterErase.find((r) => r.member_hash === memberHashToErase)!;
+      expect(erasedRow.erased_at).not.toBeNull();
+      // The on-chain read is completely unaffected by off-chain erasure --
+      // the hash and share are still there, exactly as recorded.
+      const readAfterEraseRes = await app.inject({ method: "GET", url: `/commitments/${contractId}/allocation` });
+      expect(readAfterEraseRes.json().members).toHaveLength(2);
     },
     180_000,
   );
