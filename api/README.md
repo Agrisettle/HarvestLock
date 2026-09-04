@@ -154,7 +154,10 @@ the system. `GET /parties/:address/standing` exposes the read side.
 | POST | `/commitments/:contractId/tx/reassign-buyer/propose` | Proposes (or, idempotently, returns the already-active) staged multi-party reassignment. Only the *current* buyer may propose. Takes `newBuyer`. See above. |
 | GET | `/commitments/:contractId/tx/reassign-buyer/propose` | The active reassignment proposal for a contract, if any. |
 | POST | `/commitments/:contractId/tx/propose/:proposalId/sign` | Records one party's signed auth entry against any proposal (method-agnostic — the proposal ID is already unique); flips to `ready` once every pending entry across every method is signed. |
-| POST | `/transactions/submit` | Submits a signed envelope, polls for confirmation, optionally refreshes the Postgres cache (`refreshContractId`) and/or marks a multisig proposal completed (`completeProposalId`). |
+| POST | `/commitments/:contractId/tx/set-allocation` | Builds unsigned `set_allocation` XDR and stages (doesn't yet persist) the phone-number mapping — see below. Cooperative-gated on-chain, callable only pre-`lock`. |
+| GET | `/commitments/:contractId/allocation` | Live on-chain read of the recorded allocation ledger (member hashes + shares). Never returns a phone number — this contract never stores one. |
+| DELETE | `/allocation-members/:memberHash` | NDPA s.34 erasure: nulls the phone number behind an on-chain hash. Idempotent. See below. |
+| POST | `/transactions/submit` | Submits a signed envelope, polls for confirmation, optionally refreshes the Postgres cache (`refreshContractId`), marks a multisig proposal completed (`completeProposalId`), and/or persists a staged allocation ledger's phone numbers (`allocationContractId`/`allocationMembers`) now that the on-chain call is confirmed. |
 | GET | `/commitments/:contractId` | Live read straight from chain (source of truth), refreshes the cache as a side effect. Also applies any reputation consequence from a fresh transition into `Defaulted`/`Forfeited` — see above. |
 | GET | `/commitments` | Lists the Postgres-cached mirror — the only way to list commitments at all, since the chain has no such query. |
 | GET | `/parties/:address/standing` | A party's current reputation: strike count, whether they're barred, and why. Returns a clean default (not 404) for an address with no history. |
@@ -178,6 +181,46 @@ back whatever of the funded remainder isn't owed as a shortfall
 refund. See `HarvestLock-Contracts/HANDOFF.md`'s Deployment 6 entry for
 the exact math, live-verified on testnet.
 
+### Allocation ledger (PRD §4.8/§16.1)
+
+The contract only ever sees a per-member **salted hash** plus a share —
+never a phone number. This API is the only place a phone number and the
+salt that hashed it ever meet, in `db/allocationMembers.ts`
+(migration `005_allocation_members.sql`). Salts are generated **per
+member**, not just per contract — stronger than the compliance-load-
+bearing salt-scheme requirement (`TASKS.md`) asked for, since even two
+members appearing in two different contracts (or twice in the same one)
+never share a salt.
+
+The write flow is staged, same shape as the multi-party propose/sign/
+finalize mechanism but simpler (single-signer, no other party needs to
+sign anything): `POST .../tx/set-allocation` computes each member's
+salt+hash and returns them *unpersisted* alongside the unsigned XDR;
+the caller signs, then passes the same staged members back to
+`/transactions/submit` (`allocationContractId`/`allocationMembers`),
+which only writes the phone-number mapping to Postgres once the
+on-chain call is confirmed. This is deliberate: persisting at build
+time would leave an orphaned off-chain row (with a real phone number in
+it) referencing a hash that was never actually put on-chain, if the
+caller built the transaction but never signed or submitted it.
+
+`GET .../allocation` reads the ledger live from chain — hashes and
+shares only, never a phone number (this API doesn't expose phone
+numbers over any read endpoint at all; write-only by design, since
+there's no auth/session model yet to gate who'd be allowed to see one).
+`DELETE /allocation-members/:memberHash` is the actual NDPA s.34
+erasure mechanism: nulls the phone number for that hash, leaves the
+share and the hash itself intact. After erasure the on-chain entry is
+permanently unlinkable to a real person — the salt is gone, and
+brute-forcing a random salt is infeasible regardless of how small the
+phone-number keyspace is.
+
+Record-only in v1, not a `settle` behavior change — PRD §4.9 already
+states the v1 default explicitly ("payment settles to the cooperative
+wallet, each member's entitlement is on chain and readable"); pro-rated
+on-chain payout across members is a real, separate piece of future
+work, not something this ledger silently promises.
+
 ## Setup
 
 ```
@@ -194,7 +237,7 @@ or cross-check against a deployed instance with
 
 ## Testing
 
-`npm test` runs three suites, all against real infrastructure: `stellar.test.ts`
+`npm test` runs five suites, all against real infrastructure: `stellar.test.ts`
 (**live Stellar testnet**, no mocks, same discipline as the contracts
 repo) deploys real throwaway contract instances and builds/submits real
 `initialize`/`lock`/`cancel`/`reassign_buyer` transactions — `cancel`
@@ -223,7 +266,16 @@ rejected from an unrelated third party *and* from the cooperative
 walk (propose → cooperative signs → incoming buyer signs → finalize →
 submit), confirmed the buyer field genuinely changed on a fresh chain
 read. Both confirm the proposal no longer shows as active once
-completed. `retry.test.ts` covers the retry
+completed. One more scenario proves the allocation ledger end to end
+through the same real HTTP layer: build `set_allocation` via
+`/tx/set-allocation`, sign, submit with the staged members, read the
+result back **on-chain** (`GET .../allocation`) to confirm the exact
+hashes/shares landed, read the **off-chain** Postgres side directly to
+confirm the phone-number mapping was actually persisted (not just
+staged), then erase one member through the real `DELETE
+/allocation-members/:memberHash` endpoint and confirm the on-chain read
+afterward is completely unaffected — only the phone number behind that
+hash is gone. `retry.test.ts` covers the retry
 helper's own logic with deterministic fakes, no network needed;
 `server.test.ts` exercises the HTTP layer via Fastify's `.inject()`,
 covering validation paths that reject before ever reaching the
@@ -250,10 +302,28 @@ run, against a real chain read — the integration proof that
 `reputation.test.ts`'s narrower, hand-built-`Commitment` coverage
 doesn't give on its own.
 
+A fifth suite, `test/allocationMembers.test.ts`, is the same
+real-Postgres discipline applied to the allocation ledger's off-chain
+half: `stageAllocationMembers` produces a genuinely distinct salt+hash
+per member (even for the same phone number staged twice — the whole
+point of salting per member, not per contract), `recordAllocationMembers`/
+`getAllocationMembers` round-trip correctly and never surface a phone
+number, and `eraseAllocationMember` is idempotent and leaves
+`share_bps`/`member_hash` untouched.
+
+Two real bugs worth knowing about, found while building the allocation
+ledger, both now fixed: `nativeToScVal`'s automatic object-to-map
+inference picks the wrong numeric type for a plain JS number
+(`share_bps` became `u64` instead of the contract's `u32`) — the
+struct's `ScMap` is now built by hand instead of trusted to inference.
+And `scValToNative` decodes a `BytesN` as a `Uint8Array`, not a Node
+`Buffer` — `Uint8Array.prototype.toString("hex")` silently ignores the
+argument and returns a comma-joined decimal list instead of throwing,
+which the live end-to-end test caught as a failed assertion, not a crash.
+
 ## What's not built yet
 
-- The allocation-ledger and voucher/SDP pieces mentioned above — nothing
-  exists for these yet.
+- The voucher/SDP pieces mentioned above — nothing exists for these yet.
 - Auth/sessions for the frontends — out of scope for MVP per PRD, but the
   data model shouldn't assume a single user (see `TASKS.md`).
 - No endpoint refreshes the Postgres cache for a contract nobody has

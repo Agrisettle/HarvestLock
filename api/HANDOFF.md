@@ -47,16 +47,61 @@ During `coop-pwa`'s browser check, one `GET /commitments/:contractId` call faile
 ## Next steps, in priority order
 
 1. The appeals process's actual reinstatement path — today it's "email a human, they update `party_standing` by hand." Fine for zero real users; revisit once there's a first real appeal to learn from.
-2. Allocation-ledger schema + salt-scheme decision (blocks `allocation_members`, blocks a real off-chain identity map).
+2. ~~Allocation-ledger schema + salt-scheme decision (blocks `allocation_members`, blocks a real off-chain identity map).~~ **Done** — `db/allocationMembers.ts`, migration `005_allocation_members.sql`. Per-*member* random salts (stronger than the per-contract floor the salt-scheme decision needed), `POST .../tx/set-allocation` + `GET .../allocation` + `DELETE /allocation-members/:memberHash` (NDPA s.34 erasure). See below and `HarvestLock-Contracts/HANDOFF.md`'s Deployment 7.
 3. ~~A real write action in a frontend~~ — **done**: `coop-pwa` can claim an advance tranche, `buyer-app` can lock, settle, and create a commitment end to end, all via Freighter. Manual QA against a real, installed Freighter extension is still outstanding — see `coop-pwa/README.md`/`buyer-app/README.md`.
 4. ~~A "Cancel this commitment" UI in `coop-pwa` and `buyer-app`~~ — **done**: `CancelSection.tsx` in both apps, propose/approve/finalize, `wallet.ts` gained `signAuthEntry`. See both apps' READMEs.
 5. ~~The same staged-signing treatment for `reassign_buyer`~~ — **done, API side**: see above.
 6. ~~A "Propose reassignment" UI in `coop-pwa` and `buyer-app`~~ — **done**: `ReassignBuyerSection.tsx` in both apps, same propose/approve/finalize shape as `CancelSection.tsx` generalized to a form (new buyer's address) and two pending signers. See both apps' READMEs.
 7. ~~Real attestation-driven settlement (PRD §7 shortfall/grade adjustment)~~ — **done, API side**: `POST .../tx/confirm-delivery` (new route, `deliveredQuantity`/`gradeIndex`), `initialize` gained `contractedQuantity`/`gradePriceBps`. See the endpoints table above and `HarvestLock-Contracts/HANDOFF.md`'s Deployment 6.
 8. A background cache-refresh job, once there's a real reason to care about `GET /commitments`/reputation freshness beyond what's already been read.
+9. An "allocation ledger" UI in `coop-pwa` — the API side is done (item 2), nothing built for the frontend yet. Would need a form to collect member phone numbers + shares, plus surfacing the recorded ledger somewhere on the commitment detail view.
 
 ---
-*Last updated: 3 Sept 2026 — wired the contract's PRD §7 shortfall/grade
+*Last updated: 4 Sept 2026 — wired the contract's PRD §4.8/§16.1
+allocation ledger (`HarvestLock-Contracts` Deployment 7) into the API,
+and built the off-chain half of it that never existed on the contract
+side at all: `db/allocationMembers.ts` (migration
+`005_allocation_members.sql`) is the only place a member's phone number
+and the random salt that hashed it ever meet. Per-*member* salts, not
+just per-contract — stronger than the salt-scheme decision TASKS.md
+flagged as compliance-load-bearing needed. `POST .../tx/set-allocation`
+builds the unsigned XDR and stages (doesn't yet persist) the
+phone-number mapping; the caller passes the staged members back to
+`/transactions/submit` (`allocationContractId`/`allocationMembers`),
+which only persists them once the on-chain call is actually confirmed
+— so a proposal that's built but never submitted can't leave an
+orphaned off-chain row referencing a hash nobody put on-chain.
+`GET .../allocation` reads on-chain (source of truth, never returns a
+phone number — this contract never stores one). `DELETE
+/allocation-members/:memberHash` is the actual NDPA s.34 erasure
+mechanism: nulls the phone number, leaves the hash/share intact, makes
+the on-chain entry permanently unlinkable to a real person.
+
+Also fixed a real bug found while building this: `set_allocation`
+takes a `Vec<AllocationMember>` struct argument, and `nativeToScVal`'s
+automatic object-to-map inference gets the numeric type wrong (defaults
+a plain number to `u64`; the contract's `share_bps` is `u32`) — silently,
+no error, just a type mismatch that would fail on-chain. Built the
+struct's `ScMap` encoding by hand instead (`allocationMemberToScVal` in
+`server.ts`) and verified it against a real deployed contract via
+`simulateTransaction` before ever wiring it into a route. Separately,
+`scValToNative` decodes a `BytesN` as a `Uint8Array`, not a Node
+`Buffer` — `Uint8Array.prototype.toString("hex")` silently ignores the
+argument and returns a comma-joined decimal list instead of throwing,
+which the live end-to-end test caught immediately (a `toEqual` assertion
+failure, not a crash) before it could reach anything real.
+
+70/70 tests overall (new: 5 in `test/allocationMembers.test.ts` against
+real Postgres, 8 network-free validation tests in `server.test.ts`, 1
+live end-to-end scenario in `stellar.test.ts`), including
+a full live scenario through the real HTTP layer: build → sign → submit
+→ on-chain read confirms the exact hashes/shares landed → off-chain
+Postgres read confirms the phone numbers were persisted → erasure via
+the real `DELETE` endpoint → on-chain read afterward proves the hash
+entry is completely unaffected by off-chain erasure, only the phone
+number behind it is gone.
+
+Prior entry (3 Sept 2026): wired the contract's PRD §7 shortfall/grade
 adjustment schedule (`HarvestLock-Contracts` Deployment 6) into the API:
 `initialize` gained `contractedQuantity`/`gradePriceBps` (mirrored
 exactly from `lib.rs`'s own validation — positive quantity, non-empty
