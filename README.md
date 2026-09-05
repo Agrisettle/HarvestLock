@@ -130,6 +130,8 @@ not a public issue.
 
 ## Organization
 
+<a href="https://github.com/Agrisettle"><img src="./site/public/wordmark-agrisettle.png" alt="Agrisettle" width="360" /></a>
+
 Part of [Agrisettle](https://github.com/Agrisettle) — settlement infrastructure
 for agricultural commodity trade, of which HarvestLock is the first product.
 
