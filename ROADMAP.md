@@ -280,12 +280,14 @@ funding gate, not just an internal milestone — target them explicitly.
       unaffected (the hash persists on chain, exactly as intended — it's
       the off-chain salt+phone-number mapping that's gone, which is what
       actually makes it unresolvable to a real person).
-- [ ] Warehouse receipt attestation intake — even a simple authenticated
+- [x] Warehouse receipt attestation intake — even a simple authenticated
       webhook or form the operator's staff can use, doesn't need to be
-      polished. **Still open**: `confirm_delivery` itself is built and
-      live-verified, but nothing in `coop-pwa`/`buyer-app` gives the
-      warehouse operator a form to call it from — it's reachable only via
-      a direct API call today.
+      polished. **Done**, 5 Sept 2026 — `warehouse-app`, a third frontend
+      matching `buyer-app`/`coop-pwa`'s architecture: a form for marking
+      the mid-season checkpoint and confirming delivery (quantity + grade
+      against the commitment's own pre-agreed schedule), calling
+      `confirm_delivery`'s existing, already-live-verified route. 25
+      component tests.
 - [ ] SDP integration: deploy (do not fork, PRD §17.1) SDP, get one real
       phone-number-provisioned wallet, execute one split payout to it.
 - [x] Reflector integration with the staleness bound built in Track B, now

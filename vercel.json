@@ -3,6 +3,7 @@
   "outputDirectory": "dist",
   "rewrites": [
     { "source": "/buyer", "destination": "/buyer/index.html" },
-    { "source": "/coop", "destination": "/coop/index.html" }
+    { "source": "/coop", "destination": "/coop/index.html" },
+    { "source": "/warehouse", "destination": "/warehouse/index.html" }
   ]
 }
