@@ -111,6 +111,37 @@ export async function getCommitment(contractId: string): Promise<Commitment> {
   return { ...result, status: unwrapStatus(result.status) };
 }
 
+export interface OracleConfig {
+  oracle_contract: string;
+  price_asset: string;
+  max_age_secs: bigint;
+}
+
+/**
+ * Mirrors the contract's `get_oracle_config`. `null` if `initialize` never
+ * set one -- unlike `getAllocation`'s `AllocationNotSet`, this is a valid
+ * successful return (`Ok(None)`), not a contract error, so no "let it
+ * propagate" throw here.
+ */
+export async function getOracleConfig(contractId: string): Promise<OracleConfig | null> {
+  return (await simulateRead(contractId, "get_oracle_config")) as OracleConfig | null;
+}
+
+export interface OracleRate {
+  price: bigint;
+  timestamp: bigint;
+}
+
+/**
+ * Mirrors the contract's `oracle_rate` -- throws (`OracleNotConfigured`,
+ * `OraclePriceUnavailable`, or `OracleStale`) if the read can't succeed
+ * right now, same "let the contract error propagate" convention as
+ * `getStatus`/`getAllocation`.
+ */
+export async function getOracleRate(contractId: string): Promise<OracleRate> {
+  return (await simulateRead(contractId, "oracle_rate")) as OracleRate;
+}
+
 export interface AllocationMember {
   // scValToNative decodes BytesN as a Uint8Array, not a Node Buffer --
   // callers that need hex must go through Buffer.from(member_hash), not

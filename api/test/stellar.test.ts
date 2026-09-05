@@ -825,3 +825,124 @@ describe("allocation ledger (live testnet + real HTTP layer)", () => {
     180_000,
   );
 });
+
+describe("oracle staleness bound (live testnet + real HTTP layer)", () => {
+  // Uses the file-scoped `app` declared near the top of this file. The
+  // oracle address here is Reflector's real, live "Fiat exchange rates"
+  // testnet contract -- not a mock -- so these assertions genuinely
+  // exercise a cross-contract call to infrastructure this project
+  // doesn't own. GBP, not NGN: confirmed via a real `assets()` call
+  // (HarvestLock-Contracts/HANDOFF.md's Deployment 8) that Reflector's
+  // testnet fiat oracle doesn't quote NGN at all yet -- GBP is a stand-in
+  // that proves the mechanism, not the production symbol.
+  const REFLECTOR_FIAT_ORACLE = "CCSSOHTBL3LEWUCBBEB5NJFC2OKFRC74OWEIJIZLRJBGAAU4VMU5NV4W";
+
+  it(
+    "initializes with an oracleConfig through the real HTTP layer, then reads config and a live rate back",
+    async () => {
+      const buyer = Keypair.random();
+      const cooperative = Keypair.random();
+      await Promise.all([fundTestnetAccount(buyer.publicKey()), fundTestnetAccount(cooperative.publicKey())]);
+
+      const contractId = await deployContractInstance();
+
+      // Build via the real /tx/initialize route, not buildInvokeTransaction
+      // directly -- this is what actually exercises oracleConfigToScVal's
+      // manual struct encoding (and its alphabetical-key-order requirement)
+      // the way a real caller would.
+      const buildRes = await app.inject({
+        method: "POST",
+        url: `/commitments/${contractId}/tx/initialize`,
+        payload: {
+          buyer: buyer.publicKey(),
+          cooperative: cooperative.publicKey(),
+          warehouseOperator: buyer.publicKey(),
+          token: PLACEHOLDER_TOKEN,
+          totalAmount: "1000000000",
+          advance1Bps: 1500,
+          advance2Bps: 1500,
+          claimWindowSecs: "3600",
+          remainderWindowSecs: "3600",
+          deliveryWindowSecs: "86400",
+          contractedQuantity: 1_000,
+          gradePriceBps: [10_000, 9_000, 7_500],
+          oracleConfig: { oracleContract: REFLECTOR_FIAT_ORACLE, priceAsset: "GBP", maxAgeSecs: "3600" },
+          sourcePublicKey: buyer.publicKey(),
+        },
+      });
+      expect(buildRes.statusCode).toBe(200);
+
+      const tx = TransactionBuilder.fromXDR(buildRes.json().xdr, networkPassphrase);
+      tx.sign(buyer);
+      await submitSignedTransaction(tx.toXDR());
+
+      const configRes = await app.inject({ method: "GET", url: `/commitments/${contractId}/oracle-config` });
+      expect(configRes.statusCode).toBe(200);
+      expect(configRes.json().config).toEqual({
+        oracleContract: REFLECTOR_FIAT_ORACLE,
+        priceAsset: "GBP",
+        maxAgeSecs: "3600",
+      });
+
+      // A genuine cross-contract call to the real Reflector oracle, not a
+      // fixture -- price and timestamp will differ run to run, so this
+      // asserts shape and freshness, not an exact value.
+      const rateRes = await app.inject({ method: "GET", url: `/commitments/${contractId}/oracle-rate` });
+      expect(rateRes.statusCode).toBe(200);
+      const rate = rateRes.json();
+      expect(BigInt(rate.price)).toBeGreaterThan(0n);
+      const ageSecs = Math.floor(Date.now() / 1000) - Number(rate.timestamp);
+      expect(ageSecs).toBeLessThan(3600);
+      expect(ageSecs).toBeGreaterThanOrEqual(0);
+    },
+    60_000,
+  );
+
+  it(
+    "reads back null oracle-config for a commitment initialized without one",
+    async () => {
+      const buyer = Keypair.random();
+      const cooperative = Keypair.random();
+      await Promise.all([fundTestnetAccount(buyer.publicKey()), fundTestnetAccount(cooperative.publicKey())]);
+
+      const contractId = await deployContractInstance();
+      const initXdr = await buildInvokeTransaction({
+        contractId,
+        method: "initialize",
+        sourcePublicKey: buyer.publicKey(),
+        args: initializeArgs({
+          buyer: buyer.publicKey(),
+          cooperative: cooperative.publicKey(),
+          warehouseOperator: buyer.publicKey(),
+          token: PLACEHOLDER_TOKEN,
+          totalAmount: 1_000_000_000n,
+          advance1Bps: 1500,
+          advance2Bps: 1500,
+          claimWindowSecs: 3600n,
+          remainderWindowSecs: 3600n,
+          deliveryWindowSecs: 86_400n,
+          contractedQuantity: 1_000,
+          gradePriceBps: [10_000],
+          // oracleConfig omitted entirely -- proves the field is genuinely
+          // optional at the TS layer, not just documented as such.
+        }),
+      });
+      const initTx = TransactionBuilder.fromXDR(initXdr, networkPassphrase);
+      initTx.sign(buyer);
+      await submitSignedTransaction(initTx.toXDR());
+
+      const configRes = await app.inject({ method: "GET", url: `/commitments/${contractId}/oracle-config` });
+      expect(configRes.statusCode).toBe(200);
+      expect(configRes.json()).toEqual({ config: null });
+
+      // oracle_rate itself is a real contract error on this path
+      // (OracleNotConfigured, lib.rs), not just an API-level 404 --
+      // surfaces as a 500 with the contract's error propagated through,
+      // same "let the contract error propagate" convention as
+      // get_allocation's AllocationNotSet.
+      const rateRes = await app.inject({ method: "GET", url: `/commitments/${contractId}/oracle-rate` });
+      expect(rateRes.statusCode).toBe(500);
+    },
+    60_000,
+  );
+});

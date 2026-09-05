@@ -145,7 +145,7 @@ the system. `GET /parties/:address/standing` exposes the read side.
 |---|---|---|
 | GET | `/health` | Liveness check. |
 | POST | `/commitments/deploy` | Deploys a fresh, uninitialized escrow contract instance. Deployer-paid, no party auth. |
-| POST | `/commitments/:contractId/tx/initialize` | Builds unsigned `initialize` XDR. Must be signed by the intended buyer. Address fields are validated (`StrKey`) before building. |
+| POST | `/commitments/:contractId/tx/initialize` | Builds unsigned `initialize` XDR. Must be signed by the intended buyer. Address fields are validated (`StrKey`) before building. Optionally takes `oracleConfig` (PRD §16.3 oracle staleness bound — see below); omit or pass `null` for a plain deal that needs no conversion. |
 | POST | `/commitments/:contractId/tx/reassign-buyer` | Builds unsigned `reassign_buyer` XDR. Needs three-party auth — see above. |
 | POST | `/commitments/:contractId/tx/confirm-delivery` | Builds unsigned `confirm_delivery` XDR. Takes `deliveredQuantity`/`gradeIndex` (PRD §7 shortfall/grade adjustment — see below). Single-signer (warehouse operator). |
 | POST | `/commitments/:contractId/tx/:method` | Builds unsigned XDR for any no-argument lifecycle method (`lock`, `release_advance_1/2`, `claim_advance_1/2`, `reclaim_advance_1/2`, `mark_checkpoint`, `settle`, `cancel`, `ready_for_delivery`, `fund_remainder`, `expire_remainder_window`, `reclaim_on_nondelivery`). `cancel` needs two-party auth — see above, not just a second signature on the same XDR. The four two-phase-funding/forfeiture additions are all single-signer or fully permissionless, so they need nothing extra — see below. |
@@ -157,6 +157,8 @@ the system. `GET /parties/:address/standing` exposes the read side.
 | POST | `/commitments/:contractId/tx/set-allocation` | Builds unsigned `set_allocation` XDR and stages (doesn't yet persist) the phone-number mapping — see below. Cooperative-gated on-chain, callable only pre-`lock`. |
 | GET | `/commitments/:contractId/allocation` | Live on-chain read of the recorded allocation ledger (member hashes + shares). Never returns a phone number — this contract never stores one. |
 | DELETE | `/allocation-members/:memberHash` | NDPA s.34 erasure: nulls the phone number behind an on-chain hash. Idempotent. See below. |
+| GET | `/commitments/:contractId/oracle-config` | Live on-chain read of the configured oracle (address, price asset, max quote age). `{"config": null}` if `initialize` never set one — a valid state, not an error. See below. |
+| GET | `/commitments/:contractId/oracle-rate` | A genuinely live cross-contract call to the configured Reflector oracle on every request, never cached. Fails (500, contract error propagated) if no oracle is configured, the oracle doesn't quote that asset, or the quote is older than the configured bound. See below. |
 | POST | `/transactions/submit` | Submits a signed envelope, polls for confirmation, optionally refreshes the Postgres cache (`refreshContractId`), marks a multisig proposal completed (`completeProposalId`), and/or persists a staged allocation ledger's phone numbers (`allocationContractId`/`allocationMembers`) now that the on-chain call is confirmed. |
 | GET | `/commitments/:contractId` | Live read straight from chain (source of truth), refreshes the cache as a side effect. Also applies any reputation consequence from a fresh transition into `Defaulted`/`Forfeited` — see above. |
 | GET | `/commitments` | Lists the Postgres-cached mirror — the only way to list commitments at all, since the chain has no such query. |
@@ -220,6 +222,45 @@ states the v1 default explicitly ("payment settles to the cooperative
 wallet, each member's entitlement is on chain and readable"); pro-rated
 on-chain payout across members is a real, separate piece of future
 work, not something this ledger silently promises.
+
+### Oracle staleness bound (PRD §16.3)
+
+`initialize`'s optional `oracleConfig` (`{ oracleContract, priceAsset,
+maxAgeSecs }`) tells the contract which [Reflector](https://reflector.network)
+SEP-40 oracle instance and asset symbol to read at settlement time, and
+how old a quote it's willing to accept. Omit it, or pass `null`, for a
+plain deal that needs no conversion — this is genuinely optional per
+commitment, not every deal is NGN-denominated.
+
+The 13th `initialize` argument is `Option<OracleConfig>` on the
+contract side, a Soroban struct — same reason `set_allocation`'s struct
+argument needed hand-built `ScVal` encoding rather than trusting
+`nativeToScVal`'s object inference (`oracleConfigToScVal` in
+`stellar/deploy.ts`), **and** the map's keys have to be in ascending
+Symbol order (`max_age_secs`, `oracle_contract`, `price_asset` — not
+the struct's declaration order), since Soroban's host rejects an
+out-of-order `ScVal::Map` as malformed. Verified against the real
+deployed Deployment 8 contract via `simulateTransaction` before ever
+wiring it into this route.
+
+`GET .../oracle-config` reads back whatever was set (or `null`).
+`GET .../oracle-rate` makes a genuine cross-contract call to the
+configured oracle on every single request — it is never cached, since
+serving a stale rate from this API's own cache would defeat the entire
+point of the staleness bound the contract itself enforces. A missing
+oracle, an asset the oracle doesn't quote, or a quote older than
+`maxAgeSecs` all surface as a 500 with the contract's own error
+propagated through, not a quietly-wrong number.
+
+**This is a read primitive only.** `settle`'s payout math doesn't
+consume `oracle_rate` yet — PRD §4.2 names three different options for
+who bears FX risk between lock-in and settlement and says explicitly to
+decide that with pilot partners, not assume it. Also worth knowing:
+Reflector's real testnet fiat-rate oracle doesn't quote NGN at all as
+of this writing (confirmed via its own `assets()` call, not assumed —
+see `HarvestLock-Contracts/HANDOFF.md`'s Deployment 8) — GBP is what
+this API's own live tests use to prove the mechanism, not the
+production symbol.
 
 ## Setup
 

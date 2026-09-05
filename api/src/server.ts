@@ -1,7 +1,7 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { StrKey, Address, nativeToScVal, xdr } from "@stellar/stellar-sdk";
-import { getAllocation, getCommitment, type Commitment } from "./stellar/client.js";
+import { getAllocation, getCommitment, getOracleConfig, getOracleRate, type Commitment } from "./stellar/client.js";
 import { deployContractInstance, initializeArgs } from "./stellar/deploy.js";
 import { buildInvokeTransaction, submitSignedTransaction } from "./stellar/tx.js";
 import { upsertCommitment, listCommitments } from "./db/commitments.js";
@@ -192,6 +192,9 @@ interface InitializeBody {
   deliveryWindowSecs: string;
   contractedQuantity: number;
   gradePriceBps: number[];
+  // Omit, or pass null, for a plain deal that needs no conversion -- see
+  // lib.rs's OracleConfig doc comment (PRD §16.3).
+  oracleConfig?: { oracleContract: string; priceAsset: string; maxAgeSecs: string } | null;
   sourcePublicKey: string;
 }
 
@@ -263,6 +266,18 @@ export function buildServer() {
           error: `gradePriceBps must be a non-empty array of integers between 0 and 10000, got ${JSON.stringify(b.gradePriceBps)}`,
         });
       }
+      if (b.oracleConfig != null) {
+        requireValidContractId(b.oracleConfig.oracleContract);
+        if (typeof b.oracleConfig.priceAsset !== "string" || b.oracleConfig.priceAsset.trim().length === 0) {
+          return reply.code(400).send({ error: "oracleConfig.priceAsset must be a non-empty string" });
+        }
+        const maxAgeSecs = Number(b.oracleConfig.maxAgeSecs);
+        if (!Number.isInteger(maxAgeSecs) || maxAgeSecs <= 0) {
+          return reply.code(400).send({
+            error: `oracleConfig.maxAgeSecs must be a positive integer, got ${b.oracleConfig.maxAgeSecs}`,
+          });
+        }
+      }
 
       const xdr = await buildInvokeTransaction({
         contractId,
@@ -281,6 +296,13 @@ export function buildServer() {
           deliveryWindowSecs: BigInt(b.deliveryWindowSecs),
           contractedQuantity: b.contractedQuantity,
           gradePriceBps: b.gradePriceBps,
+          oracleConfig: b.oracleConfig
+            ? {
+                oracleContract: b.oracleConfig.oracleContract,
+                priceAsset: b.oracleConfig.priceAsset,
+                maxAgeSecs: BigInt(b.oracleConfig.maxAgeSecs),
+              }
+            : null,
         }),
       });
       return { xdr };
@@ -440,6 +462,36 @@ export function buildServer() {
       // guarantees the real hex encoding regardless of which one it is.
       members: members.map((m) => ({ memberHash: Buffer.from(m.member_hash).toString("hex"), shareBps: m.share_bps })),
     };
+  });
+
+  // Live on-chain read. `null` if `initialize` never set an oracle_config
+  // for this commitment -- a valid state, not an error (see
+  // getOracleConfig's doc comment for why this differs from
+  // /allocation's "let AllocationNotSet propagate" convention).
+  app.get<{ Params: { contractId: string } }>("/commitments/:contractId/oracle-config", async (req) => {
+    requireValidContractId(req.params.contractId);
+    const config = await getOracleConfig(req.params.contractId);
+    if (!config) return { config: null };
+    return {
+      config: {
+        oracleContract: config.oracle_contract,
+        priceAsset: config.price_asset,
+        maxAgeSecs: config.max_age_secs.toString(),
+      },
+    };
+  });
+
+  // Live on-chain read, genuinely live every call -- this cross-calls the
+  // configured Reflector oracle on every request, it isn't cached. Throws
+  // (surfaces as a 500 with the contract's error message) if
+  // oracle_config was never set, the oracle doesn't quote that asset, or
+  // the quote is older than the configured bound -- see oracle_rate's own
+  // doc comment in lib.rs for why a stale/missing rate is refused rather
+  // than silently returned.
+  app.get<{ Params: { contractId: string } }>("/commitments/:contractId/oracle-rate", async (req) => {
+    requireValidContractId(req.params.contractId);
+    const rate = await getOracleRate(req.params.contractId);
+    return { price: rate.price.toString(), timestamp: rate.timestamp.toString() };
   });
 
   // NDPA s.34 erasure: nulls out the phone number behind a member_hash,

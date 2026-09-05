@@ -103,6 +103,12 @@ export async function deployContractInstance(): Promise<string> {
   return Address.fromScVal(result.returnValue).toString();
 }
 
+export interface InitializeOracleConfig {
+  oracleContract: string;
+  priceAsset: string;
+  maxAgeSecs: bigint;
+}
+
 export interface InitializeArgs {
   buyer: string;
   cooperative: string;
@@ -117,6 +123,39 @@ export interface InitializeArgs {
   contractedQuantity: number;
   /** Pre-agreed grade -> price-multiplier table, in bps (10_000 = full price). See lib.rs's Commitment.grade_price_bps doc comment. */
   gradePriceBps: number[];
+  /** `null`/`undefined` for a plain deal that needs no conversion -- see lib.rs's OracleConfig doc comment (PRD §16.3). */
+  oracleConfig?: InitializeOracleConfig | null;
+}
+
+/**
+ * `initialize`'s 13th argument is `Option<OracleConfig>`. `Option<T>`
+ * encodes as `ScVal::Void` for `None` and `T`'s own encoding for `Some` --
+ * no extra wrapper. Built manually rather than trusting `nativeToScVal`'s
+ * object->map inference, same reason `allocationMemberToScVal` is --
+ * **and** the map keys must be in ascending Symbol order (`max_age_secs`
+ * < `oracle_contract` < `price_asset`), not struct-declaration order
+ * (`oracle_contract`, `price_asset`, `max_age_secs`) -- Soroban's host
+ * rejects an `ScVal::Map` with out-of-order keys as malformed, it doesn't
+ * just look fields up by name regardless of position. Verified against a
+ * real deployed contract (the Deployment 8 oracle-enabled instance) via
+ * `simulateTransaction` before ever wiring this into the route.
+ */
+function oracleConfigToScVal(config: InitializeOracleConfig | null | undefined): xdr.ScVal {
+  if (!config) return xdr.ScVal.scvVoid();
+  return xdr.ScVal.scvMap([
+    new xdr.ScMapEntry({
+      key: xdr.ScVal.scvSymbol("max_age_secs"),
+      val: nativeToScVal(config.maxAgeSecs, { type: "u64" }),
+    }),
+    new xdr.ScMapEntry({
+      key: xdr.ScVal.scvSymbol("oracle_contract"),
+      val: new Address(config.oracleContract).toScVal(),
+    }),
+    new xdr.ScMapEntry({
+      key: xdr.ScVal.scvSymbol("price_asset"),
+      val: nativeToScVal(config.priceAsset, { type: "symbol" }),
+    }),
+  ]);
 }
 
 /** Builds the `initialize` args in the exact order lib.rs declares them. */
@@ -134,5 +173,6 @@ export function initializeArgs(a: InitializeArgs): xdr.ScVal[] {
     nativeToScVal(a.deliveryWindowSecs, { type: "u64" }),
     nativeToScVal(a.contractedQuantity, { type: "u32" }),
     xdr.ScVal.scvVec(a.gradePriceBps.map((bps) => nativeToScVal(bps, { type: "u32" }))),
+    oracleConfigToScVal(a.oracleConfig),
   ];
 }
