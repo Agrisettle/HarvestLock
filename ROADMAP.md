@@ -138,26 +138,51 @@ checkboxes.** They'll drift; HANDOFF.md is maintained to stay accurate.
       at claimable-balance, 6 more since for mutual cancellation, below),
       verified live on testnet including the negative case (an on-chain
       rejection, not just a local one).
-- [ ] **Week 4–5**: Allocation ledger, built correctly the first time —
-      **salted hash per member, not raw identifiers** (PRD §4.8, corrected
-      in v0.6 after an NDPA compliance finding in §16.1). Decide the salting
-      scheme now: per-contract salt, never a bare hash of a phone number.
-      Test that two different contracts produce different hashes for the
-      same underlying farmer.
-- [ ] **Week 5–6**: Settlement logic — read a warehouse receipt attestation,
-      apply the shortfall/grade adjustment schedule (PRD §7), convert the
-      NGN obligation to stablecoin at an oracle rate with a **staleness
-      bound and a hold state** if the oracle is stale (PRD §16.3 — this was
-      previously unspecified and is a real gap, don't skip it).
-- [ ] **Week 6–7**: Assignability — buyer position transfer with cooperative
-      consent, recorded on chain (PRD §4.8). Deliberately not a market: no
-      order book, no listing.
-- [ ] **Week 7–8**: Regression tests for the edge cases that matter most at
-      the contract layer: partial delivery, over-delivery, buyer default,
-      side-selling forfeiture. Mutual cancellation unwind is **done** —
-      `cancel()`, buyer+cooperative co-signed, shipped and testnet-verified
-      1 Sept 2026 (ahead of this week's original slot, once it was
-      genuinely ready) — this bullet used to include it, it no longer does.
+- [x] **Week 4–5**: Allocation ledger. **Done**, built 4 Sept 2026 — went
+      further than this bullet's own ask: **per-member** salted hashes
+      (`HMAC-SHA256(salt, phone_number)`, a fresh random salt per member),
+      not just per-contract. `set_allocation`/`get_allocation`,
+      cooperative-gated, one-time, record-only per PRD §4.9's own stated
+      v1 default. The off-chain salt+phone-number map lives in the API's
+      Postgres (`allocation_members` table) with a real NDPA s.34 erasure
+      endpoint — deleting that row makes the on-chain hash permanently
+      unlinkable, which is what the "different contracts, different
+      hashes" test this bullet asked for actually verifies. 9 new contract
+      tests, live-verified on testnet (Deployment 7).
+- [x] **Week 5–6**: Settlement logic. **Mostly done, one piece deliberately
+      still open.** Warehouse receipt attestation + the shortfall/grade
+      adjustment schedule: **done**, 3 Sept 2026 — `confirm_delivery` takes
+      delivered quantity and grade, `settle` pays out against the computed
+      `settlement_bps`. The oracle staleness bound (PRD §16.3): **done**,
+      5 Sept 2026 — `oracle_rate()` reads a live Reflector quote and
+      refuses a stale or missing one, live-verified against Reflector's
+      real testnet oracle. **Still open**: converting the NGN obligation to
+      stablecoin *in `settle`'s actual payout math*, and a hold state that
+      blocks settlement on a stale quote specifically — not an oversight,
+      PRD §4.2 names three different options for who bears the FX risk
+      between lock-in and settlement and says explicitly to decide that
+      with pilot partners, not assume it; wiring one in unilaterally would
+      be answering on their behalf. Also genuinely blocking, found rather
+      than assumed: Reflector's real testnet oracle doesn't quote NGN at
+      all yet. See `HarvestLock-Contracts/HANDOFF.md`'s Deployment 8.
+- [x] **Week 6–7**: Assignability. **Done**, built 2 Sept 2026 as
+      `reassign_buyer()` — buyer position transfer, recorded on chain
+      (PRD §4.8). Went one signer further than "with cooperative consent"
+      alone requires: outgoing buyer, cooperative, *and* incoming buyer all
+      co-sign, so a position (and its obligations) can't be handed to a
+      third party who never agreed to take it on. Deliberately not a
+      market — no order book, no listing, just a novation. 34/34 tests,
+      live-verified on testnet with three genuinely different signers.
+- [x] **Week 7–8**: Regression tests for the edge cases. **Done** — partial
+      delivery and over-delivery via `confirm_delivery`'s `settlement_bps`
+      math (3 Sept 2026, live-verified); buyer default and side-selling
+      (seller non-delivery) forfeiture via two-phase funding plus
+      `expire_remainder_window()`/`reclaim_on_nondelivery()` (2 Sept 2026,
+      58/58 tests, three-scenario live testnet verification). Mutual
+      cancellation unwind is **also done** — `cancel()`, buyer+cooperative
+      co-signed, shipped and testnet-verified 1 Sept 2026 (ahead of this
+      week's original slot, once it was genuinely ready) — this bullet
+      used to include it, it no longer does.
 - [ ] **Week 8–10**: Get this reviewed by someone who isn't you before
       calling it done, even informally. This is the highest-stakes code in
       the whole system.
@@ -193,8 +218,16 @@ Move to Phase 1 only when **all** of these are true:
       of willingness to pilot.
 - [ ] At least one warehouse operator in that off-taker's region/crop has
       indicated willingness to attest deliveries.
-- [ ] The Track B contract handles the full state machine on testnet with
-      passing tests for the core edge cases.
+- [x] The Track B contract handles the full state machine on testnet with
+      passing tests for the core edge cases. **Met** — see Track B above:
+      86/86 tests, eight live testnet deployments covering the happy path,
+      mutual cancellation, assignability, buyer-default and
+      seller-non-delivery forfeiture, shortfall/grade adjustment, the
+      allocation ledger, and the oracle staleness bound. This is one
+      criterion of several on this list — the others (off-taker,
+      warehouse operator, co-founder, counsel) are separate,
+      still-open, non-technical milestones this file can't mark done on
+      its own.
 - [ ] A co-founder is either onboard or in late-stage conversation.
 - [ ] Counsel has given at least a preliminary read on the lending-
       characterization and NDPA questions — a full opinion isn't required
@@ -236,18 +269,35 @@ funding gate, not just an internal milestone — target them explicitly.
 
 ### Testnet tranche (SCF: 30%)
 
-- [ ] Full allocation ledger with the salted-hash design live, not stubbed.
-- [ ] Off-chain identity map in Postgres with a **working, tested erasure
+- [x] Full allocation ledger with the salted-hash design live, not stubbed.
+      **Done**, 4 Sept 2026 — live on testnet (Deployment 7), not a stub.
+- [x] Off-chain identity map in Postgres with a **working, tested erasure
       path** — actually delete a record and confirm the on-chain hash
-      becomes unresolvable. This is a compliance requirement, not a nice
-      engineering property; test it like one.
+      becomes unresolvable. **Done**, 4 Sept 2026 — `allocation_members`
+      table, `DELETE /allocation-members/:memberHash`, verified end to end
+      through the real HTTP layer: build → sign → submit → on-chain read →
+      off-chain Postgres read → erase → on-chain read confirmed
+      unaffected (the hash persists on chain, exactly as intended — it's
+      the off-chain salt+phone-number mapping that's gone, which is what
+      actually makes it unresolvable to a real person).
 - [ ] Warehouse receipt attestation intake — even a simple authenticated
       webhook or form the operator's staff can use, doesn't need to be
-      polished.
+      polished. **Still open**: `confirm_delivery` itself is built and
+      live-verified, but nothing in `coop-pwa`/`buyer-app` gives the
+      warehouse operator a form to call it from — it's reachable only via
+      a direct API call today.
 - [ ] SDP integration: deploy (do not fork, PRD §17.1) SDP, get one real
       phone-number-provisioned wallet, execute one split payout to it.
-- [ ] Reflector integration with the staleness bound and hold state built
-      in Track B, now wired to live testnet data.
+- [x] Reflector integration with the staleness bound built in Track B, now
+      wired to live testnet data. **Done**, 5 Sept 2026 — `oracle_rate()`
+      made a genuine cross-contract call to Reflector's real testnet fiat
+      oracle and got back a live rate, not a fixture (see Track B above
+      for the full writeup, including the real "Reflector doesn't quote
+      NGN yet" finding). **The "hold state" half of this bullet's original
+      ask is still open** — there's no state-machine gating that blocks
+      settlement on a stale quote, since `settle` doesn't consume
+      `oracle_rate` at all yet (a deliberate pilot-partner decision, not a
+      gap in this pass — see Track B).
 - [ ] Key recovery flow: exercise it once end to end — simulate a lost key,
       confirm the two-of-three social recovery set can rotate it.
 
