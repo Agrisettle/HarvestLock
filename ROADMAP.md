@@ -149,22 +149,28 @@ checkboxes.** They'll drift; HANDOFF.md is maintained to stay accurate.
       unlinkable, which is what the "different contracts, different
       hashes" test this bullet asked for actually verifies. 9 new contract
       tests, live-verified on testnet (Deployment 7).
-- [x] **Week 5–6**: Settlement logic. **Mostly done, one piece deliberately
-      still open.** Warehouse receipt attestation + the shortfall/grade
-      adjustment schedule: **done**, 3 Sept 2026 — `confirm_delivery` takes
-      delivered quantity and grade, `settle` pays out against the computed
-      `settlement_bps`. The oracle staleness bound (PRD §16.3): **done**,
-      5 Sept 2026 — `oracle_rate()` reads a live Reflector quote and
-      refuses a stale or missing one, live-verified against Reflector's
-      real testnet oracle. **Still open**: converting the NGN obligation to
-      stablecoin *in `settle`'s actual payout math*, and a hold state that
-      blocks settlement on a stale quote specifically — not an oversight,
-      PRD §4.2 names three different options for who bears the FX risk
-      between lock-in and settlement and says explicitly to decide that
-      with pilot partners, not assume it; wiring one in unilaterally would
-      be answering on their behalf. Also genuinely blocking, found rather
-      than assumed: Reflector's real testnet oracle doesn't quote NGN at
-      all yet. See `HarvestLock-Contracts/HANDOFF.md`'s Deployment 8.
+- [x] **Week 5–6**: Settlement logic. **Done.** Warehouse receipt
+      attestation + the shortfall/grade adjustment schedule: **done**,
+      3 Sept 2026 — `confirm_delivery` takes delivered quantity and grade,
+      `settle` pays out against the computed `settlement_bps`. The oracle
+      staleness bound (PRD §16.3): **done**, 5 Sept 2026 — `oracle_rate()`
+      reads a live Reflector quote and refuses a stale or missing one,
+      live-verified against Reflector's real testnet oracle. Converting the
+      NGN obligation to stablecoin *in `settle`'s actual payout math*:
+      **done**, 6 Sept 2026 — PRD §4.2 names three different options for
+      who bears the FX risk between lock-in and settlement and says
+      explicitly to decide that with pilot partners, not assume it; option
+      (b) (buyer tops up or is refunded at settlement) was asked and chosen
+      explicitly this session, not assumed. `resolve_fx_shortfall()` /
+      `fund_fx_shortfall()` / `expire_fx_shortfall_window()` wire it into
+      `settle`, live-verified with a genuine cross-rate top-up on real
+      testnet. **Still open**: a hold state that blocks settlement on a
+      stale quote specifically (the existing staleness bound already
+      refuses a *missing/stale* read outright, so this is a narrower
+      remaining gap, not the FX-payout piece). Also genuinely blocking,
+      found rather than assumed: Reflector's real testnet oracle doesn't
+      quote NGN at all yet. See `HarvestLock-Contracts/HANDOFF.md`'s
+      Deployment 9.
 - [x] **Week 6–7**: Assignability. **Done**, built 2 Sept 2026 as
       `reassign_buyer()` — buyer position transfer, recorded on chain
       (PRD §4.8). Went one signer further than "with cooperative consent"
@@ -220,11 +226,12 @@ Move to Phase 1 only when **all** of these are true:
       indicated willingness to attest deliveries.
 - [x] The Track B contract handles the full state machine on testnet with
       passing tests for the core edge cases. **Met** — see Track B above:
-      86/86 tests, eight live testnet deployments covering the happy path,
+      103/103 tests, nine live testnet deployments covering the happy path,
       mutual cancellation, assignability, buyer-default and
       seller-non-delivery forfeiture, shortfall/grade adjustment, the
-      allocation ledger, and the oracle staleness bound. This is one
-      criterion of several on this list — the others (off-taker,
+      allocation ledger, the oracle staleness bound, and PRD §4.2 option
+      (b)'s FX settlement. This is one criterion of several on this list —
+      the others (off-taker,
       warehouse operator, co-founder, counsel) are separate,
       still-open, non-technical milestones this file can't mark done on
       its own.
@@ -295,11 +302,15 @@ funding gate, not just an internal milestone — target them explicitly.
       made a genuine cross-contract call to Reflector's real testnet fiat
       oracle and got back a live rate, not a fixture (see Track B above
       for the full writeup, including the real "Reflector doesn't quote
-      NGN yet" finding). **The "hold state" half of this bullet's original
-      ask is still open** — there's no state-machine gating that blocks
-      settlement on a stale quote, since `settle` doesn't consume
-      `oracle_rate` at all yet (a deliberate pilot-partner decision, not a
-      gap in this pass — see Track B).
+      NGN yet" finding). `settle` now genuinely consumes it, too — **done**,
+      6 Sept 2026 — `resolve_fx_shortfall`/`fund_fx_shortfall`/
+      `expire_fx_shortfall_window` gate `settle` on a fresh, non-stale
+      resolution (see Track B above). **The narrower "hold state" half of
+      this bullet's original ask is still open**: there's no state-machine
+      path that blocks settlement on a stale quote *specifically* (as
+      opposed to `resolve_fx_shortfall` simply failing outright on one,
+      which it already does) — a smaller remaining gap than "settle doesn't
+      consume the oracle at all," which is now resolved.
 - [ ] Key recovery flow: exercise it once end to end — simulate a lost key,
       confirm the two-of-three social recovery set can rotate it.
 

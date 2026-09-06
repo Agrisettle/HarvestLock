@@ -223,25 +223,28 @@ wallet, each member's entitlement is on chain and readable"); pro-rated
 on-chain payout across members is a real, separate piece of future
 work, not something this ledger silently promises.
 
-### Oracle staleness bound (PRD §16.3)
+### Oracle staleness bound and FX settlement (PRD §16.3, §4.2 option (b))
 
 `initialize`'s optional `oracleConfig` (`{ oracleContract, priceAsset,
-maxAgeSecs }`) tells the contract which [Reflector](https://reflector.network)
-SEP-40 oracle instance and asset symbol to read at settlement time, and
-how old a quote it's willing to accept. Omit it, or pass `null`, for a
-plain deal that needs no conversion — this is genuinely optional per
-commitment, not every deal is NGN-denominated.
+maxAgeSecs, denominatedAmount }`) tells the contract which
+[Reflector](https://reflector.network) SEP-40 oracle instance and asset
+symbol to read at settlement time, how old a quote it's willing to
+accept, and the deal's true value in `priceAsset` (7-decimal "stroop"
+units, same convention as `totalAmount`) to convert into the settlement
+token. Omit it, or pass `null`, for a plain deal that needs no
+conversion — this is genuinely optional per commitment, not every deal
+is NGN-denominated.
 
 The 13th `initialize` argument is `Option<OracleConfig>` on the
 contract side, a Soroban struct — same reason `set_allocation`'s struct
 argument needed hand-built `ScVal` encoding rather than trusting
 `nativeToScVal`'s object inference (`oracleConfigToScVal` in
 `stellar/deploy.ts`), **and** the map's keys have to be in ascending
-Symbol order (`max_age_secs`, `oracle_contract`, `price_asset` — not
-the struct's declaration order), since Soroban's host rejects an
-out-of-order `ScVal::Map` as malformed. Verified against the real
-deployed Deployment 8 contract via `simulateTransaction` before ever
-wiring it into this route.
+Symbol order (`denominated_amount`, `max_age_secs`, `oracle_contract`,
+`price_asset` — not the struct's declaration order), since Soroban's
+host rejects an out-of-order `ScVal::Map` as malformed. Verified
+against the real deployed Deployment 9 contract via
+`simulateTransaction` before ever wiring it into this route.
 
 `GET .../oracle-config` reads back whatever was set (or `null`).
 `GET .../oracle-rate` makes a genuine cross-contract call to the
@@ -252,15 +255,22 @@ oracle, an asset the oracle doesn't quote, or a quote older than
 `maxAgeSecs` all surface as a 500 with the contract's own error
 propagated through, not a quietly-wrong number.
 
-**This is a read primitive only.** `settle`'s payout math doesn't
-consume `oracle_rate` yet — PRD §4.2 names three different options for
-who bears FX risk between lock-in and settlement and says explicitly to
-decide that with pilot partners, not assume it. Also worth knowing:
-Reflector's real testnet fiat-rate oracle doesn't quote NGN at all as
-of this writing (confirmed via its own `assets()` call, not assumed —
-see `HarvestLock-Contracts/HANDOFF.md`'s Deployment 8) — GBP is what
-this API's own live tests use to prove the mechanism, not the
-production symbol.
+**`settle`'s payout math genuinely consumes this now.** PRD §4.2 names
+three different options for who bears FX risk between lock-in and
+settlement; option (b) — buyer tops up or is refunded at settlement —
+was decided explicitly, not assumed, and wired into the contract's
+`resolve_fx_shortfall`/`fund_fx_shortfall`/`expire_fx_shortfall_window`
+(no new API surface needed — these are permissionless or buyer-gated
+no-arg methods, so they go through the existing generic `/tx/:method`
+route same as any other lifecycle call). A missed `fund_fx_shortfall`
+deadline reuses `Status::Defaulted`, so the existing reputation
+machinery (`applyReputationConsequences`) bars the buyer automatically
+with zero API changes. See `HarvestLock-Contracts/HANDOFF.md`'s
+Deployment 9 for the contract-level detail and a genuine live cross-rate
+top-up. Also worth knowing: Reflector's real testnet fiat-rate oracle
+doesn't quote NGN at all as of this writing (confirmed via its own
+`assets()` call, not assumed) — GBP is what this API's own live tests
+use to prove the mechanism, not the production symbol.
 
 ## Setup
 
