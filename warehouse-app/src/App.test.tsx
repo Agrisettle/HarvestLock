@@ -61,6 +61,8 @@ const detail: CommitmentDetail = {
   fx_shortfall_amount: "0",
   fx_shortfall_funded: false,
   fx_shortfall_deadline: "0",
+  dispute_pre_status: "Draft",
+  dispute_deadline: "0",
 };
 
 function jsonResponse(body: unknown, ok = true) {

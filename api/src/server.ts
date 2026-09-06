@@ -100,6 +100,15 @@ const NO_ARG_METHODS = new Set([
   "fund_remainder", // buyer-gated
   "expire_remainder_window", // permissionless — the buyer-default sweep
   "reclaim_on_nondelivery", // buyer-gated — the seller-non-delivery reclaim
+  // Dispute flagging (lib.rs). flag_dispute has its own route below (it
+  // takes an argument). resolve_dispute needs all THREE parties' auth on
+  // the same submitted envelope — same "sign it again" generic support
+  // as cancel/reassign_buyer, nothing extra needed here — and also has
+  // its own staged /tx/resolve-dispute/propose route below for the
+  // separate-wallets case. expire_dispute_window is permissionless, same
+  // shape as expire_remainder_window.
+  "resolve_dispute",
+  "expire_dispute_window",
 ]);
 
 /** bigint doesn't survive JSON.stringify — stringify it explicitly at the HTTP boundary. */
@@ -117,6 +126,7 @@ function serializeCommitment(c: Commitment) {
     fx_adjusted_total: c.fx_adjusted_total.toString(),
     fx_shortfall_amount: c.fx_shortfall_amount.toString(),
     fx_shortfall_deadline: c.fx_shortfall_deadline.toString(),
+    dispute_deadline: c.dispute_deadline.toString(),
   };
 }
 
@@ -397,6 +407,33 @@ export function buildServer() {
     return { xdr: unsignedXdr };
   });
 
+  // flag_dispute takes an argument (which of the three named parties is
+  // flagging), so — same reasoning as confirm_delivery/reassign_buyer —
+  // it can't go through the generic no-arg route. Single-signer: lib.rs
+  // only requires `flagger`'s own auth, not every party's, so unlike
+  // resolve_dispute this needs no multi-party staging. The API doesn't
+  // check `flagger` against the commitment's buyer/cooperative/warehouse
+  // fields itself (same minimal-validation convention as confirm_delivery
+  // not checking sourcePublicKey against warehouse_operator) — lib.rs's
+  // own `NotAParty` check is the actual enforcement, this route just
+  // validates the address is well-formed before ever touching the network.
+  app.post<{ Params: { contractId: string }; Body: { flagger: string; sourcePublicKey: string } }>(
+    "/commitments/:contractId/tx/flag-dispute",
+    async (req) => {
+      const { contractId } = req.params;
+      requireValidContractId(contractId);
+      requireValidPublicKey(req.body.flagger, "flagger");
+
+      const xdr = await buildInvokeTransaction({
+        contractId,
+        method: "flag_dispute",
+        sourcePublicKey: req.body.sourcePublicKey,
+        args: [new Address(req.body.flagger).toScVal()],
+      });
+      return { xdr };
+    },
+  );
+
   // set_allocation takes a Vec<AllocationMember> struct arg -- Soroban
   // structs serialize as an ScMap keyed by field name (Symbol), sorted;
   // nativeToScVal's automatic object->map inference gets the numeric
@@ -632,6 +669,62 @@ export function buildServer() {
   app.get<{ Params: { contractId: string } }>("/commitments/:contractId/tx/reassign-buyer/propose", async (req) => {
     requireValidContractId(req.params.contractId);
     const proposal = await findActiveProposal(req.params.contractId, "reassign_buyer");
+    return { proposal: proposal ? serializeProposal(proposal) : null };
+  });
+
+  // resolve_dispute's propose route: same shape as cancel's (no extra
+  // args, three-way symmetric eligibility -- unlike reassign_buyer's
+  // "only the current buyer" rule) but any ONE of the three named
+  // parties may propose, since lib.rs requires all three parties' auth
+  // regardless of who initiates. buildMultiPartyProposal doesn't need to
+  // know that in advance -- simulating resolve_dispute naturally produces
+  // three non-source auth entries (buyer, cooperative, warehouse_operator
+  // each call require_auth()), the same way reassign_buyer's simulation
+  // already does for its own three.
+  app.post<{ Params: { contractId: string }; Body: { proposerPublicKey: string } }>(
+    "/commitments/:contractId/tx/resolve-dispute/propose",
+    async (req, reply) => {
+      const { contractId } = req.params;
+      requireValidContractId(contractId);
+      requireValidPublicKey(req.body.proposerPublicKey, "proposerPublicKey");
+
+      const existing = await findActiveProposal(contractId, "resolve_dispute");
+      if (existing) {
+        return reply.code(200).send(serializeProposal(existing));
+      }
+
+      const commitment = await getCommitment(contractId);
+      if (
+        req.body.proposerPublicKey !== commitment.buyer &&
+        req.body.proposerPublicKey !== commitment.cooperative &&
+        req.body.proposerPublicKey !== commitment.warehouse_operator
+      ) {
+        throw new ForbiddenError(
+          `proposerPublicKey must be the commitment's buyer, cooperative, or warehouse operator to propose resolving a dispute`,
+        );
+      }
+
+      const pieces = await buildMultiPartyProposal({
+        contractId,
+        method: "resolve_dispute",
+        sourcePublicKey: req.body.proposerPublicKey,
+      });
+      const row = await createProposal({
+        contractId,
+        method: "resolve_dispute",
+        proposerAddress: req.body.proposerPublicKey,
+        funcXdr: pieces.funcXdr,
+        sorobanDataXdr: pieces.sorobanDataXdr,
+        entries: pieces.entries.map((e) => ({ address: e.address, entryXdr: e.entryXdr, signedEntryXdr: null })),
+        expiresAt: new Date(Date.now() + MULTISIG_PROPOSAL_TTL_MS),
+      });
+      return reply.code(201).send(serializeProposal(row));
+    },
+  );
+
+  app.get<{ Params: { contractId: string } }>("/commitments/:contractId/tx/resolve-dispute/propose", async (req) => {
+    requireValidContractId(req.params.contractId);
+    const proposal = await findActiveProposal(req.params.contractId, "resolve_dispute");
     return { proposal: proposal ? serializeProposal(proposal) : null };
   });
 

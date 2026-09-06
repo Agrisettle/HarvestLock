@@ -39,6 +39,8 @@ export interface CommitmentDetail {
   fx_shortfall_amount: string;
   fx_shortfall_funded: boolean;
   fx_shortfall_deadline: string;
+  dispute_pre_status: string;
+  dispute_deadline: string;
 }
 
 /** Mirrors api/src/db/commitments.ts's CommitmentRow — the Postgres cache. */

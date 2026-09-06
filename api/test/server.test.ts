@@ -525,6 +525,34 @@ describe("server (HTTP layer)", () => {
   );
 
   it(
+    "rejects a malformed contract ID on flag-dispute before touching the network",
+    async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: "/commitments/not-a-real-contract-id/tx/flag-dispute",
+        payload: { flagger: FAKE_PUBLIC_KEY, sourcePublicKey: FAKE_PUBLIC_KEY },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().message).toMatch(/not a valid contract ID/);
+    },
+    15_000,
+  );
+
+  it(
+    "rejects a malformed flagger address on flag-dispute before touching the network",
+    async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: `/commitments/${FAKE_CONTRACT_ID}/tx/flag-dispute`,
+        payload: { flagger: "not-a-real-address", sourcePublicKey: FAKE_PUBLIC_KEY },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().message).toMatch(/flagger is not a valid public key/);
+    },
+    15_000,
+  );
+
+  it(
     "rejects an empty members array on set-allocation before touching the network",
     async () => {
       const res = await app.inject({
@@ -829,6 +857,44 @@ describe("server (HTTP layer)", () => {
     "GET reassign-buyer/propose returns no active proposal for a contract that's never had one",
     async () => {
       const res = await app.inject({ method: "GET", url: `/commitments/${FAKE_CONTRACT_ID}/tx/reassign-buyer/propose` });
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ proposal: null });
+    },
+    15_000,
+  );
+
+  it(
+    "rejects a malformed contract ID on resolve-dispute/propose before touching the network",
+    async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: "/commitments/not-a-real-contract-id/tx/resolve-dispute/propose",
+        payload: { proposerPublicKey: FAKE_PUBLIC_KEY },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().message).toMatch(/not a valid contract ID/);
+    },
+    15_000,
+  );
+
+  it(
+    "rejects a malformed proposerPublicKey on resolve-dispute/propose before touching the network",
+    async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: `/commitments/${FAKE_CONTRACT_ID}/tx/resolve-dispute/propose`,
+        payload: { proposerPublicKey: "not-a-real-address" },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().message).toMatch(/proposerPublicKey is not a valid public key/);
+    },
+    15_000,
+  );
+
+  it(
+    "GET resolve-dispute/propose returns no active proposal for a contract that's never had one",
+    async () => {
+      const res = await app.inject({ method: "GET", url: `/commitments/${FAKE_CONTRACT_ID}/tx/resolve-dispute/propose` });
       expect(res.statusCode).toBe(200);
       expect(res.json()).toEqual({ proposal: null });
     },

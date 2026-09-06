@@ -727,6 +727,133 @@ describe("staged multi-party proposals (propose / sign / finalize, live testnet 
   );
 });
 
+describe("dispute flagging (live testnet + real HTTP layer)", () => {
+  // Uses the file-scoped `app` declared above.
+
+  it(
+    "cooperative flags a dispute through the real HTTP route, freezing the commitment, then all three parties resolve it back through the staged propose/sign/finalize flow",
+    async () => {
+      const buyer = Keypair.random();
+      const cooperative = Keypair.random();
+      const warehouse = Keypair.random();
+      await Promise.all([
+        fundTestnetAccount(buyer.publicKey()),
+        fundTestnetAccount(cooperative.publicKey()),
+        fundTestnetAccount(warehouse.publicKey()),
+      ]);
+
+      const contractId = await deployContractInstance();
+      const initXdr = await buildInvokeTransaction({
+        contractId,
+        method: "initialize",
+        sourcePublicKey: buyer.publicKey(),
+        args: initializeArgs({
+          buyer: buyer.publicKey(),
+          cooperative: cooperative.publicKey(),
+          warehouseOperator: warehouse.publicKey(),
+          token: PLACEHOLDER_TOKEN,
+          totalAmount: 1_000_000_000n,
+          advance1Bps: 1500,
+          advance2Bps: 2000,
+          claimWindowSecs: 3600n,
+          remainderWindowSecs: 3600n,
+          deliveryWindowSecs: 86_400n,
+          contractedQuantity: 1_000,
+          gradePriceBps: [10_000, 9_000, 7_500],
+        }),
+      });
+      const initTx = TransactionBuilder.fromXDR(initXdr, networkPassphrase);
+      initTx.sign(buyer);
+      await submitSignedTransaction(initTx.toXDR());
+      await submitSingleSignerCall({ contractId, method: "lock", signer: buyer });
+      expect(await getStatus(contractId)).toBe("Locked");
+
+      // Flag through the real /tx/flag-dispute route -- the whole point
+      // is proving this specific new route's arg validation and
+      // buildInvokeTransaction wiring, not just the underlying contract
+      // call (already covered by contracts-repo unit tests).
+      const flagXdrRes = await app.inject({
+        method: "POST",
+        url: `/commitments/${contractId}/tx/flag-dispute`,
+        payload: { flagger: cooperative.publicKey(), sourcePublicKey: cooperative.publicKey() },
+      });
+      expect(flagXdrRes.statusCode).toBe(200);
+      const flagTx = TransactionBuilder.fromXDR(flagXdrRes.json().xdr, networkPassphrase);
+      flagTx.sign(cooperative);
+      const flagSubmitRes = await submitSignedTransaction(flagTx.toXDR());
+      expect(flagSubmitRes.status).toBe("SUCCESS");
+      expect(await getStatus(contractId)).toBe("Disputed");
+
+      // The freeze is real, not just a status label -- a call that would
+      // otherwise succeed from Locked is rejected while disputed.
+      await expect(submitSingleSignerCall({ contractId, method: "release_advance_1", signer: cooperative })).rejects.toThrow();
+
+      // Resolving needs all three parties' auth -- an unrelated third
+      // party can't even propose it.
+      const unrelatedThirdParty = Keypair.random();
+      const rejectedProposeRes = await app.inject({
+        method: "POST",
+        url: `/commitments/${contractId}/tx/resolve-dispute/propose`,
+        payload: { proposerPublicKey: unrelatedThirdParty.publicKey() },
+      });
+      expect(rejectedProposeRes.statusCode).toBe(403);
+
+      // The warehouse operator (a valid party, but not the one who
+      // flagged) proposes resolving it.
+      const proposeRes = await app.inject({
+        method: "POST",
+        url: `/commitments/${contractId}/tx/resolve-dispute/propose`,
+        payload: { proposerPublicKey: warehouse.publicKey() },
+      });
+      expect(proposeRes.statusCode).toBe(201);
+      const proposal = proposeRes.json();
+      expect(proposal.method).toBe("resolve_dispute");
+      const pendingAddresses = proposal.pending_entries.map((e: { address: string }) => e.address).sort();
+      expect(pendingAddresses).toEqual([buyer.publicKey(), cooperative.publicKey()].sort());
+
+      const buyerEntry = proposal.pending_entries.find((e: { address: string }) => e.address === buyer.publicKey());
+      const buyerSignedEntryXdr = await simulateFreighterSignAuthEntry(buyerEntry.entry_xdr, buyer);
+      const afterBuyerSignRes = await app.inject({
+        method: "POST",
+        url: `/commitments/${contractId}/tx/propose/${proposal.id}/sign`,
+        payload: { signerPublicKey: buyer.publicKey(), signedEntryXdr: buyerSignedEntryXdr },
+      });
+      expect(afterBuyerSignRes.statusCode).toBe(200);
+      expect(afterBuyerSignRes.json().status).toBe("pending");
+
+      const coopEntry = afterBuyerSignRes.json().pending_entries[0];
+      const coopSignedEntryXdr = await simulateFreighterSignAuthEntry(coopEntry.entry_xdr, cooperative);
+      const afterAllSignRes = await app.inject({
+        method: "POST",
+        url: `/commitments/${contractId}/tx/propose/${proposal.id}/sign`,
+        payload: { signerPublicKey: cooperative.publicKey(), signedEntryXdr: coopSignedEntryXdr },
+      });
+      expect(afterAllSignRes.statusCode).toBe(200);
+      const ready = afterAllSignRes.json();
+      expect(ready.status).toBe("ready");
+
+      const finalTx = TransactionBuilder.fromXDR(ready.ready_xdr, networkPassphrase);
+      finalTx.sign(warehouse);
+      const submitRes = await app.inject({
+        method: "POST",
+        url: "/transactions/submit",
+        payload: { xdr: finalTx.toXDR(), refreshContractId: contractId, completeProposalId: proposal.id },
+      });
+      expect(submitRes.statusCode).toBe(200);
+      expect(submitRes.json().status).toBe("SUCCESS");
+
+      // The functional proof: genuinely back to Locked, not just
+      // "submission succeeded", and normal processing can continue.
+      const commitment = await getCommitment(contractId);
+      expect(commitment.status).toBe("Locked");
+      expect(commitment.dispute_pre_status).toBe("Draft");
+      await submitSingleSignerCall({ contractId, method: "release_advance_1", signer: cooperative });
+      expect(await getStatus(contractId)).toBe("Advance1Released");
+    },
+    180_000,
+  );
+});
+
 describe("allocation ledger (live testnet + real HTTP layer)", () => {
   // Uses the file-scoped `app` declared near the top of this file.
 

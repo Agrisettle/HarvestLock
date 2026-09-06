@@ -89,6 +89,11 @@ export interface Commitment {
   fx_shortfall_amount: bigint;
   fx_shortfall_funded: boolean;
   fx_shortfall_deadline: bigint;
+  // The status to restore once a dispute resolves — "Draft" (an
+  // otherwise-impossible value here, see lib.rs's doc comment) whenever
+  // `status` isn't "Disputed".
+  dispute_pre_status: string;
+  dispute_deadline: bigint;
 }
 
 /**
@@ -113,7 +118,11 @@ export async function getStatus(contractId: string): Promise<string> {
 /** Mirrors the contract's `get_commitment` — the full struct. */
 export async function getCommitment(contractId: string): Promise<Commitment> {
   const result = (await simulateRead(contractId, "get_commitment")) as Commitment;
-  return { ...result, status: unwrapStatus(result.status) };
+  return {
+    ...result,
+    status: unwrapStatus(result.status),
+    dispute_pre_status: unwrapStatus(result.dispute_pre_status),
+  };
 }
 
 export interface OracleConfig {

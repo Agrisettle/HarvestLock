@@ -50,6 +50,8 @@ function baseCommitment(overrides: Partial<Commitment>): Commitment {
     fx_shortfall_amount: 0n,
     fx_shortfall_funded: false,
     fx_shortfall_deadline: 0n,
+    dispute_pre_status: "Draft",
+    dispute_deadline: 0n,
     ...overrides,
   };
 }
