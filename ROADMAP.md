@@ -226,12 +226,13 @@ Move to Phase 1 only when **all** of these are true:
       indicated willingness to attest deliveries.
 - [x] The Track B contract handles the full state machine on testnet with
       passing tests for the core edge cases. **Met** — see Track B above:
-      103/103 tests, nine live testnet deployments covering the happy path,
+      120/120 tests, ten live testnet deployments covering the happy path,
       mutual cancellation, assignability, buyer-default and
       seller-non-delivery forfeiture, shortfall/grade adjustment, the
-      allocation ledger, the oracle staleness bound, and PRD §4.2 option
-      (b)'s FX settlement. This is one criterion of several on this list —
-      the others (off-taker,
+      allocation ledger, the oracle staleness bound, PRD §4.2 option
+      (b)'s FX settlement, and dispute flagging with defined escalation.
+      This is one criterion of several on this list — the others
+      (off-taker,
       warehouse operator, co-founder, counsel) are separate,
       still-open, non-technical milestones this file can't mark done on
       its own.

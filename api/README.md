@@ -148,11 +148,14 @@ the system. `GET /parties/:address/standing` exposes the read side.
 | POST | `/commitments/:contractId/tx/initialize` | Builds unsigned `initialize` XDR. Must be signed by the intended buyer. Address fields are validated (`StrKey`) before building. Optionally takes `oracleConfig` (PRD §16.3 oracle staleness bound — see below); omit or pass `null` for a plain deal that needs no conversion. |
 | POST | `/commitments/:contractId/tx/reassign-buyer` | Builds unsigned `reassign_buyer` XDR. Needs three-party auth — see above. |
 | POST | `/commitments/:contractId/tx/confirm-delivery` | Builds unsigned `confirm_delivery` XDR. Takes `deliveredQuantity`/`gradeIndex` (PRD §7 shortfall/grade adjustment — see below). Single-signer (warehouse operator). |
-| POST | `/commitments/:contractId/tx/:method` | Builds unsigned XDR for any no-argument lifecycle method (`lock`, `release_advance_1/2`, `claim_advance_1/2`, `reclaim_advance_1/2`, `mark_checkpoint`, `settle`, `cancel`, `ready_for_delivery`, `fund_remainder`, `expire_remainder_window`, `reclaim_on_nondelivery`). `cancel` needs two-party auth — see above, not just a second signature on the same XDR. The four two-phase-funding/forfeiture additions are all single-signer or fully permissionless, so they need nothing extra — see below. |
+| POST | `/commitments/:contractId/tx/:method` | Builds unsigned XDR for any no-argument lifecycle method (`lock`, `release_advance_1/2`, `claim_advance_1/2`, `reclaim_advance_1/2`, `mark_checkpoint`, `settle`, `cancel`, `ready_for_delivery`, `fund_remainder`, `expire_remainder_window`, `reclaim_on_nondelivery`, `resolve_dispute`, `expire_dispute_window`). `cancel`/`resolve_dispute` need two- and three-party auth respectively — see above, not just extra signatures on the same XDR. Everything else here is single-signer or fully permissionless, so needs nothing extra. |
+| POST | `/commitments/:contractId/tx/flag-dispute` | Builds unsigned `flag_dispute` XDR. Takes `flagger` (must be the commitment's buyer, cooperative, or warehouse operator — enforced on-chain, not re-checked here). Single-signer. See below. |
 | POST | `/commitments/:contractId/tx/cancel/propose` | Proposes (or, idempotently, returns the already-active) staged multi-party cancellation. Buyer or cooperative may propose. See above. |
 | GET | `/commitments/:contractId/tx/cancel/propose` | The active cancel proposal for a contract, if any — what a viewer's UI polls. |
 | POST | `/commitments/:contractId/tx/reassign-buyer/propose` | Proposes (or, idempotently, returns the already-active) staged multi-party reassignment. Only the *current* buyer may propose. Takes `newBuyer`. See above. |
 | GET | `/commitments/:contractId/tx/reassign-buyer/propose` | The active reassignment proposal for a contract, if any. |
+| POST | `/commitments/:contractId/tx/resolve-dispute/propose` | Proposes (or, idempotently, returns the already-active) staged multi-party dispute resolution. Buyer, cooperative, or warehouse operator may propose — needs the other two's signatures. See below. |
+| GET | `/commitments/:contractId/tx/resolve-dispute/propose` | The active dispute-resolution proposal for a contract, if any. |
 | POST | `/commitments/:contractId/tx/propose/:proposalId/sign` | Records one party's signed auth entry against any proposal (method-agnostic — the proposal ID is already unique); flips to `ready` once every pending entry across every method is signed. |
 | POST | `/commitments/:contractId/tx/set-allocation` | Builds unsigned `set_allocation` XDR and stages (doesn't yet persist) the phone-number mapping — see below. Cooperative-gated on-chain, callable only pre-`lock`. |
 | GET | `/commitments/:contractId/allocation` | Live on-chain read of the recorded allocation ledger (member hashes + shares). Never returns a phone number — this contract never stores one. |
@@ -271,6 +274,40 @@ top-up. Also worth knowing: Reflector's real testnet fiat-rate oracle
 doesn't quote NGN at all as of this writing (confirmed via its own
 `assets()` call, not assumed) — GBP is what this API's own live tests
 use to prove the mechanism, not the production symbol.
+
+### Dispute flagging (PRD's must-have "dispute flagging with defined escalation")
+
+`POST .../tx/flag-dispute { flagger, sourcePublicKey }` lets any one of
+the commitment's buyer, cooperative, or warehouse operator freeze it —
+`flagger` must be one of those three (enforced on-chain; the contract's
+`NotAParty` error is the actual check, this route only validates the
+address is well-formed). Once flagged, the contract's `status` is
+`Disputed`, which blocks every other lifecycle call by construction —
+see `HarvestLock-Contracts`' module doc for why no extra gating was
+needed anywhere else for that.
+
+Getting out of `Disputed` needs **all three** parties' auth, same shape
+as `cancel`/`reassign_buyer`: `resolve_dispute` is in the generic
+no-arg method set (sign the same envelope three times) and also has
+its own staged `propose`/`sign` route pair
+(`POST .../tx/resolve-dispute/propose`) for the separate-wallets case —
+any of the three may propose, unlike `reassign_buyer`'s
+current-buyer-only rule. If the three parties can't agree,
+`expire_dispute_window` (permissionless, no args, in the no-arg set)
+restores the same pre-dispute status once the contract's own deadline
+passes, so the freeze can't become permanent from one party simply
+refusing to consent.
+
+**This still isn't arbitration.** Nothing here decides who was right
+about anything — consistent with the PRD's own explicit framing that
+grade/quantity disputes are the warehouse operator's own appeals
+process, not a HarvestLock dispute. What this buys is only that a
+contested situation can pause the state machine instead of letting some
+other deadline-triggered function (`settle`, `expire_remainder_window`,
+...) run to a conclusion while it's being sorted out off-chain. See
+`HarvestLock-Contracts/HANDOFF.md`'s Deployment 10 for the contract-level
+detail, including a documented, deliberate limitation: freezing `status`
+doesn't pause any other deadline already ticking on the commitment.
 
 ## Setup
 
