@@ -34,6 +34,11 @@ export interface CommitmentDetail {
   delivered_quantity: number;
   grade_index: number;
   settlement_bps: number;
+  fx_resolved: boolean;
+  fx_adjusted_total: string;
+  fx_shortfall_amount: string;
+  fx_shortfall_funded: boolean;
+  fx_shortfall_deadline: string;
 }
 
 /** Mirrors api/src/db/commitments.ts's CommitmentRow — the Postgres cache. */

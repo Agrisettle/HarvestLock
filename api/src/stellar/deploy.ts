@@ -107,6 +107,8 @@ export interface InitializeOracleConfig {
   oracleContract: string;
   priceAsset: string;
   maxAgeSecs: bigint;
+  /** The deal's true value in `priceAsset`, 7-decimal "stroop" units -- see lib.rs's OracleConfig.denominated_amount doc comment (PRD §4.2 option (b)). */
+  denominatedAmount: bigint;
 }
 
 export interface InitializeArgs {
@@ -132,17 +134,22 @@ export interface InitializeArgs {
  * encodes as `ScVal::Void` for `None` and `T`'s own encoding for `Some` --
  * no extra wrapper. Built manually rather than trusting `nativeToScVal`'s
  * object->map inference, same reason `allocationMemberToScVal` is --
- * **and** the map keys must be in ascending Symbol order (`max_age_secs`
- * < `oracle_contract` < `price_asset`), not struct-declaration order
- * (`oracle_contract`, `price_asset`, `max_age_secs`) -- Soroban's host
- * rejects an `ScVal::Map` with out-of-order keys as malformed, it doesn't
- * just look fields up by name regardless of position. Verified against a
- * real deployed contract (the Deployment 8 oracle-enabled instance) via
- * `simulateTransaction` before ever wiring this into the route.
+ * **and** the map keys must be in ascending Symbol order (`denominated_amount`
+ * < `max_age_secs` < `oracle_contract` < `price_asset`), not struct-declaration
+ * order -- Soroban's host rejects an `ScVal::Map` with out-of-order keys as
+ * malformed, it doesn't just look fields up by name regardless of position.
+ * `OracleConfig` gained `denominated_amount` (PRD §4.2 option (b)'s FX
+ * shortfall wiring) after this was first verified against Deployment 8;
+ * re-verified with all four keys against the Deployment 9 instance before
+ * wiring this into the route.
  */
 function oracleConfigToScVal(config: InitializeOracleConfig | null | undefined): xdr.ScVal {
   if (!config) return xdr.ScVal.scvVoid();
   return xdr.ScVal.scvMap([
+    new xdr.ScMapEntry({
+      key: xdr.ScVal.scvSymbol("denominated_amount"),
+      val: nativeToScVal(config.denominatedAmount, { type: "i128" }),
+    }),
     new xdr.ScMapEntry({
       key: xdr.ScVal.scvSymbol("max_age_secs"),
       val: nativeToScVal(config.maxAgeSecs, { type: "u64" }),

@@ -114,6 +114,9 @@ function serializeCommitment(c: Commitment) {
     advance1_deadline: c.advance1_deadline.toString(),
     advance2_deadline: c.advance2_deadline.toString(),
     remainder_deadline: c.remainder_deadline.toString(),
+    fx_adjusted_total: c.fx_adjusted_total.toString(),
+    fx_shortfall_amount: c.fx_shortfall_amount.toString(),
+    fx_shortfall_deadline: c.fx_shortfall_deadline.toString(),
   };
 }
 
@@ -194,7 +197,7 @@ interface InitializeBody {
   gradePriceBps: number[];
   // Omit, or pass null, for a plain deal that needs no conversion -- see
   // lib.rs's OracleConfig doc comment (PRD §16.3).
-  oracleConfig?: { oracleContract: string; priceAsset: string; maxAgeSecs: string } | null;
+  oracleConfig?: { oracleContract: string; priceAsset: string; maxAgeSecs: string; denominatedAmount: string } | null;
   sourcePublicKey: string;
 }
 
@@ -277,6 +280,19 @@ export function buildServer() {
             error: `oracleConfig.maxAgeSecs must be a positive integer, got ${b.oracleConfig.maxAgeSecs}`,
           });
         }
+        let denominatedAmount: bigint;
+        try {
+          denominatedAmount = BigInt(b.oracleConfig.denominatedAmount);
+        } catch {
+          return reply.code(400).send({
+            error: `oracleConfig.denominatedAmount must be an integer, got ${b.oracleConfig.denominatedAmount}`,
+          });
+        }
+        if (denominatedAmount <= 0n) {
+          return reply.code(400).send({
+            error: `oracleConfig.denominatedAmount must be positive, got ${b.oracleConfig.denominatedAmount}`,
+          });
+        }
       }
 
       const xdr = await buildInvokeTransaction({
@@ -301,6 +317,7 @@ export function buildServer() {
                 oracleContract: b.oracleConfig.oracleContract,
                 priceAsset: b.oracleConfig.priceAsset,
                 maxAgeSecs: BigInt(b.oracleConfig.maxAgeSecs),
+                denominatedAmount: BigInt(b.oracleConfig.denominatedAmount),
               }
             : null,
         }),
@@ -477,6 +494,7 @@ export function buildServer() {
         oracleContract: config.oracle_contract,
         priceAsset: config.price_asset,
         maxAgeSecs: config.max_age_secs.toString(),
+        denominatedAmount: config.denominated_amount.toString(),
       },
     };
   });

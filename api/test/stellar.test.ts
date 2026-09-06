@@ -866,7 +866,12 @@ describe("oracle staleness bound (live testnet + real HTTP layer)", () => {
           deliveryWindowSecs: "86400",
           contractedQuantity: 1_000,
           gradePriceBps: [10_000, 9_000, 7_500],
-          oracleConfig: { oracleContract: REFLECTOR_FIAT_ORACLE, priceAsset: "GBP", maxAgeSecs: "3600" },
+          oracleConfig: {
+            oracleContract: REFLECTOR_FIAT_ORACLE,
+            priceAsset: "GBP",
+            maxAgeSecs: "3600",
+            denominatedAmount: "1000000000",
+          },
           sourcePublicKey: buyer.publicKey(),
         },
       });
@@ -882,6 +887,7 @@ describe("oracle staleness bound (live testnet + real HTTP layer)", () => {
         oracleContract: REFLECTOR_FIAT_ORACLE,
         priceAsset: "GBP",
         maxAgeSecs: "3600",
+        denominatedAmount: "1000000000",
       });
 
       // A genuine cross-contract call to the real Reflector oracle, not a

@@ -45,6 +45,11 @@ function baseCommitment(overrides: Partial<Commitment>): Commitment {
     delivered_quantity: 0,
     grade_index: 0,
     settlement_bps: 0,
+    fx_resolved: false,
+    fx_adjusted_total: 0n,
+    fx_shortfall_amount: 0n,
+    fx_shortfall_funded: false,
+    fx_shortfall_deadline: 0n,
     ...overrides,
   };
 }

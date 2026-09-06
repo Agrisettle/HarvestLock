@@ -56,6 +56,11 @@ const detail: CommitmentDetail = {
   delivered_quantity: 0,
   grade_index: 0,
   settlement_bps: 0,
+  fx_resolved: false,
+  fx_adjusted_total: "0",
+  fx_shortfall_amount: "0",
+  fx_shortfall_funded: false,
+  fx_shortfall_deadline: "0",
 };
 
 function jsonResponse(body: unknown, ok = true) {

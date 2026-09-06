@@ -424,6 +424,65 @@ describe("server (HTTP layer)", () => {
   );
 
   it(
+    "rejects an oracleConfig with a non-numeric denominatedAmount before touching the network",
+    async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: `/commitments/${FAKE_CONTRACT_ID}/tx/initialize`,
+        payload: {
+          buyer: FAKE_PUBLIC_KEY,
+          cooperative: FAKE_PUBLIC_KEY,
+          warehouseOperator: FAKE_PUBLIC_KEY,
+          token: FAKE_CONTRACT_ID,
+          totalAmount: "1000000000",
+          advance1Bps: 1500,
+          advance2Bps: 2000,
+          ...validWindows,
+          contractedQuantity: 1_000,
+          gradePriceBps: [10_000],
+          oracleConfig: {
+            oracleContract: FAKE_CONTRACT_ID,
+            priceAsset: "NGN",
+            maxAgeSecs: "3600",
+            denominatedAmount: "not-a-number",
+          },
+          sourcePublicKey: FAKE_PUBLIC_KEY,
+        },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toMatch(/denominatedAmount must be an integer/);
+    },
+    15_000,
+  );
+
+  it(
+    "rejects an oracleConfig with a zero denominatedAmount before touching the network",
+    async () => {
+      const res = await app.inject({
+        method: "POST",
+        url: `/commitments/${FAKE_CONTRACT_ID}/tx/initialize`,
+        payload: {
+          buyer: FAKE_PUBLIC_KEY,
+          cooperative: FAKE_PUBLIC_KEY,
+          warehouseOperator: FAKE_PUBLIC_KEY,
+          token: FAKE_CONTRACT_ID,
+          totalAmount: "1000000000",
+          advance1Bps: 1500,
+          advance2Bps: 2000,
+          ...validWindows,
+          contractedQuantity: 1_000,
+          gradePriceBps: [10_000],
+          oracleConfig: { oracleContract: FAKE_CONTRACT_ID, priceAsset: "NGN", maxAgeSecs: "3600", denominatedAmount: "0" },
+          sourcePublicKey: FAKE_PUBLIC_KEY,
+        },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toMatch(/denominatedAmount must be positive/);
+    },
+    15_000,
+  );
+
+  it(
     "rejects a malformed contract ID on confirm-delivery before touching the network",
     async () => {
       const res = await app.inject({

@@ -84,6 +84,11 @@ export interface Commitment {
   delivered_quantity: number;
   grade_index: number;
   settlement_bps: number;
+  fx_resolved: boolean;
+  fx_adjusted_total: bigint;
+  fx_shortfall_amount: bigint;
+  fx_shortfall_funded: boolean;
+  fx_shortfall_deadline: bigint;
 }
 
 /**
@@ -115,6 +120,7 @@ export interface OracleConfig {
   oracle_contract: string;
   price_asset: string;
   max_age_secs: bigint;
+  denominated_amount: bigint;
 }
 
 /**
