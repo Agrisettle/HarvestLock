@@ -1,9 +1,3 @@
-databases:
-  - name: harvestlock-pg
-    databaseName: harvestlock
-    user: harvestlock
-    plan: free
-
 services:
   - type: web
     name: harvestlock-api
@@ -14,10 +8,17 @@ services:
     preDeployCommand: npm run migrate:prod
     startCommand: npm start
     envVars:
+      # Render's own free Postgres expires 30 days after creation (then a
+      # 14-day grace period, then deletion) -- fine for a quick trial, not
+      # for anything meant to keep running. Points at an external Neon
+      # project instead: neon.tech's free tier is permanent (no
+      # expiration, no card). Create a Neon project, copy its connection
+      # string (already includes ?sslmode=require) exactly as given, and
+      # fill it in from the Render dashboard after this blueprint deploys
+      # (Environment tab on the harvestlock-api service) -- not set here,
+      # same reason DEPLOYER_SECRET_KEY below isn't either.
       - key: DATABASE_URL
-        fromDatabase:
-          name: harvestlock-pg
-          property: connectionString
+        sync: false
       - key: STELLAR_NETWORK
         value: testnet
       - key: STELLAR_RPC_URL
@@ -26,9 +27,13 @@ services:
         value: "Test SDF Network ; September 2015"
       # The escrow WASM's hash -- see api/.env.example for what this is
       # and how to regenerate it if the contract ever changes. Matches
-      # HarvestLock-Contracts' current testnet deployment.
+      # HarvestLock-Contracts' Deployment 10 (dispute flagging, 6 Sept
+      # 2026) -- see HarvestLock-Contracts/HANDOFF.md. Bump this every
+      # time the deployed contract's WASM changes; a stale hash here is a
+      # silent bug, not a build failure -- the API would keep deploying
+      # commitment instances of an older contract version.
       - key: ESCROW_WASM_HASH
-        value: 9f1843c9c9c299182d307f7d9a25bfe1b7558ff2f8313daf0aa233aa2adb014e
+        value: 21a4bb2efb129d0252d32b575f2ca595259b1c2fe841d2d0554dc02c44aca580
       # Secret -- not set here. Fill in from the Render dashboard after
       # the blueprint deploys (Environment tab on the harvestlock-api
       # service). See api/.env.example for what this key is.

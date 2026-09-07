@@ -113,10 +113,15 @@ and set `VITE_API_URL` in the Vercel project's environment variables to
 wherever `api/` ends up hosted — Vercel's build step doesn't run the API
 itself (it's a long-running Fastify/Postgres service, not a static
 build or serverless function), so that still needs its own host. The
-root `render.yaml` is a ready-to-use blueprint for that: import it as a
-new Render Blueprint and it provisions both the Postgres database and
-the API web service in one step (one secret, `DEPLOYER_SECRET_KEY`,
-still needs filling in by hand afterward — see `render.yaml`'s comments).
+root `render.yaml` is a ready-to-use blueprint for the API's free web
+service — deliberately **not** paired with Render's own free Postgres,
+since that expires 30 days after creation and is then deleted
+(confirmed via Render's own changelog, not assumed). Point `DATABASE_URL`
+at a [Neon](https://neon.tech) project instead: its free tier is
+permanent (no expiration, no card needed). Two values need filling in
+by hand from the Render dashboard after the blueprint deploys —
+`DATABASE_URL` (the Neon connection string) and `DEPLOYER_SECRET_KEY` —
+see `render.yaml`'s comments.
 
 `site/` is a separate app with its own deploy story (see `site/README.md`)
 and isn't part of this combined build.
