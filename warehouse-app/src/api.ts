@@ -116,12 +116,55 @@ export function buildConfirmDeliveryTx(
   });
 }
 
+/** Builds unsigned `flag_dispute` XDR. `flagger` must be the commitment's buyer, cooperative, or warehouse operator (enforced on-chain) — single-signer, so unlike resolve_dispute this needs no multi-party staging. */
+export function buildFlagDisputeTx(contractId: string, flagger: string, sourcePublicKey: string): Promise<{ xdr: string }> {
+  return post<{ xdr: string }>(`/commitments/${encodeURIComponent(contractId)}/tx/flag-dispute`, { flagger, sourcePublicKey });
+}
+
 export interface SubmitResult {
   status: "SUCCESS" | "FAILED";
   hash: string;
 }
 
-/** Submits a signed envelope. `refreshContractId` also refreshes the API's Postgres cache. */
-export function submitTx(signedXdr: string, refreshContractId?: string): Promise<SubmitResult> {
-  return post<SubmitResult>("/transactions/submit", { xdr: signedXdr, refreshContractId });
+/** Submits a signed envelope. `refreshContractId` also refreshes the API's Postgres cache; `completeProposalId` marks a staged resolve-dispute proposal finished. */
+export function submitTx(signedXdr: string, refreshContractId?: string, completeProposalId?: string): Promise<SubmitResult> {
+  return post<SubmitResult>("/transactions/submit", { xdr: signedXdr, refreshContractId, completeProposalId });
+}
+
+/** Mirrors api/src/server.ts's serializeProposal — the staged multi-party propose/sign/finalize flow's public shape. This app only ever proposes/signs `resolve_dispute` (`cancel`/`reassign_buyer` belong to the buyer/cooperative), but the type covers all three since `signMultisigProposal`'s response is method-agnostic regardless of which one created the proposal. */
+export interface MultisigProposal {
+  id: string;
+  contract_id: string;
+  method: "cancel" | "reassign_buyer" | "resolve_dispute";
+  proposer_address: string;
+  status: "pending" | "ready" | "completed";
+  pending_entries: { address: string; entry_xdr: string }[];
+  ready_xdr: string | null;
+}
+
+/** The active proposed dispute resolution for a commitment, if any. */
+export function getResolveDisputeProposal(contractId: string): Promise<{ proposal: MultisigProposal | null }> {
+  return get<{ proposal: MultisigProposal | null }>(
+    `/commitments/${encodeURIComponent(contractId)}/tx/resolve-dispute/propose`,
+  );
+}
+
+/** Proposes resolving a dispute, or idempotently returns the already-active proposal. Any of buyer/cooperative/warehouse operator may propose — resolve_dispute itself needs all three parties' auth regardless of who initiates. */
+export function proposeResolveDispute(contractId: string, proposerPublicKey: string): Promise<MultisigProposal> {
+  return post<MultisigProposal>(`/commitments/${encodeURIComponent(contractId)}/tx/resolve-dispute/propose`, {
+    proposerPublicKey,
+  });
+}
+
+/** Records one party's signed auth entry against a proposal — method-agnostic, since a proposal ID is already unique. Once every pending entry is signed, the response's status flips to "ready". */
+export function signMultisigProposal(
+  contractId: string,
+  proposalId: string,
+  signerPublicKey: string,
+  signedEntryXdr: string,
+): Promise<MultisigProposal> {
+  return post<MultisigProposal>(`/commitments/${encodeURIComponent(contractId)}/tx/propose/${proposalId}/sign`, {
+    signerPublicKey,
+    signedEntryXdr,
+  });
 }
