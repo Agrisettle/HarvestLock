@@ -159,6 +159,12 @@ not a public issue.
 Part of [Agrisettle](https://github.com/Agrisettle) — settlement infrastructure
 for agricultural commodity trade, of which HarvestLock is the first product.
 
+## Maintainer
+
+<a href="https://github.com/samjay8"><img src="./site/public/samuel-ojetunde.png" alt="Samuel Ojetunde" width="120" style="border-radius: 50%;" /></a>
+
+**[Samuel Ojetunde](https://github.com/samjay8)** — Project Maintainer & Founder.
+
 ## License
 
 Apache-2.0 — see [`LICENSE`](./LICENSE).
