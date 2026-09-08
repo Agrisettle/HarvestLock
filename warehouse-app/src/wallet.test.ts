@@ -3,13 +3,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 /**
  * Same timeout fix as buyer-app/coop-pwa's wallet.test.ts -- see that
  * file's comment for the real-browser finding this guards against.
- * Trimmed to what this app's wallet.ts actually exports.
  */
 
 vi.mock("@stellar/freighter-api", () => ({
   default: {
     requestAccess: vi.fn(),
     signTransaction: vi.fn(),
+    signAuthEntry: vi.fn(),
   },
 }));
 
