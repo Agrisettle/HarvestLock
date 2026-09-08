@@ -2,6 +2,7 @@ import type { CommitmentDetail as CommitmentDetailType } from "../api";
 import { StatusBadge } from "./StatusBadge";
 import { CancelSection } from "./CancelSection";
 import { ReassignBuyerSection } from "./ReassignBuyerSection";
+import { DisputeSection } from "./DisputeSection";
 import { AddressChip } from "./AddressChip";
 
 function formatDeadline(unixSecs: string): string {
@@ -63,6 +64,7 @@ export function CommitmentDetail({
   actionError,
   onCancelled,
   onReassigned,
+  onDisputeChanged,
 }: {
   commitment: CommitmentDetailType;
   contractId: string;
@@ -72,6 +74,7 @@ export function CommitmentDetail({
   actionError: string | null;
   onCancelled: () => void;
   onReassigned: () => void;
+  onDisputeChanged: () => void;
 }) {
   const action = primaryAction(commitment, walletAddress);
 
@@ -104,6 +107,12 @@ export function CommitmentDetail({
         contractId={contractId}
         walletAddress={walletAddress}
         onReassigned={onReassigned}
+      />
+      <DisputeSection
+        commitment={commitment}
+        contractId={contractId}
+        walletAddress={walletAddress}
+        onDisputeChanged={onDisputeChanged}
       />
 
       <dl className="party-grid">

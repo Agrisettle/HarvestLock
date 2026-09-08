@@ -199,6 +199,7 @@ export default function App() {
                 actionError={actionError}
                 onCancelled={() => loadDetail(selectedId)}
                 onReassigned={() => loadDetail(selectedId)}
+                onDisputeChanged={() => loadDetail(selectedId)}
               />
             )}
           </section>

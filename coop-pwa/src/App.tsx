@@ -205,6 +205,7 @@ export default function App() {
                 claimError={claimError}
                 onCancelled={() => loadDetail(selectedId)}
                 onReassigned={() => loadDetail(selectedId)}
+                onDisputeChanged={() => loadDetail(selectedId)}
               />
             )}
           </section>

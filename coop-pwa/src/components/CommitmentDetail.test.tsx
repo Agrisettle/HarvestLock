@@ -25,6 +25,18 @@ const baseCommitment: CommitmentDetailType = {
   advance2_expired: false,
   remainder_deadline: "0",
   remainder_funded: false,
+  contracted_quantity: 1000,
+  grade_price_bps: [10_000],
+  delivered_quantity: 0,
+  grade_index: 0,
+  settlement_bps: 0,
+  fx_resolved: false,
+  fx_adjusted_total: "0",
+  fx_shortfall_amount: "0",
+  fx_shortfall_funded: false,
+  fx_shortfall_deadline: "0",
+  dispute_pre_status: "Draft",
+  dispute_deadline: "0",
 };
 
 // Defaults for the write-path props every test doesn't specifically
@@ -37,6 +49,7 @@ const noopProps = {
   claimError: null as string | null,
   onCancelled: vi.fn(),
   onReassigned: vi.fn(),
+  onDisputeChanged: vi.fn(),
 };
 
 describe("CommitmentDetail", () => {

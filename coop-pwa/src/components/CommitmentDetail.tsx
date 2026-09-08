@@ -2,6 +2,7 @@ import type { CommitmentDetail as CommitmentDetailType } from "../api";
 import { StatusBadge } from "./StatusBadge";
 import { CancelSection } from "./CancelSection";
 import { ReassignBuyerSection } from "./ReassignBuyerSection";
+import { DisputeSection } from "./DisputeSection";
 import { AddressChip } from "./AddressChip";
 
 function formatDeadline(unixSecs: string): string {
@@ -49,6 +50,7 @@ export function CommitmentDetail({
   claimError,
   onCancelled,
   onReassigned,
+  onDisputeChanged,
 }: {
   commitment: CommitmentDetailType;
   contractId: string;
@@ -58,6 +60,7 @@ export function CommitmentDetail({
   claimError: string | null;
   onCancelled: () => void;
   onReassigned: () => void;
+  onDisputeChanged: () => void;
 }) {
   // claim_advance_* is cooperative-auth-gated (lib.rs) — offering the
   // button to a connected wallet that isn't the cooperative would just
@@ -77,6 +80,12 @@ export function CommitmentDetail({
         contractId={contractId}
         walletAddress={walletAddress}
         onReassigned={onReassigned}
+      />
+      <DisputeSection
+        commitment={commitment}
+        contractId={contractId}
+        walletAddress={walletAddress}
+        onDisputeChanged={onDisputeChanged}
       />
 
       <dl className="party-grid">

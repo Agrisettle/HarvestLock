@@ -1,7 +1,13 @@
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
 
 /** Mirrors api/src/server.ts's serializeCommitment — every bigint on the
- * chain type comes back as a string over HTTP, since JSON can't carry bigint. */
+ * chain type comes back as a string over HTTP, since JSON can't carry
+ * bigint. Includes every field the contract's Commitment struct carries,
+ * not just the ones this app's UI has needed so far — warehouse-app's
+ * README flagged this copy (and coop-pwa's) as having drifted behind the
+ * contract's actual shape; kept in sync here rather than adding to that
+ * gap now that DisputeSection needs status/dispute fields this interface
+ * never had. */
 export interface CommitmentDetail {
   status: string;
   buyer: string;
@@ -23,6 +29,18 @@ export interface CommitmentDetail {
   advance2_expired: boolean;
   remainder_deadline: string;
   remainder_funded: boolean;
+  contracted_quantity: number;
+  grade_price_bps: number[];
+  delivered_quantity: number;
+  grade_index: number;
+  settlement_bps: number;
+  fx_resolved: boolean;
+  fx_adjusted_total: string;
+  fx_shortfall_amount: string;
+  fx_shortfall_funded: boolean;
+  fx_shortfall_deadline: string;
+  dispute_pre_status: string;
+  dispute_deadline: string;
 }
 
 /** Mirrors api/src/db/commitments.ts's CommitmentRow — the Postgres cache. */
@@ -79,6 +97,11 @@ export function buildTx(contractId: string, method: string, sourcePublicKey: str
   return post<{ xdr: string }>(`/commitments/${encodeURIComponent(contractId)}/tx/${method}`, { sourcePublicKey });
 }
 
+/** Builds unsigned `flag_dispute` XDR. `flagger` must be the commitment's buyer, cooperative, or warehouse operator (enforced on-chain) — single-signer, so unlike resolve_dispute this needs no multi-party staging. */
+export function buildFlagDisputeTx(contractId: string, flagger: string, sourcePublicKey: string): Promise<{ xdr: string }> {
+  return post<{ xdr: string }>(`/commitments/${encodeURIComponent(contractId)}/tx/flag-dispute`, { flagger, sourcePublicKey });
+}
+
 /** Deploys a fresh, uninitialized escrow contract instance. Deployer-paid — no party signature needed for this step. */
 export function deployCommitment(): Promise<{ contractId: string }> {
   return post<{ contractId: string }>("/commitments/deploy", {});
@@ -117,7 +140,7 @@ export function submitTx(signedXdr: string, refreshContractId?: string, complete
 export interface MultisigProposal {
   id: string;
   contract_id: string;
-  method: "cancel" | "reassign_buyer";
+  method: "cancel" | "reassign_buyer" | "resolve_dispute";
   proposer_address: string;
   status: "pending" | "ready" | "completed";
   pending_entries: { address: string; entry_xdr: string }[];
@@ -144,6 +167,20 @@ export function proposeReassignBuyer(contractId: string, proposerPublicKey: stri
   return post<MultisigProposal>(`/commitments/${encodeURIComponent(contractId)}/tx/reassign-buyer/propose`, {
     proposerPublicKey,
     newBuyer,
+  });
+}
+
+/** The active proposed dispute resolution for a commitment, if any. */
+export function getResolveDisputeProposal(contractId: string): Promise<{ proposal: MultisigProposal | null }> {
+  return get<{ proposal: MultisigProposal | null }>(
+    `/commitments/${encodeURIComponent(contractId)}/tx/resolve-dispute/propose`,
+  );
+}
+
+/** Proposes resolving a dispute, or idempotently returns the already-active proposal. Any of buyer/cooperative/warehouse operator may propose — resolve_dispute itself needs all three parties' auth regardless of who initiates. */
+export function proposeResolveDispute(contractId: string, proposerPublicKey: string): Promise<MultisigProposal> {
+  return post<MultisigProposal>(`/commitments/${encodeURIComponent(contractId)}/tx/resolve-dispute/propose`, {
+    proposerPublicKey,
   });
 }
 
