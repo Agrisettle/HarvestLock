@@ -6,6 +6,7 @@ Cargo.lock
 # Node / TypeScript
 node_modules/
 dist/
+gh-pages-dist/
 build/
 .env
 .env.*

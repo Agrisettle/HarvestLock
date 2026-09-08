@@ -1,0 +1,60 @@
+name: gh-pages
+
+# Interim preview only -- see gh-pages-build.sh's own comment for what
+# this is and isn't. Real deployment is Vercel (frontends) + Render/Neon
+# (API) per README.md's Deployment section; this workflow exists so the
+# UI is browsable from the repo before that lands, not as a replacement
+# for it.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "buyer-app/**"
+      - "coop-pwa/**"
+      - "warehouse-app/**"
+      - "landing/**"
+      - "gh-pages-build.sh"
+      - ".github/workflows/gh-pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: build all three apps + landing page
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Matches the other apps' own CI workflows (buyer-app.yml etc.)
+          # -- jsdom 30 hard-requires this, though the build step itself
+          # (not tests) wouldn't otherwise care.
+          node-version: 24
+
+      - name: build and assemble
+        run: bash gh-pages-build.sh
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: gh-pages-dist
+
+  deploy:
+    name: deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

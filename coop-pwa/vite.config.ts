@@ -2,12 +2,17 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
-// base is only non-root in the combined Vercel deployment (see
-// /vercel-build.sh and /vercel.json at the repo root), where this app's
-// build output is served from /coop/ alongside buyer-app's at /buyer/.
-// Vercel sets VERCEL=1 during builds; local `vite`/`vite build` runs
-// don't have it, so local dev and standalone builds stay at root.
-const base = process.env.VERCEL ? "/coop/" : "/";
+// base is only non-root in a combined deployment. Two of those exist:
+// Vercel (see /vercel-build.sh and /vercel.json at the repo root), where
+// this app's build output is served from /coop/ at the domain root, and
+// the interim GitHub Pages preview (see /gh-pages-build.sh and
+// /.github/workflows/gh-pages.yml), where the whole site sits one level
+// deeper under the repo name (a GitHub Pages project site, not a
+// user/org site) -- /HarvestLock/coop/, not /coop/. Vercel sets
+// VERCEL=1 during builds; the Pages workflow sets GITHUB_PAGES=true the
+// same way. Local `vite`/`vite build` runs have neither, so local dev
+// and standalone builds stay at root.
+const base = process.env.VERCEL ? "/coop/" : process.env.GITHUB_PAGES ? "/HarvestLock/coop/" : "/";
 
 export default defineConfig({
   base,

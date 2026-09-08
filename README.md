@@ -123,6 +123,18 @@ by hand from the Render dashboard after the blueprint deploys —
 `DATABASE_URL` (the Neon connection string) and `DEPLOYER_SECRET_KEY` —
 see `render.yaml`'s comments.
 
+**Interim GitHub Pages preview, while the above is still pending:**
+[agrisettle.github.io/HarvestLock](https://agrisettle.github.io/HarvestLock/)
+(`.github/workflows/gh-pages.yml`, `gh-pages-build.sh`) builds and
+publishes the same three apps + landing page automatically on every
+push to `main`, so the UI is browsable from the repo before Vercel/
+Render are actually set up. **No API is deployed alongside it** —
+GitHub Pages only serves static files, it can't host the Fastify/
+Postgres service at all — so every write action (lock, settle, cancel,
+...) will fail there; it's a UI preview only, not a functional
+deployment, and isn't a substitute for the Vercel + Render/Neon setup
+above.
+
 `site/` is a separate app with its own deploy story (see `site/README.md`)
 and isn't part of this combined build.
 
