@@ -60,7 +60,7 @@ During `coop-pwa`'s browser check, one `GET /commitments/:contractId` call faile
 8. A background cache-refresh job, once there's a real reason to care about `GET /commitments`/reputation freshness beyond what's already been read.
 9. An "allocation ledger" UI in `coop-pwa` — the API side is done (item 2), nothing built for the frontend yet. Would need a form to collect member phone numbers + shares, plus surfacing the recorded ledger somewhere on the commitment detail view.
 10. ~~Wire the contract's `oracle_config` into `initialize`~~ — **done**, 5 Sept 2026: see above. `settle` now genuinely consumes it, too — **done**, 6 Sept 2026: see above's "Updated 6 Sept 2026" note; the FX-risk decision (PRD §4.2 option (b)) was made explicitly this session, not left open. No frontend collects an `oracleConfig` at commitment-creation time yet — the API surface itself is complete and live-verified against Deployment 9.
-11. ~~Wire the contract's dispute-flagging methods (`flag_dispute`/`resolve_dispute`/`expire_dispute_window`)~~ — **done, API side**, 6 Sept 2026: see above. No frontend has any UI for flagging or resolving a dispute yet — the API surface itself is complete and live-verified against Deployment 10.
+11. ~~Wire the contract's dispute-flagging methods (`flag_dispute`/`resolve_dispute`/`expire_dispute_window`)~~ — **done, API side**, 6 Sept 2026: see above. ~~No frontend has any UI for flagging or resolving a dispute yet~~ — **done**, 8 Sept 2026: `DisputeSection.tsx`, identical across `buyer-app`/`coop-pwa`/`warehouse-app` — see `TASKS.md`.
 
 ---
 *Last updated: 6 Sept 2026 (later same day) — wired the contract's new
