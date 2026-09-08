@@ -16,9 +16,16 @@ harvest. Each member farmer's share is recorded on chain at lock-in.
 [![api](https://github.com/Agrisettle/HarvestLock/actions/workflows/api.yml/badge.svg)](https://github.com/Agrisettle/HarvestLock/actions/workflows/api.yml)
 [![buyer-app](https://github.com/Agrisettle/HarvestLock/actions/workflows/buyer-app.yml/badge.svg)](https://github.com/Agrisettle/HarvestLock/actions/workflows/buyer-app.yml)
 [![coop-pwa](https://github.com/Agrisettle/HarvestLock/actions/workflows/coop-pwa.yml/badge.svg)](https://github.com/Agrisettle/HarvestLock/actions/workflows/coop-pwa.yml)
+[![warehouse-app](https://github.com/Agrisettle/HarvestLock/actions/workflows/warehouse-app.yml/badge.svg)](https://github.com/Agrisettle/HarvestLock/actions/workflows/warehouse-app.yml)
 [![site](https://github.com/Agrisettle/HarvestLock/actions/workflows/site.yml/badge.svg)](https://github.com/Agrisettle/HarvestLock/actions/workflows/site.yml)
+[![gh-pages](https://github.com/Agrisettle/HarvestLock/actions/workflows/gh-pages.yml/badge.svg)](https://github.com/Agrisettle/HarvestLock/actions/workflows/gh-pages.yml)
 [![contracts](https://github.com/Agrisettle/HarvestLock-Contracts/actions/workflows/test.yml/badge.svg)](https://github.com/Agrisettle/HarvestLock-Contracts/actions/workflows/test.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
+
+**Live preview:** [agrisettle.github.io/HarvestLock](https://agrisettle.github.io/HarvestLock/)
+— the three dashboards + landing page, rebuilt automatically on every
+push to `main`. No API behind it yet (GitHub Pages is static-only — see
+the Deployment section below), so it's a UI preview, not a working app.
 
 **Full PRD:** [`docs/PRD.md`](./docs/PRD.md) — currently v0.7
 
