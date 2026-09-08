@@ -2,6 +2,7 @@ import type { CommitmentDetail as CommitmentDetailType } from "../api";
 import { StatusBadge } from "./StatusBadge";
 import { AddressChip } from "./AddressChip";
 import { ConfirmDeliveryForm } from "./ConfirmDeliveryForm";
+import { DisputeSection } from "./DisputeSection";
 
 function formatBps(bps: number): string {
   return `${(bps / 100).toFixed(2)}%`;
@@ -25,17 +26,21 @@ function nextAction(c: CommitmentDetailType): Action {
 export function CommitmentDetail({
   commitment,
   contractId,
+  walletAddress,
   onMarkCheckpoint,
   onConfirmDelivery,
   actionInFlight,
   actionError,
+  onDisputeChanged,
 }: {
   commitment: CommitmentDetailType;
   contractId: string;
+  walletAddress: string | null;
   onMarkCheckpoint: () => void;
   onConfirmDelivery: (deliveredQuantity: number, gradeIndex: number) => void;
   actionInFlight: boolean;
   actionError: string | null;
+  onDisputeChanged: () => void;
 }) {
   const action = nextAction(commitment);
 
@@ -47,6 +52,13 @@ export function CommitmentDetail({
       </div>
 
       {actionError && <div className="error-banner">{actionError}</div>}
+
+      <DisputeSection
+        commitment={commitment}
+        contractId={contractId}
+        walletAddress={walletAddress}
+        onDisputeChanged={onDisputeChanged}
+      />
 
       {action === "checkpoint" && (
         <button className="action-button" onClick={onMarkCheckpoint} disabled={actionInFlight}>

@@ -40,10 +40,12 @@ const baseCommitment: CommitmentDetailType = {
 };
 
 const noopProps = {
+  walletAddress: null as string | null,
   onMarkCheckpoint: vi.fn(),
   onConfirmDelivery: vi.fn(),
   actionInFlight: false,
   actionError: null as string | null,
+  onDisputeChanged: vi.fn(),
 };
 
 describe("CommitmentDetail's next action", () => {

@@ -145,10 +145,12 @@ export default function App() {
               <CommitmentDetail
                 commitment={detail}
                 contractId={selectedId}
+                walletAddress={walletAddress}
                 onMarkCheckpoint={handleMarkCheckpoint}
                 onConfirmDelivery={handleConfirmDelivery}
                 actionInFlight={actionInFlight}
                 actionError={actionError}
+                onDisputeChanged={() => loadDetail(selectedId)}
               />
             )}
           </section>
