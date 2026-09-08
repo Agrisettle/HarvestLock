@@ -1,3 +1,5 @@
+<div align="center">
+
 ```
 ██╗  ██╗ █████╗ ██████╗ ██╗   ██╗███████╗███████╗████████╗██╗      ██████╗  ██████╗██╗  ██╗
 ██║  ██║██╔══██╗██╔══██╗██║   ██║██╔════╝██╔════╝╚══██╔══╝██║     ██╔═══██╗██╔════╝██║ ██╔╝
@@ -7,11 +9,7 @@
 ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝  ╚═══╝  ╚══════╝╚══════╝   ╚═╝   ╚══════╝ ╚═════╝  ╚═════╝╚═╝  ╚═╝
 ```
 
-Pre-harvest commodity forward commitments on Stellar. A cooperative and a buyer agree
-price and quantity before harvest; the buyer's deposit sits in a Soroban escrow and
-releases against an independent warehouse operator's grading receipt, not against
-either party's say-so. A capped, tranched advance reaches the cooperative before
-harvest. Each member farmer's share is recorded on chain at lock-in.
+**Pre-harvest commodity forward commitments on Stellar**
 
 [![api](https://github.com/Agrisettle/HarvestLock/actions/workflows/api.yml/badge.svg)](https://github.com/Agrisettle/HarvestLock/actions/workflows/api.yml)
 [![buyer-app](https://github.com/Agrisettle/HarvestLock/actions/workflows/buyer-app.yml/badge.svg)](https://github.com/Agrisettle/HarvestLock/actions/workflows/buyer-app.yml)
@@ -22,14 +20,20 @@ harvest. Each member farmer's share is recorded on chain at lock-in.
 [![contracts](https://github.com/Agrisettle/HarvestLock-Contracts/actions/workflows/test.yml/badge.svg)](https://github.com/Agrisettle/HarvestLock-Contracts/actions/workflows/test.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
 
-**Live preview:** [agrisettle.github.io/HarvestLock](https://agrisettle.github.io/HarvestLock/)
-— the three dashboards + landing page, rebuilt automatically on every
-push to `main`. No API behind it yet (GitHub Pages is static-only — see
-the Deployment section below), so it's a UI preview, not a working app.
+[**Live Preview**](https://agrisettle.github.io/HarvestLock/) &nbsp;·&nbsp; [**PRD**](./docs/PRD.md) &nbsp;·&nbsp; [**Roadmap**](./ROADMAP.md)
 
-**Full PRD:** [`docs/PRD.md`](./docs/PRD.md) — currently v0.7
+</div>
 
-**Roadmap:** [`ROADMAP.md`](./ROADMAP.md)
+---
+
+A cooperative and a buyer agree price and quantity before harvest; the buyer's
+deposit sits in a Soroban escrow and releases against an independent warehouse
+operator's grading receipt, not against either party's say-so. A capped,
+tranched advance reaches the cooperative before harvest. Each member farmer's
+share is recorded on chain at lock-in.
+
+> The live preview above has no API behind it yet — it's a UI-only build. See
+> [Deployment](#deployment) for what's real and what's still pending.
 
 ## Status: pre-pilot, work in progress
 
@@ -48,15 +52,19 @@ With that framing — what's actually real, not just specified:
 - **Contract** (`HarvestLock-Contracts`): the full state machine —
   happy path, claimable-balance-with-expiry advance tranches, mutual
   cancellation, buyer-position assignability, two-phase funding with
-  buyer-default/seller-non-delivery forfeiture, and the PRD §7
-  shortfall/grade adjustment schedule at settlement. 67/67 tests,
-  deployed and exercised live on testnet six times.
+  buyer-default/seller-non-delivery forfeiture, PRD §7 shortfall/grade
+  adjustment at settlement, PRD §4.8/§16.1's allocation ledger, PRD
+  §4.2/§16.3's oracle-based FX settlement, and PRD's must-have dispute
+  flagging with defined escalation. 120/120 tests, deployed and
+  exercised live on testnet ten times.
 - **`api/`**: the full lifecycle (deploy through settle, including
-  `cancel`/`reassign_buyer`'s multi-party staged signing) builds and
-  submits against live testnet, not mocked. Off-chain reputation/strike
-  tracking backs the buyer-default and forfeiture paths.
-- **`coop-pwa`/`buyer-app`**: real write actions (lock, settle, claim
-  advances, propose/approve cancel or reassign) against the live API
+  `cancel`/`reassign_buyer`/`resolve_dispute`'s multi-party staged
+  signing) builds and submits against live testnet, not mocked.
+  Off-chain reputation/strike tracking backs the buyer-default and
+  forfeiture paths.
+- **`coop-pwa`/`buyer-app`/`warehouse-app`**: real write actions (lock,
+  settle, claim advances, propose/approve cancel/reassign/dispute
+  resolution, mark checkpoints, confirm delivery) against the live API
   via Freighter, browser-verified — not just read-only dashboards.
 - **`site/`**: built, public, includes a live badge reading the
   reference contract's real current state.
@@ -73,16 +81,17 @@ cadence from application code. This repo is everything else.
 | Repo | Contents |
 |---|---|
 | [`HarvestLock-Contracts`](https://github.com/Agrisettle/HarvestLock-Contracts) | Soroban escrow contract (Rust) — the state machine in PRD §4.8 |
-| [`HarvestLock`](https://github.com/Agrisettle/HarvestLock) *(this repo)* | Public site, API, both product frontends, docs, roadmap |
+| [`HarvestLock`](https://github.com/Agrisettle/HarvestLock) *(this repo)* | Public site, API, all three product frontends, docs, roadmap |
 
 ## Repository layout
 
 ```
-site/         Public site (React/Vite) — the project's public face, not a logged-in product surface
-api/          HarvestLock API (TypeScript/Node, Fastify) — contract lifecycle is real today; allocation/vouchers/attestation intake are planned, not built (see api/HANDOFF.md)
-coop-pwa/     Cooperative-facing dashboard (React/Vite) — real write actions against live testnet; phone-auth and offline-tolerance still ahead
-buyer-app/    Buyer/off-taker dashboard (React/Vite) — real write actions against live testnet; ERP integration still ahead
-docs/         PRD pointer and supporting research notes
+site/            Public site (React/Vite) — the project's public face, not a logged-in product surface
+api/             HarvestLock API (TypeScript/Node, Fastify) — contract lifecycle is real today; vouchers/SDP payouts are planned, not built (see api/HANDOFF.md)
+coop-pwa/        Cooperative-facing dashboard (React/Vite) — real write actions against live testnet; phone-auth and offline-tolerance still ahead
+buyer-app/       Buyer/off-taker dashboard (React/Vite) — real write actions against live testnet; ERP integration still ahead
+warehouse-app/   Warehouse-operator console (React/Vite) — mark checkpoints, confirm delivery, flag/resolve disputes, against live testnet
+docs/            PRD pointer and supporting research notes
 ```
 
 Stack rationale is in PRD §17. Short version: Rust for the contract because Soroban
@@ -104,15 +113,16 @@ decision not yet made — see `CONTRIBUTING.md`.
 
 ## Deployment
 
-`coop-pwa` and `buyer-app` deploy together as one Vercel project, one
-domain — not two separate deployments with two separate URLs. Their
-code stays exactly as it is (still two apps, still deliberately not
-merged — see each app's `TASKS.md` entries for why), but the repo root's
-`vercel.json`/`vercel-build.sh` build both and stitch the output into
-`/buyer/`, `/coop/`, and a landing page at `/` that links to each
-(`landing/index.html`). Each app's `vite.config.ts` only switches its
-build `base` to a subpath when Vercel's own `VERCEL=1` build env var is
-set — local `npm run dev`/`npm run build` in either app still runs at
+`coop-pwa`, `buyer-app`, and `warehouse-app` deploy together as one
+Vercel project, one domain — not three separate deployments with three
+separate URLs. Their code stays exactly as it is (still three apps,
+still deliberately not merged — see each app's `TASKS.md` entries for
+why), but the repo root's `vercel.json`/`vercel-build.sh` build all
+three and stitch the output into `/buyer/`, `/coop/`, `/warehouse/`,
+and a landing page at `/` that links to each (`landing/index.html`).
+Each app's `vite.config.ts` only switches its build `base` to a
+subpath when Vercel's own `VERCEL=1` build env var is
+set — local `npm run dev`/`npm run build` in any app still runs at
 root, unaffected.
 
 To deploy: point a Vercel project at this repo root (not a subdirectory)
