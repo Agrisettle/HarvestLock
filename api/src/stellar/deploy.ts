@@ -11,6 +11,7 @@ import {
 import { randomBytes } from "node:crypto";
 import { server, networkPassphrase } from "./rpc.js";
 import { withRetry } from "./retry.js";
+import { ConfigurationError } from "../errors.js";
 
 /**
  * One contract instance per commitment (PRD §4.8) — there is no factory
@@ -24,7 +25,7 @@ import { withRetry } from "./retry.js";
 function deployerKeypair(): Keypair {
   const secret = process.env.DEPLOYER_SECRET_KEY;
   if (!secret) {
-    throw new Error("DEPLOYER_SECRET_KEY is not set — needed to pay contract-deploy fees");
+    throw new ConfigurationError("DEPLOYER_SECRET_KEY is not set — needed to pay contract-deploy fees");
   }
   return Keypair.fromSecret(secret);
 }
@@ -32,7 +33,7 @@ function deployerKeypair(): Keypair {
 function wasmHashBytes(): Buffer {
   const hex = process.env.ESCROW_WASM_HASH;
   if (!hex) {
-    throw new Error("ESCROW_WASM_HASH is not set — see .env.example for how to get it");
+    throw new ConfigurationError("ESCROW_WASM_HASH is not set — see .env.example for how to get it");
   }
   return Buffer.from(hex, "hex");
 }

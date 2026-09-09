@@ -8,6 +8,7 @@ import {
 } from "@stellar/stellar-sdk";
 import { server, networkPassphrase } from "./rpc.js";
 import { withRetry } from "./retry.js";
+import { ConfigurationError } from "../errors.js";
 
 /**
  * Every read in this module works by *simulating* a contract invocation —
@@ -21,7 +22,7 @@ import { withRetry } from "./retry.js";
 function readerKeypair(): Keypair {
   const secret = process.env.DEPLOYER_SECRET_KEY;
   if (!secret) {
-    throw new Error("DEPLOYER_SECRET_KEY is not set — needed as the simulation source account");
+    throw new ConfigurationError("DEPLOYER_SECRET_KEY is not set — needed as the simulation source account");
   }
   return Keypair.fromSecret(secret);
 }

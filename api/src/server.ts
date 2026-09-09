@@ -1,12 +1,14 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import rateLimit from "@fastify/rate-limit";
+import { STATUS_CODES } from "node:http";
 import { StrKey, Address, nativeToScVal, xdr } from "@stellar/stellar-sdk";
 import { getAllocation, getCommitment, getOracleConfig, getOracleRate, type Commitment } from "./stellar/client.js";
 import { deployContractInstance, initializeArgs } from "./stellar/deploy.js";
 import { buildInvokeTransaction, submitSignedTransaction } from "./stellar/tx.js";
 import { upsertCommitment, listCommitments } from "./db/commitments.js";
 import { pool } from "./db/pool.js";
-import { BadRequestError, ForbiddenError } from "./errors.js";
+import { HttpError, BadRequestError, ForbiddenError, ConfigurationError } from "./errors.js";
 import { applyReputationConsequences, getStanding } from "./reputation.js";
 import { buildMultiPartyProposal, finalizeMultiPartyProposal } from "./stellar/multiParty.js";
 import {
@@ -219,6 +221,63 @@ export function buildServer() {
   // every response here is public read data or a party-signed write the
   // contract itself gates via require_auth. Revisit once that changes.
   app.register(cors, { origin: true });
+
+  // Global, per-IP -- audit finding, 9 Sept 2026: nothing bounded request
+  // volume at all before this. 100 requests/minute is an engineering
+  // default, not a researched value (same caveat this file already
+  // applies to the window-length bounds below) -- generous enough not to
+  // trip up a legitimate multi-step build/sign/submit flow or the
+  // 10-second poll a proposal's "waiting" UI state runs, but enough to
+  // blunt casual scraping/abuse. Revisit once there's real traffic to
+  // observe against. Skipped entirely in tests (`NODE_ENV=test`) so the
+  // existing suites' many rapid-fire requests against one shared `app`
+  // instance don't start tripping it.
+  if (process.env.NODE_ENV !== "test") {
+    app.register(rateLimit, { max: 100, timeWindow: "1 minute" });
+  }
+
+  // Explicit, not left to Fastify's own default handler (audit finding,
+  // 9 Sept 2026 -- a comment here used to claim this existed before it
+  // actually did). `HttpError` subclasses (BadRequestError, ForbiddenError)
+  // keep exactly the behavior Fastify's default already gave them --
+  // their own statusCode, their own message, both written to be
+  // client-facing on purpose. `ConfigurationError` (a missing/invalid
+  // deployment env var, see errors.ts) is the one category genuinely
+  // worth hiding from an external caller -- it's an operator mistake,
+  // not client input, and naming the specific env var externally is
+  // pure information disclosure with zero benefit to a legitimate
+  // caller. Everything else (Stellar simulation/submission/timeout
+  // failures, SDK decoding assertions) is deliberately left to
+  // propagate with its real message and original statusCode, same as
+  // before this handler existed -- see stellar/client.ts's "let the
+  // contract error propagate" convention and every build/submit route's
+  // simulation-failure feedback, which callers genuinely need to build
+  // a working transaction. Checked, not assumed, that this doesn't leak
+  // secret material: Keypair.fromSecret() never echoes an invalid
+  // value back in its error message, and this project's own testing of
+  // a pg connection failure showed an empty `.message`, not connection
+  // detail -- see api/HANDOFF.md.
+  app.setErrorHandler((err, req, reply) => {
+    // {statusCode, error, message} -- Fastify's own default shape, matched
+    // exactly (not `{ error: message }`, a real mistake caught by every
+    // existing test that reads `.json().message`, not `.json().error`,
+    // for a thrown HttpError -- this handler replaces Fastify's default,
+    // it isn't free to invent a different one).
+    if (err instanceof HttpError) {
+      return reply.code(err.statusCode).send({ statusCode: err.statusCode, error: STATUS_CODES[err.statusCode], message: err.message });
+    }
+    if (err instanceof ConfigurationError) {
+      req.log.error(err, "configuration error");
+      return reply
+        .code(500)
+        .send({ statusCode: 500, error: STATUS_CODES[500], message: "server is misconfigured — check the deployment logs" });
+    }
+    req.log.error(err);
+    const message = err instanceof Error ? err.message : String(err);
+    const statusCode =
+      err instanceof Error && "statusCode" in err && typeof err.statusCode === "number" ? err.statusCode : 500;
+    return reply.code(statusCode).send({ statusCode, error: STATUS_CODES[statusCode], message });
+  });
 
   app.get("/health", async () => ({ ok: true }));
 
