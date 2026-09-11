@@ -20,7 +20,7 @@
 [![contracts](https://github.com/Agrisettle/HarvestLock-Contracts/actions/workflows/test.yml/badge.svg)](https://github.com/Agrisettle/HarvestLock-Contracts/actions/workflows/test.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
 
-[**Live Preview**](https://agrisettle.github.io/HarvestLock/) &nbsp;·&nbsp; [**PRD**](./docs/PRD.md) &nbsp;·&nbsp; [**Roadmap**](./ROADMAP.md)
+[**Live Preview**](https://agrisettle.github.io/HarvestLock/) &nbsp;·&nbsp; [**Prospectus**](./docs/PROSPECTUS.md) &nbsp;·&nbsp; [**PRD**](./docs/PRD.md) &nbsp;·&nbsp; [**Roadmap**](./ROADMAP.md)
 
 </div>
 
