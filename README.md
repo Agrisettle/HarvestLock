@@ -171,7 +171,7 @@ not a public issue. Everyone participating is expected to follow the
 
 <a href="https://github.com/Agrisettle"><img src="./site/public/wordmark-agrisettle.png" alt="Agrisettle" width="360" /></a>
 
-Part of [Agrisettle](https://github.com/Agrisettle) — settlement infrastructure
+Part of [Agrisettle](https://github.com/Agrisettle) ([LinkedIn](https://www.linkedin.com/company/agrisettle)) — settlement infrastructure
 for agricultural commodity trade, of which HarvestLock is the first product.
 
 ## Maintainer

@@ -11,7 +11,10 @@ export function Footer() {
             part of{" "}
             <a href="https://github.com/Agrisettle" target="_blank" rel="noreferrer">
               Agrisettle
-            </a>
+            </a>{" "}
+            (<a href="https://www.linkedin.com/company/agrisettle" target="_blank" rel="noreferrer">
+              LinkedIn
+            </a>)
           </span>
         </div>
 
