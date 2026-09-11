@@ -42,7 +42,7 @@ Conventional-commit-ish (`feat:`, `fix:`, `docs:`, `refactor:`) with a body expl
 
 ## CI
 
-Contract tests, and typecheck/lint/build for `site/`, `api/`, `coop-pwa/`, and `buyer-app/`, run automatically on every push and PR (path-scoped — touching one component doesn't trigger the others). `api/`'s CI does *not* run its live-testnet test suite (`npm test`) — that needs a funded key as a repo secret, a decision not yet made; run it locally. A red check means something real broke — fix the cause, don't disable the check.
+Contract tests, and typecheck/lint/build/test for `site/`, `api/`, `coop-pwa/`, `buyer-app/`, and `warehouse-app/`, run automatically on every push and PR (path-scoped — touching one component doesn't trigger the others). `api/`'s CI runs its network-free tests (`server.test.ts`/`reputation.test.ts`, against a real Postgres service container) but does *not* run its live-testnet test suite (`api/test/stellar.test.ts`) — that needs a funded key as a repo secret, a decision not yet made safely for a fork-triggerable workflow (see [issue #10](https://github.com/Agrisettle/HarvestLock/issues/10)); run it locally instead. A red check means something real broke — fix the cause, don't disable the check.
 
 ## Security
 

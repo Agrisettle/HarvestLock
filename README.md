@@ -107,9 +107,13 @@ component that changed (path-scoped — touching `api/` doesn't trigger
 `site/`'s workflow, and vice versa). The badges above reflect `main`'s
 current state, not any particular commit — a red badge means something
 on `main` is actually broken; check the linked workflow run for which
-commit and why. `api/`'s CI intentionally does not run its live-testnet
-suite (`npm test`) — that needs a funded key as a repo secret, a
-decision not yet made — see `CONTRIBUTING.md`.
+commit and why. `api/`'s CI runs its network-free tests
+(`server.test.ts`/`reputation.test.ts`, against a real Postgres service
+container) but intentionally still skips the live-testnet suite
+(`api/test/stellar.test.ts`) — that needs a funded key as a repo
+secret, a decision not yet made safely for a fork-triggerable
+`pull_request` workflow — see `CONTRIBUTING.md` and
+[issue #10](https://github.com/Agrisettle/HarvestLock/issues/10).
 
 ## Deployment
 

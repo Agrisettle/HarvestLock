@@ -11,17 +11,27 @@ on:
       - "api/**"
       - ".github/workflows/api.yml"
 
-# Live-testnet integration tests (`npm test`, api/test/stellar.test.ts)
-# intentionally do NOT run here. They need a funded DEPLOYER_SECRET_KEY as
-# a repo secret, and wiring a real key into a workflow that can be
-# triggered by pull_request (including from forks) is a security-surface
-# decision that hasn't been made yet — not an oversight. Until it is,
-# `npm test` stays a local/manual check; see api/README.md and
-# api/HANDOFF.md. This job covers everything that doesn't need the key.
+# Live-testnet integration tests (api/test/stellar.test.ts, the ones that
+# actually deploy/build/sign/submit against real Stellar testnet) still do
+# NOT run here. They need a funded DEPLOYER_SECRET_KEY as a repo secret,
+# and wiring a real key into a workflow that can be triggered by
+# pull_request (including from forks) is a security-surface decision
+# that hasn't been made yet — not an oversight; see
+# api/README.md/api/HANDOFF.md and
+# https://github.com/Agrisettle/HarvestLock/issues/10.
+#
+# What DOES run here now: server.test.ts and reputation.test.ts, the two
+# test files that need a real Postgres (the same service container the
+# migrate step below already stands up) but never touch Stellar/Soroban
+# at all -- neither imports anything that requires DEPLOYER_SECRET_KEY or
+# ESCROW_WASM_HASH, checked directly before wiring this in. This was
+# previously a real coverage gap: a green badge with the actual test
+# suite never running in CI at all, not even the parts that need no
+# secret.
 
 jobs:
   build:
-    name: typecheck + build + migrate
+    name: typecheck + build + migrate + test (network-free)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -41,6 +51,14 @@ jobs:
           --health-retries 5
     env:
       DATABASE_URL: postgres://postgres:harvestlock@localhost:5432/harvestlock
+      # Real, public testnet values -- not secrets. rpc.ts throws at
+      # *module load* if STELLAR_RPC_URL is unset (fails the process at
+      # boot, not per-request -- see its own doc comment), so server.ts
+      # can't even be imported by server.test.ts without this set, even
+      # though these two test files never actually call anything that
+      # dials out to it.
+      STELLAR_RPC_URL: https://soroban-testnet.stellar.org
+      STELLAR_NETWORK_PASSPHRASE: "Test SDF Network ; September 2015"
     steps:
       - uses: actions/checkout@v4
 
@@ -65,3 +83,6 @@ jobs:
 
       - name: migrate (proves the schema is actually valid SQL)
         run: npm run migrate
+
+      - name: test (server.test.ts + reputation.test.ts -- no Stellar network calls)
+        run: npx vitest run test/server.test.ts test/reputation.test.ts
