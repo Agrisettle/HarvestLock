@@ -160,7 +160,8 @@ and isn't part of this combined build.
 Read [`CONTRIBUTING.md`](./CONTRIBUTING.md) before opening a PR — it
 covers local setup for every component and what a good PR looks like
 here. Security issues specifically go through [`SECURITY.md`](./SECURITY.md),
-not a public issue.
+not a public issue. Everyone participating is expected to follow the
+[`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md).
 
 ## Organization
 
