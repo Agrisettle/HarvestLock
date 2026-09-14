@@ -44,7 +44,7 @@ jobs:
       - name: build and assemble
         run: bash gh-pages-build.sh
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: gh-pages-dist
 
