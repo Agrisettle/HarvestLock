@@ -34,7 +34,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           # Matches the other apps' own CI workflows (buyer-app.yml etc.)
           # -- jsdom 30 hard-requires this, though the build step itself
