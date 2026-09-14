@@ -21,7 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           # jsdom 30 (this app's vitest environment) hard-requires
           # ^22.22.2 || ^24.15.0 || >=26.0.0 (its own package.json
