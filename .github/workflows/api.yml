@@ -11,6 +11,14 @@ on:
       - "api/**"
       - ".github/workflows/api.yml"
 
+# Explicit least-privilege token, not relying on whatever the repo/org
+# default happens to be (currently "read" too, checked directly -- but
+# this shouldn't depend on that staying true). Nothing here pushes,
+# comments, or writes anything -- checkout, typecheck, build, migrate,
+# test all only need read access to the repo.
+permissions:
+  contents: read
+
 # Live-testnet integration tests (api/test/stellar.test.ts, the ones that
 # actually deploy/build/sign/submit against real Stellar testnet) still do
 # NOT run here. They need a funded DEPLOYER_SECRET_KEY as a repo secret,

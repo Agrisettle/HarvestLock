@@ -11,6 +11,14 @@ on:
       - "warehouse-app/**"
       - ".github/workflows/warehouse-app.yml"
 
+# Explicit least-privilege token, not relying on the repo/org default
+# (currently "read" too, checked directly -- but shouldn't depend on
+# that staying true). Nothing here pushes, comments, or writes
+# anything -- checkout, typecheck, lint, test, build all only need
+# read access.
+permissions:
+  contents: read
+
 jobs:
   build:
     name: typecheck + lint + test + build
