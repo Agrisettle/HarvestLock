@@ -1,10 +1,13 @@
 # Demo video script — pitch-only cut
 
-**Target length:** ~2 minutes (≈290 words at a natural ~140 wpm AI voiceover pace)
-**What this shows:** the live [GitHub Pages preview](https://agrisettle.github.io/HarvestLock/) — the landing page and all three product dashboards (`buyer-app`, `coop-pwa`, `warehouse-app`). No live API sits behind that preview (see the README's Deployment section), so this cut demonstrates the *design and interaction model*, not a live transaction — the script is written to be honest about that, on camera, not to paper over it.
-**What this doesn't show:** a real testnet transaction end to end. That's the *functional* cut — a separate script, needs a local API + Postgres + a funded Freighter wallet running, and is worth doing once that setup is convenient to record against.
+**Recorded — [watch it here](https://github.com/Agrisettle/HarvestLock/releases/tag/demo-v1).** ~108 seconds, matches the scene breakdown below exactly. What actually got captured, vs. what was originally planned:
 
-Voiceover tool suggestion: ElevenLabs (free tier is enough for a ~290-word script) or another natural-sounding TTS service — see the process notes in the conversation this script came out of for the full recording → voiceover → editing pipeline.
+- **Scenes 1, 2, 5** (landing page): the real, live [GitHub Pages preview](https://agrisettle.github.io/HarvestLock/), exactly as planned below.
+- **Scenes 3, 4** (dashboards): upgraded from the original plan — rather than showing the GitHub Pages preview's UI with no data behind it, these were recorded against a **local API pointed at real Stellar testnet**, reading a real throwaway commitment (`CDMGPVBEFG35ULSRELQVI3FIATB53PKKJOUWXTPGJOLVJX4R5X27CFD4` and `CAX5JJ4UE3DYFZHBEJUMZ33R3S5I5Y6F4YVJ6ER2N33XL65EJFJOJ5FW`) driven through its actual on-chain lifecycle via `stellar-cli` for this recording — real status badges, real deadlines, real balances, not placeholder data. No local Postgres was available, so the unrelated `/commitments` cache-list feature was hidden for these shots (a recording-environment gap, not a product bug — see `api/HANDOFF.md`); the actual commitment-detail reads never touch Postgres at all.
+- **Voiceover**: Microsoft Edge neural TTS (`edge-tts`, free, no API key, voice `en-US-AndrewNeural`), not ElevenLabs — generated from this file's exact narration text, word-for-word.
+- **Wallet-gated sections** (Cancel/Reassign/Dispute, the primary lock/settle button): correctly render nothing in the recording, since no Freighter extension was available to connect a real wallet — same long-documented limitation as this project's own test suites. Real, honest behavior, not a bug.
+
+The original plan (kept below for reference and for anyone re-recording this):
 
 ---
 
