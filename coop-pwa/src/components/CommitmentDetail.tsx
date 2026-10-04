@@ -3,6 +3,7 @@ import { StatusBadge } from "./StatusBadge";
 import { CancelSection } from "./CancelSection";
 import { ReassignBuyerSection } from "./ReassignBuyerSection";
 import { DisputeSection } from "./DisputeSection";
+import { AllocationLedgerSection } from "./AllocationLedgerSection";
 import { AddressChip } from "./AddressChip";
 
 function formatDeadline(unixSecs: string): string {
@@ -87,6 +88,7 @@ export function CommitmentDetail({
         walletAddress={walletAddress}
         onDisputeChanged={onDisputeChanged}
       />
+      <AllocationLedgerSection commitment={commitment} contractId={contractId} walletAddress={walletAddress} />
 
       <dl className="party-grid">
         <div>

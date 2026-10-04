@@ -261,6 +261,76 @@ main {
   border-radius: 6px;
 }
 
+.allocation-section {
+  margin-bottom: 20px;
+}
+
+.allocation-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 480px;
+}
+
+.allocation-form h4 {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--bone-dim);
+  font-weight: 500;
+}
+
+.allocation-row {
+  display: flex;
+  gap: 8px;
+}
+
+.allocation-row input {
+  background: var(--void);
+  border: 1px solid var(--void-line);
+  color: var(--bone);
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  padding: 8px 10px;
+  border-radius: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+table.allocation-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  margin-bottom: 10px;
+}
+
+table.allocation-table caption {
+  text-align: left;
+  color: var(--bone-faint);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding-bottom: 8px;
+}
+
+table.allocation-table th,
+table.allocation-table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--void-line);
+}
+
+table.allocation-table th {
+  color: var(--bone-faint);
+  font-weight: 500;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.allocation-hash {
+  font-family: var(--mono);
+}
+
 .error-banner {
   background: rgba(193, 67, 46, 0.12);
   border: 1px solid var(--signal);

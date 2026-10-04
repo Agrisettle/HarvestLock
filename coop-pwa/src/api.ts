@@ -107,9 +107,65 @@ export interface SubmitResult {
   hash: string;
 }
 
-/** Submits a signed envelope. `refreshContractId` also refreshes the API's Postgres cache; `completeProposalId` marks a staged cancellation proposal finished. */
-export function submitTx(signedXdr: string, refreshContractId?: string, completeProposalId?: string): Promise<SubmitResult> {
-  return post<SubmitResult>("/transactions/submit", { xdr: signedXdr, refreshContractId, completeProposalId });
+/** Submits a signed envelope. `refreshContractId` also refreshes the API's Postgres cache; `completeProposalId` marks a staged cancellation proposal finished; `allocationContractId`/`allocationMembers` persists a staged allocation ledger's phone numbers now that `set_allocation` is confirmed on-chain. */
+export function submitTx(
+  signedXdr: string,
+  refreshContractId?: string,
+  completeProposalId?: string,
+  allocationContractId?: string,
+  allocationMembers?: StagedAllocationMember[],
+): Promise<SubmitResult> {
+  return post<SubmitResult>("/transactions/submit", {
+    xdr: signedXdr,
+    refreshContractId,
+    completeProposalId,
+    allocationContractId,
+    allocationMembers,
+  });
+}
+
+/** Mirrors api/src/db/allocationMembers.ts's StagedAllocationMember — returned unpersisted from `buildSetAllocationTx`; pass the same array back to `submitTx` to actually persist the phone-number mapping once `set_allocation` is confirmed on-chain. */
+export interface StagedAllocationMember {
+  phoneNumber: string;
+  shareBps: number;
+  salt: string;
+  memberHash: string;
+}
+
+/** Mirrors api/src/server.ts's GET .../allocation response — on-chain only, never a phone number (this contract never stores one). */
+export interface AllocationMember {
+  memberHash: string;
+  shareBps: number;
+}
+
+/** Builds unsigned `set_allocation` XDR and stages (but doesn't yet persist) the phone-number mapping. Cooperative-gated on-chain; callable only pre-`lock`. */
+export function buildSetAllocationTx(
+  contractId: string,
+  members: { phoneNumber: string; shareBps: number }[],
+  sourcePublicKey: string,
+): Promise<{ xdr: string; members: StagedAllocationMember[] }> {
+  return post<{ xdr: string; members: StagedAllocationMember[] }>(
+    `/commitments/${encodeURIComponent(contractId)}/tx/set-allocation`,
+    { members, sourcePublicKey },
+  );
+}
+
+/** Live on-chain read of the recorded allocation ledger. Throws (the contract's AllocationNotSet) if `set_allocation` has never run for this commitment — see `getAllocationLedger` for the "not set yet" case turned into a normal UI state instead of an error. */
+function getAllocation(contractId: string): Promise<{ members: AllocationMember[] }> {
+  return get<{ members: AllocationMember[] }>(`/commitments/${encodeURIComponent(contractId)}/allocation`);
+}
+
+/** `getAllocation`, with the contract's AllocationNotSet error turned into `null` — a real, expected state (no ledger recorded yet), not a failure. Any other error (bad contract ID, network failure) still propagates, since those genuinely aren't "not set yet." */
+export async function getAllocationLedger(contractId: string): Promise<AllocationMember[] | null> {
+  try {
+    const { members } = await getAllocation(contractId);
+    return members;
+  } catch (err) {
+    if (err instanceof Error && /AllocationNotSet|Error\(Contract, #23\)/.test(err.message)) {
+      return null;
+    }
+    throw err;
+  }
 }
 
 /** Mirrors api/src/server.ts's serializeProposal — the staged multi-party propose/sign/finalize flow's public shape, shared by `cancel` and `reassign_buyer`. */

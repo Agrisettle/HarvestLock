@@ -115,6 +115,30 @@ this component — same small-duplication call as `CancelSection.tsx`'s.
 7 new component tests, same conventions as `CancelSection.test.tsx`'s.
 Same Freighter-extension honesty note as the action above applies.
 
+**Allocation ledger** (`src/components/AllocationLedgerSection.tsx`,
+added 4 Oct 2026): closes the one gap `api/HANDOFF.md`'s "next steps"
+flagged as API-complete but frontend-missing (item 9) — PRD §4.8/§16.1's
+per-member salted-hash allocation ledger has been live and tested at the
+contract/API layer since Deployment 7, but no UI ever collected member
+phone numbers/shares or displayed the recorded ledger. Unlike
+`CancelSection.tsx`/`ReassignBuyerSection.tsx`, `set_allocation` needs only
+the cooperative's signature, so this is a plain build → sign → submit, the
+same shape as `CommitmentDetail`'s claim flow, not a multi-party
+propose/sign/finalize. A recorded ledger (member hashes + shares, never a
+phone number — this contract never stores one) is shown to *any* viewer
+once one exists; only the form to create one is gated to the cooperative,
+and only pre-`lock` (`set_allocation`'s own on-chain guard, mirrored
+client-side as a UX nicety, same convention as every other action-gating
+check in this app). The API's read endpoint throws (`AllocationNotSet`)
+rather than returning an empty list when nothing's been recorded yet —
+`api.ts`'s `getAllocationLedger` turns that specific contract error into
+`null`, a real UI state, without swallowing a genuine failure the same
+way. 8 new component tests; this app's own fetch-mocked test suite is
+what's verified here, not a live Freighter extension (same honesty note
+as the sections above) — the underlying `set_allocation` call itself was
+already live-verified end to end at the API layer (`api/HANDOFF.md`'s
+Deployment 7 entry).
+
 **Offline-tolerant queue** (`src/offlineQueue.ts`, `src/components/OfflineQueueBanner.tsx`,
 added 4 Sept 2026): PRD §7/§16.3's "connectivity loss at depot" edge case.
 The app shell itself is now installable and precached (`vite-plugin-pwa`,

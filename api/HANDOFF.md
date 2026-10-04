@@ -61,12 +61,24 @@ During `coop-pwa`'s browser check, one `GET /commitments/:contractId` call faile
 6. ~~A "Propose reassignment" UI in `coop-pwa` and `buyer-app`~~ — **done**: `ReassignBuyerSection.tsx` in both apps, same propose/approve/finalize shape as `CancelSection.tsx` generalized to a form (new buyer's address) and two pending signers. See both apps' READMEs.
 7. ~~Real attestation-driven settlement (PRD §7 shortfall/grade adjustment)~~ — **done, API side**: `POST .../tx/confirm-delivery` (new route, `deliveredQuantity`/`gradeIndex`), `initialize` gained `contractedQuantity`/`gradePriceBps`. See the endpoints table above and `HarvestLock-Contracts/HANDOFF.md`'s Deployment 6.
 8. A background cache-refresh job, once there's a real reason to care about `GET /commitments`/reputation freshness beyond what's already been read.
-9. An "allocation ledger" UI in `coop-pwa` — the API side is done (item 2), nothing built for the frontend yet. Would need a form to collect member phone numbers + shares, plus surfacing the recorded ledger somewhere on the commitment detail view.
+9. ~~An "allocation ledger" UI in `coop-pwa`~~ — **done**, 4 Oct 2026: `AllocationLedgerSection.tsx` — a form to collect member phone numbers + shares (cooperative-gated, pre-`lock` only), plus the recorded ledger (hashes + shares, never a phone number) surfaced on the commitment detail view for any viewer once one exists. See `coop-pwa/README.md`'s "Allocation ledger" entry.
 10. ~~Wire the contract's `oracle_config` into `initialize`~~ — **done**, 5 Sept 2026: see above. `settle` now genuinely consumes it, too — **done**, 6 Sept 2026: see above's "Updated 6 Sept 2026" note; the FX-risk decision (PRD §4.2 option (b)) was made explicitly this session, not left open. ~~No frontend collects an `oracleConfig` at commitment-creation time yet~~ — **done**, 4 Oct 2026: `buyer-app`'s `CreateCommitmentForm.tsx` now collects `contractedQuantity`/`gradePriceBps` and an optional `oracleConfig` — see `buyer-app/README.md`'s "Grade price schedule + FX/oracle fields" entry. This was the last remaining gap between what the contract/API layer has supported since Deployment 6/8/9 and what any real user could actually create.
 11. ~~Wire the contract's dispute-flagging methods (`flag_dispute`/`resolve_dispute`/`expire_dispute_window`)~~ — **done, API side**, 6 Sept 2026: see above. ~~No frontend has any UI for flagging or resolving a dispute yet~~ — **done**, 8 Sept 2026: `DisputeSection.tsx`, identical across `buyer-app`/`coop-pwa`/`warehouse-app` — see `TASKS.md`.
 
 ---
-*Last updated: 4 Oct 2026 — two real changes, prompted by auditing
+*Last updated: 4 Oct 2026 (later same day) — `coop-pwa` now has a real UI
+for the allocation ledger (`AllocationLedgerSection.tsx`) — see "next
+steps" item 9 above and `coop-pwa/README.md`. Same category of gap as
+the entry below: PRD §4.8/§16.1's per-member salted-hash ledger has been
+live and tested at the contract/API layer since Deployment 7, but no
+frontend ever collected member phone numbers/shares or displayed the
+recorded ledger until now. Found and fixed a real bug while building
+this (not a pre-existing one): the component's render guard initially
+checked `members !== null` rather than `Array.isArray(members)`, which
+crashed on any response shaped unexpectedly (caught by this app's own
+test suite, not assumed correct) — fixed before it ever reached CI.
+
+Prior entry (4 Oct 2026) — two real changes, prompted by auditing
 remaining gaps for "huge significant increase in code substance,"
 not padding. (1) `buyer-app`'s `CreateCommitmentForm.tsx` now collects
 `contractedQuantity`/`gradePriceBps`/`oracleConfig` — see "next steps"

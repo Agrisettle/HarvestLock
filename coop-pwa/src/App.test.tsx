@@ -89,6 +89,21 @@ function jsonResponse(body: unknown, ok = true) {
   } as Response;
 }
 
+// Mirrors api/src/server.ts's "let the contract error propagate"
+// convention for a commitment with no recorded allocation ledger yet --
+// AllocationLedgerSection's getAllocationLedger (api.ts) recognizes this
+// exact shape and turns it into `null`, not a thrown error.
+function allocationNotSetResponse() {
+  return jsonResponse(
+    {
+      statusCode: 500,
+      error: "Internal Server Error",
+      message: "contract simulation failed for get_allocation: HostError: Error(Contract, #23)",
+    },
+    false,
+  );
+}
+
 let fetchMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
@@ -185,6 +200,7 @@ describe("App", () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(openDetail)); // click row -> detail
     fetchMock.mockResolvedValueOnce(jsonResponse({ proposal: null })); // CancelSection's background poll (Locked is cancellable)
     fetchMock.mockResolvedValueOnce(jsonResponse({ proposal: null })); // ReassignBuyerSection's background poll (Locked is reassignable)
+    fetchMock.mockResolvedValueOnce(allocationNotSetResponse()); // AllocationLedgerSection's background read -- unconditional, unlike the two polls above
     fetchMock.mockResolvedValueOnce(jsonResponse({ xdr: "UNSIGNED_XDR" })); // buildTx
     fetchMock.mockResolvedValueOnce(jsonResponse({ status: "SUCCESS", hash: "abc" })); // submitTx
     fetchMock.mockResolvedValueOnce(jsonResponse(claimedDetail)); // post-claim refresh
@@ -218,6 +234,7 @@ describe("App", () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(openDetail));
     fetchMock.mockResolvedValueOnce(jsonResponse({ proposal: null })); // CancelSection's background poll (Locked is cancellable)
     fetchMock.mockResolvedValueOnce(jsonResponse({ proposal: null })); // ReassignBuyerSection's background poll (Locked is reassignable)
+    fetchMock.mockResolvedValueOnce(allocationNotSetResponse()); // AllocationLedgerSection's background read -- unconditional, unlike the two polls above
     fetchMock.mockResolvedValueOnce(jsonResponse({ xdr: "UNSIGNED_XDR" }));
 
     vi.mocked(wallet.connectWallet).mockResolvedValueOnce(detail.cooperative);
@@ -250,6 +267,7 @@ describe("App", () => {
       fetchMock.mockResolvedValueOnce(jsonResponse(openDetail)); // click row -> detail
       fetchMock.mockResolvedValueOnce(jsonResponse({ proposal: null })); // CancelSection poll
       fetchMock.mockResolvedValueOnce(jsonResponse({ proposal: null })); // ReassignBuyerSection poll
+      fetchMock.mockResolvedValueOnce(allocationNotSetResponse()); // AllocationLedgerSection's background read -- unconditional, unlike the two polls above
       // buildTx never even reaches the network -- the exact failure mode
       // isOfflineError exists to detect, not a rejection the server sent back.
       fetchMock.mockRejectedValueOnce(new TypeError("Failed to fetch"));
