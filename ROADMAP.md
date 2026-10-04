@@ -312,8 +312,20 @@ funding gate, not just an internal milestone — target them explicitly.
       opposed to `resolve_fx_shortfall` simply failing outright on one,
       which it already does) — a smaller remaining gap than "settle doesn't
       consume the oracle at all," which is now resolved.
-- [ ] Key recovery flow: exercise it once end to end — simulate a lost key,
+- [x] Key recovery flow: exercise it once end to end — simulate a lost key,
       confirm the two-of-three social recovery set can rotate it.
+      **Done, with an honest caveat**, 4 Oct 2026 — `api/scripts/key-recovery-exercise.ts`,
+      live on real testnet: a 2-of-3 recovery set (co-signer + warehouse
+      operator, deliberately not the third member, to prove "any two")
+      rotates a lost key with zero disruption to day-to-day single-signer
+      use, and the old key is confirmed genuinely revoked (`tx_bad_auth`),
+      not merely redundant. **This uses Stellar's native classic-account
+      multisig (`set_options` signer weights/thresholds), not the Soroban
+      account-abstraction contract PRD §4.6 specifies** — a real
+      architectural difference, not a rounding error; see
+      `docs/key-recovery-exercise.md` for the full comparison, a real
+      run's actual testnet addresses/tx hashes, and the product decision
+      this still leaves open.
 
 ### Mainnet + UX tranche (SCF: 40%)
 

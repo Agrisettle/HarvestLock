@@ -9,6 +9,7 @@
     "start": "node dist/index.js",
     "migrate": "tsx src/db/migrate.ts",
     "migrate:prod": "node dist/db/migrate.js",
+    "key-recovery-exercise": "tsx scripts/key-recovery-exercise.ts",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.test.json"
   },
