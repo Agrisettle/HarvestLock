@@ -73,12 +73,14 @@ contract. Not a runtime bug — those two apps just don't have any UI that
 needs the fields — but a real type-accuracy gap worth fixing if either
 app ever needs them. This app's own copy of the interface is complete.
 
-**Deferred, and not this app's job to fix**: the API's `initialize`
-route doesn't yet accept the oracle config `HarvestLock-Contracts`
-gained in the same session (`oracleConfig: Option<OracleConfig>` — see
-`HarvestLock-Contracts/HANDOFF.md`'s Deployment 8), and
-`api/.env`'s `ESCROW_WASM_HASH` still points at Deployment 7's hash, not
-Deployment 8's. Neither blocks this app — `mark_checkpoint`/
-`confirm_delivery` don't touch oracle config at all — but it means no
-commitment created through the API today can have one set. Tracked in
-the main repo's `TASKS.md`, not silently left for someone to discover.
+**Stale note, corrected 4 Oct 2026**: this section used to say the
+API's `initialize` route didn't yet accept `oracleConfig` and that no
+commitment created through the API could have one set. Both parts are
+now wrong, and left uncorrected would have actively misled the next
+reader (this project's own stated rule — see the main repo's
+`HANDOFF.md`): `initialize` has accepted `oracleConfig` since Deployment
+8/9 (`api/HANDOFF.md`), and as of this session `buyer-app`'s
+`CreateCommitmentForm.tsx` actually collects it at commitment-creation
+time too — see `buyer-app/README.md`'s "Grade price schedule + FX/oracle
+fields" entry. Still correctly not this app's job either way —
+`mark_checkpoint`/`confirm_delivery` never touch oracle config.
