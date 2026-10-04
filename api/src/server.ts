@@ -854,10 +854,25 @@ export function buildServer() {
       requireValidContractId(req.body.allocationContractId);
     }
     const result = await submitSignedTransaction(req.body.xdr);
+    // Best-effort, same reasoning as completeProposalId/allocationMembers
+    // below (and GET /commitments/:contractId's equivalent refresh): this
+    // whole block is a post-submission cache refresh, not the point of
+    // this endpoint — the real, funds-moving submission already
+    // succeeded above. A transient live-chain-read or Postgres failure
+    // here used to turn an already-successful submission into a 500,
+    // inconsistent with every other best-effort side effect in this same
+    // handler; fixed to match.
     if (req.body.refreshContractId) {
-      const commitment = await getCommitment(req.body.refreshContractId);
-      const { previousStatus } = await upsertCommitment(req.body.refreshContractId, commitment);
-      await applyReputationConsequences(req.body.refreshContractId, previousStatus, commitment);
+      const refreshContractId = req.body.refreshContractId;
+      await getCommitment(refreshContractId)
+        .then((commitment) =>
+          upsertCommitment(refreshContractId, commitment).then(({ previousStatus }) =>
+            applyReputationConsequences(refreshContractId, previousStatus, commitment),
+          ),
+        )
+        .catch((err: unknown) => {
+          req.log.warn({ err }, "failed to refresh commitments cache after submit");
+        });
     }
     // Marks the proposal finished so a stale "ready to finalize" state
     // doesn't linger for other viewers once the cancel actually landed.

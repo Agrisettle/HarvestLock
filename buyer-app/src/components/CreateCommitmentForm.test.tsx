@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { CreateCommitmentForm, validateCreateCommitmentFields, type CreateCommitmentFields } from "./CreateCommitmentForm";
+import { CreateCommitmentForm, validateCreateCommitmentFields, parseGradePriceBps, type CreateCommitmentFields } from "./CreateCommitmentForm";
 
 const validFields: CreateCommitmentFields = {
   cooperative: "GCOOPADDRESSXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
@@ -13,6 +13,13 @@ const validFields: CreateCommitmentFields = {
   claimWindowSecs: "3600",
   remainderWindowSecs: "3600",
   deliveryWindowSecs: String(60 * 60 * 24),
+  contractedQuantity: "1000",
+  gradePriceBps: "10000",
+  fxConversionEnabled: false,
+  oracleContract: "",
+  priceAsset: "",
+  oracleMaxAgeSecs: String(60 * 60 * 24),
+  denominatedAmount: "",
   rolesAcknowledged: true,
 };
 
@@ -74,6 +81,67 @@ describe("validateCreateCommitmentFields", () => {
       /Roles & Responsibilities/,
     );
   });
+
+  it("rejects a zero contracted quantity", () => {
+    expect(validateCreateCommitmentFields({ ...validFields, contractedQuantity: "0" })).toMatch(
+      /Contracted quantity must be a positive/,
+    );
+  });
+
+  it("rejects an empty grade price schedule", () => {
+    expect(validateCreateCommitmentFields({ ...validFields, gradePriceBps: "" })).toMatch(/Grade price schedule/);
+  });
+
+  it("rejects a grade price schedule entry over 10000 bps", () => {
+    expect(validateCreateCommitmentFields({ ...validFields, gradePriceBps: "8000,12000" })).toMatch(
+      /Grade price schedule/,
+    );
+  });
+
+  it("parses a multi-entry grade price schedule in order", () => {
+    expect(parseGradePriceBps("8000, 10000,12000")).toEqual([8000, 10000, 12000]);
+  });
+
+  it("rejects FX conversion enabled with no oracle contract address", () => {
+    expect(
+      validateCreateCommitmentFields({ ...validFields, fxConversionEnabled: true, denominatedAmount: "500" }),
+    ).toMatch(/Oracle contract address/);
+  });
+
+  it("rejects FX conversion enabled with no price asset", () => {
+    expect(
+      validateCreateCommitmentFields({
+        ...validFields,
+        fxConversionEnabled: true,
+        oracleContract: "CORACLEXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+        denominatedAmount: "500",
+      }),
+    ).toMatch(/Price asset/);
+  });
+
+  it("rejects FX conversion enabled with a zero denominated amount", () => {
+    expect(
+      validateCreateCommitmentFields({
+        ...validFields,
+        fxConversionEnabled: true,
+        oracleContract: "CORACLEXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+        priceAsset: "NGN",
+        denominatedAmount: "0",
+      }),
+    ).toMatch(/Deal value in the price asset must be greater than zero/);
+  });
+
+  it("accepts a fully valid FX-conversion-enabled deal", () => {
+    expect(
+      validateCreateCommitmentFields({
+        ...validFields,
+        fxConversionEnabled: true,
+        oracleContract: "CORACLEXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+        priceAsset: "NGN",
+        denominatedAmount: "500000000",
+      }),
+    ).toBe(null);
+  });
 });
 
 describe("CreateCommitmentForm", () => {
@@ -103,7 +171,8 @@ describe("CreateCommitmentForm", () => {
     await user.type(screen.getByLabelText("Advance 2 share (basis points)"), "2000");
     await user.clear(screen.getByLabelText("Claim window (seconds)"));
     await user.type(screen.getByLabelText("Claim window (seconds)"), "3600");
-    await user.click(screen.getByRole("checkbox"));
+    await user.type(screen.getByLabelText(/Contracted quantity/), validFields.contractedQuantity);
+    await user.click(screen.getByRole("checkbox", { name: /Roles & Responsibilities/ }));
 
     await user.click(screen.getByRole("button", { name: "Create commitment" }));
 
@@ -116,6 +185,7 @@ describe("CreateCommitmentForm", () => {
         advance1Bps: 1500,
         advance2Bps: 2000,
         claimWindowSecs: "3600",
+        contractedQuantity: validFields.contractedQuantity,
         rolesAcknowledged: true,
       }),
     );
@@ -134,7 +204,8 @@ describe("CreateCommitmentForm", () => {
     await user.type(screen.getByLabelText("Advance 1 share (basis points)"), "1500");
     await user.clear(screen.getByLabelText("Advance 2 share (basis points)"));
     await user.type(screen.getByLabelText("Advance 2 share (basis points)"), "2000");
-    // Deliberately not checking the checkbox this time.
+    await user.type(screen.getByLabelText(/Contracted quantity/), validFields.contractedQuantity);
+    // Deliberately not checking the Roles & Responsibilities checkbox this time.
 
     await user.click(screen.getByRole("button", { name: "Create commitment" }));
 

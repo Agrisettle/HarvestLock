@@ -118,6 +118,13 @@ export interface InitializeFields {
   claimWindowSecs: string;
   remainderWindowSecs: string;
   deliveryWindowSecs: string;
+  // Mirrors api/src/server.ts's InitializeBody — PRD §7's shortfall/grade
+  // adjustment schedule and §16.3/§4.2's oracle FX conversion, both real
+  // and live-verified at the API/contract layer well before any frontend
+  // collected them (see CreateCommitmentForm.tsx's comment on this).
+  contractedQuantity: number;
+  gradePriceBps: number[];
+  oracleConfig?: { oracleContract: string; priceAsset: string; maxAgeSecs: string; denominatedAmount: string } | null;
   sourcePublicKey: string;
 }
 

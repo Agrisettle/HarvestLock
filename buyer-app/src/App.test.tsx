@@ -254,7 +254,8 @@ describe("App", () => {
     await user.type(screen.getByLabelText("Advance 2 share (basis points)"), "2000");
     await user.clear(screen.getByLabelText("Claim window (seconds)"));
     await user.type(screen.getByLabelText("Claim window (seconds)"), "3600");
-    await user.click(screen.getByRole("checkbox"));
+    await user.type(screen.getByLabelText(/Contracted quantity/), "1000");
+    await user.click(screen.getByRole("checkbox", { name: /Roles & Responsibilities/ }));
 
     await user.click(screen.getByRole("button", { name: "Create commitment" }));
 

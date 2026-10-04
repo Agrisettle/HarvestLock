@@ -89,6 +89,30 @@ default, since there's no deployed site domain yet (same pattern as
 `site/`'s own `useLiveStatus` hook); when unset, the checkbox label
 degrades to plain, non-linked text rather than guessing a URL.
 
+**Grade price schedule + FX/oracle fields** (same file, added
+4 Oct 2026): closes a real gap flagged in `api/HANDOFF.md`'s "next
+steps" — `contractedQuantity`/`gradePriceBps` (PRD §7's shortfall/grade
+adjustment) and `oracleConfig` (PRD §16.3/§4.2 option (b)'s FX
+conversion) had been fully built, tested, and live-verified at the
+contract and API layers since Deployment 6/8/9, but no frontend ever
+collected them — every commitment created through this form got
+whatever the API happened to receive, which was never a real grade
+schedule or FX config, regardless of how complete those features were
+one layer down. The form now collects a contracted quantity, a
+comma-separated grade-price schedule (defaulting to a single `10000`bps
+entry — full price regardless of grade, for a deal that doesn't need a
+real schedule, since `lib.rs` requires at least one entry
+unconditionally), and an optional FX-conversion toggle that, left
+unchecked, sends `oracleConfig: null` — exactly `lib.rs`'s documented
+"a plain deal that needs no conversion" case. Validation mirrors
+`server.ts`'s own guards exactly, same convention as the existing window
+fields. Live-verified through the real HTTP layer in
+`api/test/stellar.test.ts` (not this app directly — no Freighter
+extension exists in this environment, same caveat as the rest of this
+file) against Reflector's real testnet oracle; this app's own test
+suite (component + integration, fetch-mocked) covers the new fields'
+validation and that they reach `buildInitializeTx` correctly.
+
 **Cancel this commitment** (`src/components/CancelSection.tsx`, added
 2 Sept 2026, later same day again): the staged multi-party
 propose/sign/finalize UX for `cancel()` — see `api/HANDOFF.md`. Either

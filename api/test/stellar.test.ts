@@ -1079,3 +1079,64 @@ describe("oracle staleness bound (live testnet + real HTTP layer)", () => {
     60_000,
   );
 });
+
+describe("transactions/submit's post-submission cache refresh (live testnet + real HTTP layer)", () => {
+  it(
+    "a failed cache refresh after submit doesn't mask a successful submission",
+    async () => {
+      // The real, funds-relevant half of this test: a genuine initialize
+      // submission that must succeed regardless of what follows.
+      const buyer = Keypair.random();
+      const cooperative = Keypair.random();
+      await Promise.all([fundTestnetAccount(buyer.publicKey()), fundTestnetAccount(cooperative.publicKey())]);
+      const contractId = await deployContractInstance();
+      const initXdr = await buildInvokeTransaction({
+        contractId,
+        method: "initialize",
+        sourcePublicKey: buyer.publicKey(),
+        args: initializeArgs({
+          buyer: buyer.publicKey(),
+          cooperative: cooperative.publicKey(),
+          warehouseOperator: buyer.publicKey(),
+          token: PLACEHOLDER_TOKEN,
+          totalAmount: 1_000_000_000n,
+          advance1Bps: 1500,
+          advance2Bps: 1500,
+          claimWindowSecs: 3600n,
+          remainderWindowSecs: 3600n,
+          deliveryWindowSecs: 86_400n,
+          contractedQuantity: 1_000,
+          gradePriceBps: [10_000],
+        }),
+      });
+      const initTx = TransactionBuilder.fromXDR(initXdr, networkPassphrase);
+      initTx.sign(buyer);
+
+      // The regression target: a second, freshly-deployed-but-never-
+      // initialized contract as the refresh target. getCommitment on it
+      // always throws NotInitialized (same deterministic failure the
+      // very first test in this file asserts on directly) -- a reliable,
+      // real way to make the post-submission cache refresh genuinely
+      // fail, with no need to simulate Postgres being down to prove it.
+      // Before this file's fix, that failure propagated unguarded and
+      // turned this whole response into a 500, even though initTx above
+      // -- a completely separate, real, already-landed submission --
+      // had nothing to do with it.
+      const uninitializedContractId = await deployContractInstance();
+
+      const submitRes = await app.inject({
+        method: "POST",
+        url: "/transactions/submit",
+        payload: { xdr: initTx.toXDR(), refreshContractId: uninitializedContractId },
+      });
+      expect(submitRes.statusCode).toBe(200);
+      expect(submitRes.json().status).toBe("SUCCESS");
+
+      // Confirm the real submission actually landed, not just that the
+      // response looked right.
+      const status = await getStatus(contractId);
+      expect(status).toBe("Draft");
+    },
+    60_000,
+  );
+});

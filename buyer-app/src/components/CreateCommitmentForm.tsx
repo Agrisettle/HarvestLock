@@ -30,6 +30,23 @@ export interface CreateCommitmentFields {
   claimWindowSecs: string;
   remainderWindowSecs: string;
   deliveryWindowSecs: string;
+  // contractedQuantity/gradePriceBps mirror lib.rs's initialize() args of
+  // the same name (PRD §7's shortfall/grade adjustment schedule) — see
+  // api/HANDOFF.md's "next steps" item 10: the API/contract have carried
+  // these since Deployment 6, but no frontend ever collected them, so
+  // every commitment created through this form got whatever the API
+  // happened to receive instead of a real, buyer-chosen schedule.
+  contractedQuantity: string;
+  gradePriceBps: string;
+  // oracleConfig fields, same gap, one deployment later (Deployment 8/9,
+  // PRD §16.3/§4.2 option (b)). fxConversionEnabled toggles the whole
+  // group; leaving it off sends oracleConfig: null, exactly lib.rs's
+  // documented "a plain deal that needs no conversion" case.
+  fxConversionEnabled: boolean;
+  oracleContract: string;
+  priceAsset: string;
+  oracleMaxAgeSecs: string;
+  denominatedAmount: string;
   rolesAcknowledged: boolean;
 }
 
@@ -43,8 +60,27 @@ const emptyFields: CreateCommitmentFields = {
   claimWindowSecs: String(60 * 60 * 24), // a day, a reasonable default, not a claim about what's "right"
   remainderWindowSecs: String(60 * 60 * 24 * 7), // 7 days, per this project's default/forfeiture model
   deliveryWindowSecs: String(60 * 60 * 24 * 120), // 120 days, same
+  contractedQuantity: "",
+  // A single grade bucket at 10000bps (full price regardless of grade) —
+  // the sensible default for a deal that doesn't need a real grade
+  // schedule, since lib.rs requires at least one entry unconditionally.
+  gradePriceBps: "10000",
+  fxConversionEnabled: false,
+  oracleContract: "",
+  priceAsset: "",
+  oracleMaxAgeSecs: String(60 * 60 * 24), // a day, same non-claim as the windows above
+  denominatedAmount: "",
   rolesAcknowledged: false,
 };
+
+/** Parses the comma-separated grade-price-schedule input into lib.rs's `grade_price_bps: Vec<u32>` shape. Exported so App.tsx's submit handler can reuse the exact same parse, not a second copy of it. */
+export function parseGradePriceBps(raw: string): number[] {
+  return raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
+    .map((s) => Number(s));
+}
 
 /** Client-side only — the API is what actually enforces every one of these; this just avoids an obviously-doomed round trip. */
 export function validateCreateCommitmentFields(fields: CreateCommitmentFields): string | null {
@@ -67,6 +103,32 @@ export function validateCreateCommitmentFields(fields: CreateCommitmentFields): 
   const deliveryWindowSecs = Number(fields.deliveryWindowSecs);
   if (deliveryWindowSecs < MIN_DELIVERY_WINDOW_SECS || deliveryWindowSecs > MAX_DELIVERY_WINDOW_SECS) {
     return `Delivery window must be between ${MIN_DELIVERY_WINDOW_SECS} and ${MAX_DELIVERY_WINDOW_SECS} seconds.`;
+  }
+  // Mirrors api/src/server.ts's initialize validation exactly (no API-level
+  // narrowing beyond the contract's own guards — see that file's comment
+  // on why, right next to these same two checks).
+  const contractedQuantity = Number(fields.contractedQuantity);
+  if (!Number.isInteger(contractedQuantity) || contractedQuantity <= 0) {
+    return "Contracted quantity must be a positive whole number.";
+  }
+  const gradePriceBps = parseGradePriceBps(fields.gradePriceBps);
+  if (gradePriceBps.length === 0 || gradePriceBps.some((bps) => !Number.isInteger(bps) || bps < 0 || bps > 10_000)) {
+    return "Grade price schedule must be a comma-separated list of whole numbers between 0 and 10000, with at least one entry.";
+  }
+  if (fields.fxConversionEnabled) {
+    if (!fields.oracleContract.trim()) return "Oracle contract address is required when FX conversion is enabled.";
+    if (!fields.priceAsset.trim()) return "Price asset is required when FX conversion is enabled.";
+    const maxAgeSecs = Number(fields.oracleMaxAgeSecs);
+    if (!Number.isInteger(maxAgeSecs) || maxAgeSecs <= 0) {
+      return "Oracle max quote age must be a positive whole number of seconds.";
+    }
+    try {
+      if (BigInt(fields.denominatedAmount || "0") <= 0n) {
+        return "Deal value in the price asset must be greater than zero.";
+      }
+    } catch {
+      return "Deal value in the price asset must be a whole number.";
+    }
   }
   // Not enforced by the API (it can't know whether a UI showed this) —
   // enforced here so a buyer can't lock a commitment without ever having
@@ -185,6 +247,72 @@ export function CreateCommitmentForm({
         onChange={(e) => update("deliveryWindowSecs", e.target.value.replace(/[^0-9]/g, ""))}
         inputMode="numeric"
       />
+
+      <label htmlFor="contracted-quantity">Contracted quantity (units — e.g. kg or bags)</label>
+      <input
+        id="contracted-quantity"
+        value={fields.contractedQuantity}
+        onChange={(e) => update("contractedQuantity", e.target.value.replace(/[^0-9]/g, ""))}
+        placeholder="1000"
+        inputMode="numeric"
+      />
+
+      <label htmlFor="grade-price-bps">Grade price schedule (basis points per grade, comma-separated)</label>
+      <input
+        id="grade-price-bps"
+        value={fields.gradePriceBps}
+        onChange={(e) => update("gradePriceBps", e.target.value.replace(/[^0-9,]/g, ""))}
+        placeholder="10000"
+        inputMode="numeric"
+      />
+
+      <label className="consent-checkbox">
+        <input
+          type="checkbox"
+          checked={fields.fxConversionEnabled}
+          onChange={(e) => update("fxConversionEnabled", e.target.checked)}
+        />
+        <span>This deal needs FX conversion to stablecoin at settlement (optional) — leave unchecked for a plain deal.</span>
+      </label>
+
+      {fields.fxConversionEnabled && (
+        <>
+          <label htmlFor="oracle-contract">Reflector oracle contract address</label>
+          <input
+            id="oracle-contract"
+            value={fields.oracleContract}
+            onChange={(e) => update("oracleContract", e.target.value)}
+            placeholder="C..."
+            spellCheck={false}
+          />
+
+          <label htmlFor="price-asset">Price asset (e.g. NGN)</label>
+          <input
+            id="price-asset"
+            value={fields.priceAsset}
+            onChange={(e) => update("priceAsset", e.target.value)}
+            placeholder="NGN"
+            spellCheck={false}
+          />
+
+          <label htmlFor="oracle-max-age">Oracle max quote age (seconds)</label>
+          <input
+            id="oracle-max-age"
+            value={fields.oracleMaxAgeSecs}
+            onChange={(e) => update("oracleMaxAgeSecs", e.target.value.replace(/[^0-9]/g, ""))}
+            inputMode="numeric"
+          />
+
+          <label htmlFor="denominated-amount">Deal value in price asset (smallest units)</label>
+          <input
+            id="denominated-amount"
+            value={fields.denominatedAmount}
+            onChange={(e) => update("denominatedAmount", e.target.value.replace(/[^0-9]/g, ""))}
+            placeholder="500000000"
+            inputMode="numeric"
+          />
+        </>
+      )}
 
       <label className="consent-checkbox">
         <input

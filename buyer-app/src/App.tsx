@@ -12,7 +12,7 @@ import {
 import { connectWallet, signTransactionXdr } from "./wallet";
 import { CommitmentDetail } from "./components/CommitmentDetail";
 import { CommitmentList } from "./components/CommitmentList";
-import { CreateCommitmentForm, type CreateCommitmentFields } from "./components/CreateCommitmentForm";
+import { CreateCommitmentForm, type CreateCommitmentFields, parseGradePriceBps } from "./components/CreateCommitmentForm";
 
 export default function App() {
   const [commitments, setCommitments] = useState<CommitmentSummary[]>([]);
@@ -116,6 +116,16 @@ export default function App() {
             claimWindowSecs: fields.claimWindowSecs,
             remainderWindowSecs: fields.remainderWindowSecs,
             deliveryWindowSecs: fields.deliveryWindowSecs,
+            contractedQuantity: Number(fields.contractedQuantity),
+            gradePriceBps: parseGradePriceBps(fields.gradePriceBps),
+            oracleConfig: fields.fxConversionEnabled
+              ? {
+                  oracleContract: fields.oracleContract,
+                  priceAsset: fields.priceAsset,
+                  maxAgeSecs: fields.oracleMaxAgeSecs,
+                  denominatedAmount: fields.denominatedAmount,
+                }
+              : null,
             sourcePublicKey: walletAddress,
           });
         })
