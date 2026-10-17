@@ -319,6 +319,20 @@ by running the server and bursting past the limit with `curl`, not read
 off the plugin's docs — because three frontends poll this API and need to
 back off correctly instead of hammering it.
 
+The 100/minute value is an explicit initial budget for the current
+transaction flow. A single-signer transaction normally spends two API
+requests: build the unsigned XDR, then submit the wallet-signed XDR;
+wallet signing itself is local. A staged three-party transaction spends
+at most four: propose, collect two other parties' signatures, then submit.
+That leaves capacity for up to 25 staged transactions per minute before
+polling. Each active proposal's 10-second waiting-state poll costs six
+requests per minute, so the theoretical ceiling is lower when several
+flows are waiting at once. All callers sharing one egress IP (for example,
+users behind the same NAT) share this budget. This is a starting abuse
+control setting, not a measured production capacity claim; review it
+against pilot traffic before launch, and use a shared limiter store if
+multiple API instances need a coordinated per-IP limit.
+
 **Yes, a 429 carries `Retry-After`.** A request past the limit gets:
 
 ```
@@ -349,11 +363,9 @@ What a client should key off:
   every other error in this API (see `setErrorHandler` in
   `src/server.ts`) — no special-casing needed on the parse path.
 - **The limit is per client IP, shared across all routes** — it is not
-  per endpoint and not per frontend. A single frontend driving a
-  multi-step build/sign/submit flow plus the 10-second proposal-state
-  poll fits comfortably inside 100/min; three frontends from the same
-  NAT'd egress IP share one budget, which is the realistic case to
-  design backoff around. Don't retry a 429 immediately or on a fixed
+  per endpoint and not per frontend. Budget for transaction requests
+  and 10-second proposal polls together; multiple frontends from the
+  same NAT'd egress IP share one budget. Don't retry a 429 immediately or on a fixed
   short interval — wait the advertised `retry-after` (jitter optional
   but harmless).
 

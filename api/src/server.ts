@@ -222,16 +222,17 @@ export async function buildServer() {
   // contract itself gates via require_auth. Revisit once that changes.
   app.register(cors, { origin: true });
 
-  // Global, per-IP -- audit finding, 9 Sept 2026: nothing bounded request
-  // volume at all before this. 100 requests/minute is an engineering
-  // default, not a researched value (same caveat this file already
-  // applies to the window-length bounds below) -- generous enough not to
-  // trip up a legitimate multi-step build/sign/submit flow or the
-  // 10-second poll a proposal's "waiting" UI state runs, but enough to
-  // blunt casual scraping/abuse. Revisit once there's real traffic to
-  // observe against. Skipped entirely in tests (`NODE_ENV=test`) so the
-  // existing suites' many rapid-fire requests against one shared `app`
-  // instance don't start tripping it.
+  // Global, per-IP -- a normal single-signer transaction takes two API
+  // calls (build XDR, submit signed XDR); wallet signing is local. A
+  // staged three-party transaction takes at most four (propose, two
+  // signer submissions, final submit). The 100/minute ceiling therefore
+  // allows 25 staged transactions/minute before polling; a waiting
+  // proposal's 10-second poll costs six requests/minute per active client.
+  // This is a starting abuse-control budget, not a measured capacity
+  // claim; all clients behind one NAT share it. Revisit from production
+  // traffic before a pilot and use a shared store if multiple API
+  // instances must enforce one per-IP budget. Skipped in tests so suites'
+  // rapid-fire requests against one shared `app` don't trip it.
   //
   // The `await` on register() is load-bearing, not decoration:
   // @fastify/rate-limit attaches itself via an `onRoute` hook (see its
