@@ -195,6 +195,30 @@ describe("App", () => {
     expect(String(confirmCall?.[1]?.body)).toContain('"gradeIndex":1');
   });
 
+  it("prints the confirmed delivery summary", async () => {
+    const deliveredDetail: CommitmentDetail = {
+      ...detail,
+      status: "Delivered",
+      delivered_quantity: 900,
+      grade_index: 1,
+      settlement_bps: 8_100,
+    };
+    fetchMock.mockResolvedValueOnce(jsonResponse([summary]));
+    fetchMock.mockResolvedValueOnce(jsonResponse(deliveredDetail));
+    const print = vi.fn();
+    vi.stubGlobal("print", print);
+
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByTitle(summary.contract_id));
+
+    expect(await screen.findByText("900 / 1000 contracted")).toBeInTheDocument();
+    expect(screen.getByText("1 (90.00%)")).toBeInTheDocument();
+    expect(screen.getByText("81.00% of contract value")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Print receipt" }));
+    expect(print).toHaveBeenCalledOnce();
+  });
+
   it("shows an action error banner, not a crash, if signing is rejected", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse([summary]));
     fetchMock.mockResolvedValueOnce(jsonResponse(detail));

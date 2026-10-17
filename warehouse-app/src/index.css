@@ -418,6 +418,82 @@ table.tranches th {
   color: var(--gold-bright);
 }
 
+.delivery-reference {
+  margin: 0 0 16px;
+  color: var(--bone-faint);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.print-receipt-button {
+  background: transparent;
+  border: 1px solid var(--void-line);
+  border-radius: 6px;
+  color: var(--bone);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  padding: 8px 12px;
+}
+
+.print-receipt-button:hover {
+  border-color: var(--pine);
+}
+
+@media print {
+  @page {
+    margin: 16mm;
+  }
+
+  body {
+    background: #fff;
+    color: #111;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  .delivery-record,
+  .delivery-record * {
+    visibility: visible !important;
+  }
+
+  .delivery-record {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    margin: 0;
+    color: #111;
+  }
+
+  .delivery-record h3 {
+    color: #111;
+    font-size: 18pt;
+  }
+
+  .delivery-record .delivery-reference,
+  .delivery-record .party-grid dt {
+    color: #444;
+  }
+
+  .delivery-record .party-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .delivery-record .party-grid > div {
+    border: 1px solid #bbb;
+    padding: 12px;
+    break-inside: avoid;
+  }
+
+  .print-receipt-button {
+    display: none !important;
+  }
+}
+
 .build-info {
   text-align: center;
   padding: 1rem;
