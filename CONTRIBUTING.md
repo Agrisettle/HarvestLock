@@ -40,6 +40,10 @@ Both need `api/` running to show real data — see each app's `README.md`.
 
 Conventional-commit-ish (`feat:`, `fix:`, `docs:`, `refactor:`) with a body explaining *why*, not just what — this repo's history is written to be read later, not just skimmed in a PR diff. Look at recent commits in any of the repos under [Agrisettle](https://github.com/Agrisettle) for the tone.
 
+## Releases
+
+The release workflow reads Conventional Commit messages on `main` and opens or updates a release pull request with the root `CHANGELOG.md` and project version. Review and merge that pull request to accept the generated changelog. This project-level version is separate from the independently versioned apps; the workflow does not publish packages or create GitHub releases.
+
 ## CI
 
 Contract tests, and typecheck/lint/build/test for `site/`, `api/`, `coop-pwa/`, `buyer-app/`, and `warehouse-app/`, run automatically on every push and PR (path-scoped — touching one component doesn't trigger the others). `api/`'s CI runs its network-free tests (`server.test.ts`/`reputation.test.ts`, against a real Postgres service container) but does *not* run its live-testnet test suite (`api/test/stellar.test.ts`) — that needs a funded key as a repo secret, a decision not yet made safely for a fork-triggerable workflow (see [issue #10](https://github.com/Agrisettle/HarvestLock/issues/10)); run it locally instead. A red check means something real broke — fix the cause, don't disable the check.
