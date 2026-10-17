@@ -1,0 +1,27 @@
+#!/bin/sh
+set -eu
+
+# Catch whitespace errors across every staged file, including Markdown,
+# Rust, configuration, and files outside the JavaScript workspaces.
+git diff --cached --check
+
+staged_paths=$(git diff --cached --name-only --diff-filter=ACMR)
+
+run_lint_if_touched() {
+  package_dir=$1
+  case "$staged_paths" in
+    *"$package_dir/"*)
+      if [ ! -x "$package_dir/node_modules/.bin/oxlint" ]; then
+        printf 'Pre-commit: install %s dependencies with npm ci before committing.\n' "$package_dir" >&2
+        exit 1
+      fi
+      printf 'Pre-commit: linting staged changes in %s...\n' "$package_dir"
+      npm --prefix "$package_dir" run lint
+      ;;
+  esac
+}
+
+run_lint_if_touched site
+run_lint_if_touched coop-pwa
+run_lint_if_touched buyer-app
+run_lint_if_touched warehouse-app

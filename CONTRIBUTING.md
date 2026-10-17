@@ -10,6 +10,19 @@ Thanks for looking at this. Read this file, then [`HANDOFF.md`](./HANDOFF.md) fo
 
 ## Local setup
 
+### Pre-commit checks
+
+Enable the repository's pre-commit hook once per checkout:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+The hook checks staged files for whitespace errors and runs the existing
+Oxlint command for any changed frontend workspace. Install that workspace's
+dependencies with `npm ci` before committing frontend changes. It does not
+rewrite files or add another formatter dependency.
+
 **Contracts** (Rust, Soroban) — see [`HarvestLock-Contracts/README.md`](https://github.com/Agrisettle/HarvestLock-Contracts/blob/main/README.md). Short version: `cargo test` needs only Rust; `stellar contract build`/deploy needs the Stellar CLI.
 
 **Site** (`site/`, React/Vite):
