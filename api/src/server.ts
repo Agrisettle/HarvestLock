@@ -317,7 +317,18 @@ export async function buildServer() {
     return reply.code(statusCode).send({ statusCode, error: STATUS_CODES[statusCode], message });
   });
 
-  app.get("/health", async () => ({ ok: true }));
+  app.get("/health", async (_req, reply) => {
+    let database: "ok" | "unavailable" = "ok";
+    try {
+      await pool.query("SELECT 1");
+    } catch (err) {
+      database = "unavailable";
+      app.log.error({ err }, "health check could not reach Postgres");
+    }
+
+    const ok = database === "ok";
+    return reply.code(ok ? 200 : 503).send({ ok, checks: { api: "ok", database } });
+  });
 
   // Deploys a fresh, uninitialized contract instance (deployer-paid — no
   // party auth required for a bare deploy). The caller still has to drive

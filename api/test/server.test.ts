@@ -49,7 +49,7 @@ describe("server (HTTP layer)", () => {
     async () => {
       const res = await app.inject({ method: "GET", url: "/health" });
       expect(res.statusCode).toBe(200);
-      expect(res.json()).toEqual({ ok: true });
+      expect(res.json()).toEqual({ ok: true, checks: { api: "ok", database: "ok" } });
     },
     15_000,
   );
