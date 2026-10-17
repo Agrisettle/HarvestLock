@@ -84,7 +84,12 @@ export async function upsertCommitment(contractId: string, c: Commitment): Promi
   }
 }
 
-export async function listCommitments(): Promise<CommitmentRow[]> {
-  const { rows } = await pool.query<CommitmentRow>("SELECT * FROM commitments ORDER BY created_at DESC");
+export async function listCommitments({ limit, offset }: { limit?: number; offset?: number } = {}): Promise<CommitmentRow[]> {
+  const limitNum = limit ?? 20;
+  const offsetNum = offset ?? 0;
+  const { rows } = await pool.query<CommitmentRow>(
+    `SELECT * FROM commitments ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
+    [limitNum, offsetNum],
+  );
   return rows;
 }

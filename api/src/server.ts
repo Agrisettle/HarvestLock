@@ -913,7 +913,12 @@ export function buildServer() {
     return serializeCommitment(commitment);
   });
 
-  app.get("/commitments", async () => listCommitments());
+  app.get("/commitments", async (req, reply) => {
+  const limit = Number(req.query.limit) ?? 20;
+  const offset = Number(req.query.offset) ?? 0;
+  const commitments = await listCommitments({ limit, offset });
+  return reply.send(commitments);
+});
 
   // Read-only: a party's current reputation standing (strikes, whether
   // they're barred, and why). Returns a "clean" default rather than 404
