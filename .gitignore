@@ -10,11 +10,11 @@ gh-pages-dist/
 build/
 .env
 .env.*
+temp_auto_push.bat
 !.env.example
 *.tsbuildinfo
 
 # Editors / OS
-.vscode/
 .idea/
 .DS_Store
 Thumbs.db
@@ -24,3 +24,5 @@ Thumbs.db
 npm-debug.log*
 .vercel
 .env*
+.gitignore
+branch_structure.json

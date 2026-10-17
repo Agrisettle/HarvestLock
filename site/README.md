@@ -19,6 +19,21 @@ npm run build     # production build to dist/
 npm run preview   # serve the production build locally
 ```
 
+## Search crawler files
+
+The production build emits `dist/sitemap.xml` and `dist/robots.txt` only when
+`SITE_URL` is set to the canonical HTTPS origin for this app, such as
+`https://example.com`. It must be an origin only, with no path, query, or
+fragment. Set it in the production host's build environment before deploying.
+Without it, the build succeeds and prints a warning; crawler-file generation
+is disabled rather than publishing URLs for a guessed or temporary host.
+
+The sitemap lists the two HTML routes currently built here: `/` and
+`/roles.html`. The repository's GitHub Pages preview does not publish this
+`site/` app, so its `agrisettle.github.io/HarvestLock/` address must not be
+used for this app's sitemap. Until the production origin is configured, no
+valid public sitemap URL exists.
+
 ## Notes for whoever touches this next
 
 - Scroll-reveal (`src/hooks/useInView.ts`) uses `IntersectionObserver`.
