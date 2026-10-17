@@ -1,0 +1,25 @@
+{
+  "id": "/",
+  "name": "HarvestLock",
+  "short_name": "HarvestLock",
+  "description": "A Stellar testnet prototype for agricultural forward-contract escrow.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0b120f",
+  "theme_color": "#0b120f",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

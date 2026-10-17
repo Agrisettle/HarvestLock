@@ -19,6 +19,15 @@ npm run build     # production build to dist/
 npm run preview   # serve the production build locally
 ```
 
+## Home-screen assets
+
+Both the main page and roles page link to `public/site.webmanifest` and an
+180×180 Apple touch icon. The manifest advertises the 192×192 and 512×512
+icons and standalone launch behavior. Run `npm run verify:pwa-assets` to
+check page links, manifest fields, file presence, and declared PNG dimensions.
+This verifies the shipped files; it does not claim physical iOS or Android
+device testing.
+
 ## Notes for whoever touches this next
 
 - The page metadata describes HarvestLock as a **testnet prototype**. The
