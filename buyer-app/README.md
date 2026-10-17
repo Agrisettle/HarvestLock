@@ -23,6 +23,17 @@ npm run dev
 Needs `api/` running (`cd ../api && npm run dev`) and reachable at
 `VITE_API_URL` (defaults to `http://localhost:3000`).
 
+## Bundle-size budget
+
+The buyer-app CI build runs `npm run check:bundle-size` after Vite builds
+the app. The check adds the raw byte sizes of every generated `.js` and
+`.css` file in `dist/assets/` and fails above **350,000 bytes**. It does
+not include source maps, HTML, images, or compression estimates. The
+budget gives the current published buyer bundle (262,638 JavaScript and
+CSS bytes) about one-third of headroom while making bundle growth visible
+in the same CI run as the build. Update the budget only with a reviewed
+reason and a new measured baseline.
+
 ## What's real vs. deferred
 
 Same shape as `coop-pwa` (see `../coop-pwa/README.md` for the fuller
