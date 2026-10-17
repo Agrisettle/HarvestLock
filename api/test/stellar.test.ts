@@ -19,7 +19,17 @@ import { buildServer } from "../src/server.js";
  * right, only that the types line up.
  */
 
-const KNOWN_SETTLED_CONTRACT_ID = "CDVF6UVJOLF3OHCFSYSJ72RMG2T6DUQ42VRJ6IHL6MVEFDYEBZ3KTFK4";
+// A contract driven through a full lifecycle (Draft -> ... -> Cancelled,
+// two-party mutual cancel) on testnet during the 17 Oct 2026 contributor-
+// readiness audit, from the current escrow WASM (Deployment 10's hash),
+// so its `Commitment` struct carries every field the TS interface declares.
+// Replaces the previous constant (CDVF6UVJOLF3OHCFSYSJ72RMG2T6DUQ42VRJ6
+// IHL6MVEFDYEBZ3KTFK4 — the contracts repo's Deployment 2 instance): that
+// one predates the attestation, FX, and dispute struct additions, so its
+// `get_commitment` map has no `dispute_pre_status` and `getCommitment`
+// deterministically threw "expected a Status enum value, got: undefined" —
+// a real broken-test finding from that audit, not testnet flakiness.
+const KNOWN_LIFECYCLE_CONTRACT_ID = "CCYQWAX6YHFNXWSENQWKAEC3NVHJRID6TY5WKPNXH7W22VZWDE2H6P5I";
 // Stands in for token/buyer/cooperative/warehouse in the write-path test below —
 // `initialize` only stores these as Addresses, it never touches the token
 // contract, so a real-but-otherwise-unrelated address is a valid stand-in here.
@@ -43,7 +53,7 @@ describe("stellar/client (live testnet reads)", () => {
   it(
     "reads status from a known deployed contract",
     async () => {
-      const status = await getStatus(KNOWN_SETTLED_CONTRACT_ID);
+      const status = await getStatus(KNOWN_LIFECYCLE_CONTRACT_ID);
       expect(typeof status).toBe("string");
       expect(status.length).toBeGreaterThan(0);
     },
@@ -53,13 +63,20 @@ describe("stellar/client (live testnet reads)", () => {
   it(
     "reads the full commitment struct from a known deployed contract",
     async () => {
-      const commitment = await getCommitment(KNOWN_SETTLED_CONTRACT_ID);
+      const commitment = await getCommitment(KNOWN_LIFECYCLE_CONTRACT_ID);
       expect(commitment.buyer).toMatch(/^G[A-Z0-9]{55}$/);
       expect(commitment.cooperative).toMatch(/^G[A-Z0-9]{55}$/);
       expect(commitment.warehouse_operator).toMatch(/^G[A-Z0-9]{55}$/);
       expect(commitment.token).toMatch(/^C[A-Z0-9]{55}$/);
       expect(typeof commitment.total_amount).toBe("bigint");
       expect(commitment.total_amount).toBeGreaterThan(0n);
+      // Cancelled is a terminal state, so this can't drift under us — and
+      // asserting the newest struct fields decode (rather than just that
+      // the old ones do) is what keeps this test from silently rotting
+      // into Deployment-2-shaped staleness again.
+      expect(commitment.status).toBe("Cancelled");
+      expect(commitment.dispute_pre_status).toBe("Draft");
+      expect(typeof commitment.fx_resolved).toBe("boolean");
     },
     30_000,
   );

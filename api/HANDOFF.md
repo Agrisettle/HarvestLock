@@ -47,6 +47,10 @@ During `coop-pwa`'s browser check, one `GET /commitments/:contractId` call faile
 
 **A fourth occurrence, 5 Sept 2026, worth recording precisely**: while writing and verifying the two new oracle-staleness live tests, `fetch failed` errors surfaced with an unusually specific signature — `AggregateError` wrapping both `connect ENETUNREACH` on an IPv6 address and `connect ETIMEDOUT` on the IPv4 fallback, both against `friendbot.stellar.org`'s Cloudflare-fronted IP. `NODE_OPTIONS=--dns-result-order=ipv4first` fixed it on one run (a full pass, both new tests genuinely green), but a same-command retry minutes later hit the identical failure again — inconsistent with a deterministic IPv6-routing bug a flag would reliably paper over, more consistent with this session having hammered `fundTestnetAccount` unusually hard in a short window (one manual end-to-end verification via raw `curl`, then several vitest re-runs) and tripping friendbot's own rate limiting, same root cause as the third occurrence above just manifesting as a connection failure instead of an RPC-level error this time. Deliberately **not** baked into `package.json`'s `test` script on this evidence — a single successful run isn't enough to call the flag a real fix rather than a coincidence, and this file's own convention is to only state what's actually confirmed. The oracle feature itself is verified independent of this: a full manual build → sign → submit → read-config → read-rate walk succeeded twice by hand (see "What's real" above) before any automated test was even written, and the one clean automated run confirmed the same path end to end.
 
+**A fifth occurrence, 17 Oct 2026 — and this one was a real broken test, not flakiness.** The Day 7 contributor-readiness audit ran `test/stellar.test.ts` live for the first time since the contract's `Commitment` struct grew (Deployment 6's attestation fields, Deployment 9's FX fields, Deployment 10's dispute fields). 15/16 passed; the one failure — "reads the full commitment struct from a known deployed contract" — threw `expected a Status enum value, got: undefined` from `unwrapStatus`. Cause, confirmed by simulating `get_commitment` directly and listing the decoded map's keys: `KNOWN_SETTLED_CONTRACT_ID` still pointed at the contracts repo's Deployment 2 instance (`CDVF6UVJOLF3OHCFSYSJ72RMG2T6DUQ42VRJ6IHL6MVEFDYEBZ3KTFK4`), whose 16-field struct predates every later addition — no `dispute_pre_status`, no `fx_*`, no `contracted_quantity` — so `getCommitment` throws by design against it. No retry fixes that; the constant went stale the moment the struct first grew. Fixed by repointing it at a contract this same audit run drove through a full lifecycle on the current Deployment-10 WASM (`CCYQWAX6YHFNXWSENQWKAEC3NVHJRID6TY5WKPNXH7W22VZWDE2H6P5I`, terminal status `Cancelled`), renaming it `KNOWN_LIFECYCLE_CONTRACT_ID`, and strengthening the test to assert the *newest* fields decode (`status === "Cancelled"`, `dispute_pre_status === "Draft"`, `fx_resolved` a boolean) so this exact rot can't hide behind a green "the old fields still decode" check again. Both read tests re-run live after the change: green.
+
+**Reproducing the live suite, exact values (17 Oct 2026)**: `.env` needs `ESCROW_WASM_HASH=21a4bb2efb129d0252d32b575f2ca595259b1c2fe841d2d0554dc02c44aca580` (Deployment 10's hash, from `HarvestLock-Contracts/HANDOFF.md`) — an older hash deploys an older WASM and every `initialize` fails with `HostError: Error(WasmVm, UnexpectedSize)` / `MismatchingParameterLen`, which looks alarming but is just a stale `.env`. `DEPLOYER_SECRET_KEY` can be any friendbot-funded testnet keypair. The network-free suites (`server.test.ts`/`reputation.test.ts`) need only a local Postgres (the same `postgres:16-alpine` service container CI uses) — no Stellar env beyond `STELLAR_RPC_URL`/passphrase, which `rpc.ts` requires at module load.
+
 ## A real bug this caught, and why it matters for the next person
 
 `scValToNative` resolves a Rust enum variant with no payload (e.g. `Status::Draft`) into a **one-element array** (`['Draft']`), not a bare string. `src/stellar/client.ts` originally cast the result straight to `string` with a comment claiming this was "verified empirically" — it wasn't; the comment was aspirational, not actually checked. `npm test` caught the mismatch on the first real run (`expected 'object' to be 'string'`). Fixed via `unwrapStatus()` in `client.ts`, applied to both `getStatus` and the `status` field inside `getCommitment`. Lesson: a comment claiming empirical verification is not itself verification — the test that ran against the live contract is what actually caught this, not the earlier `scratch-verify.ts` script whose output was eyeballed rather than asserted on.
@@ -66,7 +70,19 @@ During `coop-pwa`'s browser check, one `GET /commitments/:contractId` call faile
 11. ~~Wire the contract's dispute-flagging methods (`flag_dispute`/`resolve_dispute`/`expire_dispute_window`)~~ — **done, API side**, 6 Sept 2026: see above. ~~No frontend has any UI for flagging or resolving a dispute yet~~ — **done**, 8 Sept 2026: `DisputeSection.tsx`, identical across `buyer-app`/`coop-pwa`/`warehouse-app` — see `TASKS.md`.
 
 ---
-*Last updated: 4 Oct 2026 (later same day) — `coop-pwa` now has a real UI
+*Last updated: 17 Oct 2026 — contributor-readiness ("Day 7") audit, run
+against this component in full for the first time in a while. Everything
+re-verified from a clean `npm ci`: typecheck, build, and both network-free
+suites green (61/61 — `server.test.ts` 51, `reputation.test.ts` 10)
+against a real `postgres:16-alpine` container, the same service shape CI
+uses. The live-testnet suite ran end to end on real testnet with
+Deployment 10's WASM: 15/16 on the first pass, with the one failure a
+real finding — a stale test constant, not flakiness; full writeup in the
+"Known testnet flakiness" section above (fifth occurrence), fix verified
+live (2/2 on rerun) and typecheck-clean. No source changes beyond
+`test/stellar.test.ts`'s constant/assertion fix this pass.
+
+Prior entry (4 Oct 2026, later same day) — `coop-pwa` now has a real UI
 for the allocation ledger (`AllocationLedgerSection.tsx`) — see "next
 steps" item 9 above and `coop-pwa/README.md`. Same category of gap as
 the entry below: PRD §4.8/§16.1's per-member salted-hash ledger has been

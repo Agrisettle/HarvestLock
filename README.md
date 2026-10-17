@@ -88,7 +88,7 @@ cadence from application code. This repo is everything else.
 ```
 site/            Public site (React/Vite) — the project's public face, not a logged-in product surface
 api/             HarvestLock API (TypeScript/Node, Fastify) — contract lifecycle is real today; vouchers/SDP payouts are planned, not built (see api/HANDOFF.md)
-coop-pwa/        Cooperative-facing dashboard (React/Vite) — real write actions against live testnet; phone-auth and offline-tolerance still ahead
+coop-pwa/        Cooperative-facing dashboard (React/Vite) — real write actions against live testnet; offline-tolerant claim queue built, phone-auth still ahead
 buyer-app/       Buyer/off-taker dashboard (React/Vite) — real write actions against live testnet; ERP integration still ahead
 warehouse-app/   Warehouse-operator console (React/Vite) — mark checkpoints, confirm delivery, flag/resolve disputes, against live testnet
 docs/            PRD pointer and supporting research notes

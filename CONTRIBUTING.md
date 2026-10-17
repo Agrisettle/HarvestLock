@@ -23,9 +23,9 @@ npm run dev
 
 **API** (`api/`, TypeScript/Node/Fastify) — see [`api/README.md`](./api/README.md) for setup and [`api/HANDOFF.md`](./api/HANDOFF.md) for current state. Needs Postgres (Docker is the easy path) and testnet credentials; `npm test` hits real testnet, not mocks — read the README before running it blind.
 
-**`coop-pwa`** and **`buyer-app`** (React/Vite, real write actions via Freighter — not just read-only dashboards):
+**`coop-pwa`**, **`buyer-app`**, and **`warehouse-app`** (React/Vite, real write actions via Freighter — not just read-only dashboards):
 ```bash
-cd coop-pwa   # or buyer-app
+cd coop-pwa   # or buyer-app, or warehouse-app
 npm install
 npm run dev
 ```
