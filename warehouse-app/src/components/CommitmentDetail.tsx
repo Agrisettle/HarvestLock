@@ -86,6 +86,7 @@ export function CommitmentDetail({
       {(commitment.status === "Delivered" || commitment.status === "Settled") && (
         <div className="delivery-record">
           <h3>Delivery attested</h3>
+          <p className="delivery-reference">Contract {contractId}</p>
           <dl className="party-grid">
             <div>
               <dt>Delivered quantity</dt>
@@ -104,6 +105,9 @@ export function CommitmentDetail({
               <dd>{formatBps(commitment.settlement_bps)} of contract value</dd>
             </div>
           </dl>
+          <button className="print-receipt-button" onClick={() => window.print()}>
+            Print receipt
+          </button>
         </div>
       )}
 
