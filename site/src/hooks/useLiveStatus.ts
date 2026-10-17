@@ -1,5 +1,14 @@
 import { useEffect, useState } from "react";
 
+const REFRESH_INTERVAL_MS = 60_000;
+const STALE_AFTER_MS = 5 * 60_000;
+
+type LiveStatus = {
+  status: string;
+  updatedAt: number;
+  isStale: boolean;
+};
+
 /**
  * Live current status of a deployed commitment contract, read from the
  * `api/` service — real chain state, not a number baked in at build time
@@ -11,27 +20,44 @@ import { useEffect, useState } from "react";
  * degrades the same way — silent, not an error banner on a marketing
  * page over what's ultimately a "nice to have."
  */
-export function useLiveStatus(contractId: string): string | null {
-  const [status, setStatus] = useState<string | null>(null);
+export function useLiveStatus(contractId: string): LiveStatus | null {
+  const [liveStatus, setLiveStatus] = useState<Omit<LiveStatus, "isStale"> | null>(null);
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     const apiUrl = import.meta.env.VITE_API_URL;
     if (!apiUrl) return;
 
     let cancelled = false;
-    fetch(`${apiUrl}/commitments/${encodeURIComponent(contractId)}`)
-      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`status ${res.status}`))))
-      .then((data: { status?: string }) => {
-        if (!cancelled && typeof data.status === "string") setStatus(data.status);
-      })
-      .catch(() => {
-        // Silent — see doc comment above.
-      });
+    setLiveStatus(null);
+
+    const refresh = async () => {
+      try {
+        const res = await fetch(`${apiUrl}/commitments/${encodeURIComponent(contractId)}`);
+        if (!res.ok) return;
+        const data: { status?: string } = await res.json();
+        if (!cancelled && typeof data.status === "string") {
+          const updatedAt = Date.now();
+          setLiveStatus({ status: data.status, updatedAt });
+          setNow(updatedAt);
+        }
+      } catch {
+        // Silent — preserve the last successful read and mark it stale by age.
+      }
+    };
+
+    void refresh();
+    const interval = window.setInterval(() => {
+      setNow(Date.now());
+      void refresh();
+    }, REFRESH_INTERVAL_MS);
 
     return () => {
       cancelled = true;
+      window.clearInterval(interval);
     };
   }, [contractId]);
 
-  return status;
+  if (!liveStatus) return null;
+  return { ...liveStatus, isStale: now - liveStatus.updatedAt >= STALE_AFTER_MS };
 }

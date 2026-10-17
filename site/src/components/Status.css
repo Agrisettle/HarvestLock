@@ -98,6 +98,12 @@
   border-radius: 999px;
 }
 
+.status-live-badge--stale {
+  color: var(--gold);
+  background: var(--void-raised);
+  border-color: var(--gold);
+}
+
 @media (max-width: 720px) {
   .status-grid,
   .status-links {

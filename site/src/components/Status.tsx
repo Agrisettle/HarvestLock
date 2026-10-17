@@ -82,7 +82,15 @@ export function Status() {
             <span className="status-link-label">Testnet contract</span>
             <span className="mono status-link-value">
               CDVF6U…FK4
-              {liveStatus && <span className="status-live-badge">{liveStatus}</span>}
+              {liveStatus && (
+                <span
+                  className={`status-live-badge${liveStatus.isStale ? " status-live-badge--stale" : ""}`}
+                  title={`Last successful chain read: ${new Date(liveStatus.updatedAt).toLocaleString()}`}
+                  aria-label={`${liveStatus.status}${liveStatus.isStale ? ", data is stale" : ""}`}
+                >
+                  {liveStatus.status}{liveStatus.isStale ? " · stale" : ""}
+                </span>
+              )}
             </span>
           </a>
         </Reveal>
