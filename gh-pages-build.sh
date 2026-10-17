@@ -55,4 +55,13 @@ sed \
 # Jekyll involved) -- included anyway since it's the standard,
 # zero-cost safeguard against that class of surprise if the deploy
 # mechanism here ever changes.
+# Same reasoning as vercel-build.sh's copy of this file: robots.txt is
+# only honored from the site root, and warehouse-app's own output sits
+# one level down at /HarvestLock/warehouse/. Worth noting honestly:
+# GitHub Pages is served from github.io's root domain, and crawlers only
+# read robots.txt at a host's root -- so this file at
+# /HarvestLock/robots.txt is served and verifiable, but only a real
+# custom-domain deployment (Vercel) is where it will actually be obeyed.
+cp warehouse-app/public/robots.txt gh-pages-dist/robots.txt
+
 touch gh-pages-dist/.nojekyll

@@ -1,0 +1,9 @@
+# HarvestLock warehouse-app — internal operational tool, not public
+# marketing content. Only site/ is meant to be publicly indexed, so
+# nothing on this app's surface should appear in search results.
+#
+# robots.txt is only honored when served from the domain root, so
+# vercel-build.sh / gh-pages-build.sh copy this file to the root of the
+# assembled deploy tree as well as letting it ship inside /warehouse/.
+User-agent: *
+Disallow: /
