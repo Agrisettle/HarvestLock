@@ -12,6 +12,7 @@
   right: -6%;
   bottom: -18%;
   width: 340px;
+  aspect-ratio: 1;
   opacity: 0.08;
   pointer-events: none;
 }
