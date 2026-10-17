@@ -1,0 +1,13 @@
+# New dependencies must use a clearly identified permissive license. Unknown,
+# copyleft, source-available, and proprietary licenses need maintainer review
+# before they can be added; update this list only after that review.
+allow-licenses:
+  - Apache-2.0
+  - BSD-2-Clause
+  - BSD-3-Clause
+  - CC0-1.0
+  - ISC
+  - MIT
+  - 0BSD
+  - Unlicense
+  - Zlib
