@@ -39,7 +39,7 @@ describe("validateCreateCommitmentFields", () => {
   it("rejects advance1Bps + advance2Bps over 10000 (100%)", () => {
     expect(
       validateCreateCommitmentFields({ ...validFields, advance1Bps: 6000, advance2Bps: 5000 }),
-    ).toMatch(/can't add up to more than 100%/);
+    ).toMatch(/can't add up to more than 10000/);
   });
 
   it("rejects a claim window below the API's minimum", () => {
@@ -50,6 +50,27 @@ describe("validateCreateCommitmentFields", () => {
     expect(
       validateCreateCommitmentFields({ ...validFields, claimWindowSecs: String(60 * 60 * 24 * 365) }),
     ).toMatch(/Claim window must be between/);
+  });
+
+  it("rejects an advance share over 10000 basis points", () => {
+    expect(
+      validateCreateCommitmentFields({ ...validFields, advance1Bps: 10_001 }),
+    ).toMatch(/Advance 1 share must be between 0 and 10000 basis points/);
+  });
+
+  it("rejects a negative advance share", () => {
+    expect(
+      validateCreateCommitmentFields({ ...validFields, advance1Bps: -1 }),
+    ).toMatch(/Advance 1 share must be between 0 and 10000 basis points/);
+    expect(
+      validateCreateCommitmentFields({ ...validFields, advance2Bps: -1 }),
+    ).toMatch(/Advance 2 share must be between 0 and 10000 basis points/);
+  });
+
+  it("rejects advance1Bps + advance2Bps over 10000 (100%)", () => {
+    expect(
+      validateCreateCommitmentFields({ ...validFields, advance1Bps: 6000, advance2Bps: 5000 }),
+    ).toMatch(/can't add up to more than 10000/);
   });
 
   it("rejects a remainder-payment window below the API's minimum", () => {
