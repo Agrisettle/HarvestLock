@@ -73,4 +73,30 @@ describe("AddressChip", () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(ADDRESS));
     expect(screen.queryByRole("button", { name: "Copied" })).not.toBeInTheDocument();
   });
+
+  it("degrades gracefully when the Clipboard API is unavailable (non-HTTPS context)", async () => {
+    // Insecure contexts and older browsers expose no navigator.clipboard at all.
+    Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
+    // React reports a handler that throws as an uncaught window error rather
+    // than rethrowing it from fireEvent, so listen for one.
+    const uncaught: unknown[] = [];
+    const onError = (event: ErrorEvent) => {
+      uncaught.push(event.error);
+      event.preventDefault();
+    };
+    window.addEventListener("error", onError);
+    try {
+      render(<AddressChip address={ADDRESS} />);
+      fireEvent.click(screen.getByRole("button", { name: "Copy" }));
+      await act(async () => {});
+    } finally {
+      window.removeEventListener("error", onError);
+    }
+
+    expect(uncaught).toEqual([]);
+    expect(screen.getByRole("button", { name: "Copy" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Copied" })).not.toBeInTheDocument();
+    // The full address stays reachable through the tooltip.
+    expect(screen.getByTitle(ADDRESS)).toHaveAttribute("title", ADDRESS);
+  });
 });
