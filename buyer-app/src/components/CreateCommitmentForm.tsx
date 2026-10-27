@@ -89,9 +89,9 @@ export function validateCreateCommitmentFields(fields: CreateCommitmentFields): 
   if (!fields.token.trim()) return "Token contract address is required.";
   const totalAmount = BigInt(fields.totalAmount || "0");
   if (totalAmount <= 0n) return "Total amount must be greater than zero.";
-  if (fields.advance1Bps < 0 || fields.advance1Bps > 10_000) return "Advance 1 share must be between 0% and 100%.";
-  if (fields.advance2Bps < 0 || fields.advance2Bps > 10_000) return "Advance 2 share must be between 0% and 100%.";
-  if (fields.advance1Bps + fields.advance2Bps > 10_000) return "Advance 1 and Advance 2 shares can't add up to more than 100%.";
+  if (fields.advance1Bps < 0 || fields.advance1Bps > 10_000) return "Advance 1 share must be between 0 and 10000 basis points.";
+  if (fields.advance2Bps < 0 || fields.advance2Bps > 10_000) return "Advance 2 share must be between 0 and 10000 basis points.";
+  if (fields.advance1Bps + fields.advance2Bps > 10_000) return "Advance 1 and Advance 2 shares can't add up to more than 10000 (100%).";
   const claimWindowSecs = Number(fields.claimWindowSecs);
   if (claimWindowSecs < MIN_CLAIM_WINDOW_SECS || claimWindowSecs > MAX_CLAIM_WINDOW_SECS) {
     return `Claim window must be between ${MIN_CLAIM_WINDOW_SECS} and ${MAX_CLAIM_WINDOW_SECS} seconds.`;

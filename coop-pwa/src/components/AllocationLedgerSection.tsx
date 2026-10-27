@@ -109,16 +109,16 @@ export function AllocationLedgerSection({
     // "fail fast client-side, the API is what actually enforces it"
     // convention as every other form in this project.
     if (parsed.some((m) => m.phoneNumber.length === 0)) {
-      setError("Every member needs a phone number.");
+      setError("Phone number must be a non-empty string.");
       return;
     }
     if (parsed.some((m) => !Number.isInteger(m.shareBps) || m.shareBps < 0 || m.shareBps > 10_000)) {
-      setError("Every share must be a whole number between 0 and 10000 basis points.");
+      setError("Share must be a whole number between 0 and 10000 basis points.");
       return;
     }
     const totalBps = parsed.reduce((sum, m) => sum + m.shareBps, 0);
     if (totalBps > 10_000) {
-      setError(`Shares sum to ${totalBps} basis points, over the 10000 (100%) ceiling.`);
+      setError(`Shares must not sum to more than 10000 basis points (100%). Got ${totalBps}.`);
       return;
     }
 
