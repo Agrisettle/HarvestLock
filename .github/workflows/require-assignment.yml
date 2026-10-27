@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_TOKEN: ${{ secrets.CONTRIBUTORS_TOKEN || secrets.GITHUB_TOKEN }}
       # PR-controlled fields are passed as env vars rather than interpolated
       # directly into the script below. `${{ }}` substitution happens as a
       # raw text splice into the YAML *before* bash ever sees it, so a body
