@@ -83,7 +83,7 @@ describe("ConfirmDeliveryForm", () => {
     expect(onSubmit).toHaveBeenCalledWith(1200, 0);
   });
 
-  it("disables submit while a negative or non-integer quantity is entered", async () => {
+  it("rejects a negative quantity with an inline error and keeps the button enabled for valid input", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
     render(
@@ -99,7 +99,13 @@ describe("ConfirmDeliveryForm", () => {
     await user.clear(screen.getByLabelText("Delivered quantity"));
     await user.type(screen.getByLabelText("Delivered quantity"), "-5");
 
+    expect(await screen.findByText(/Delivered quantity must be a non-negative integer/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Confirm delivery" })).toBeDisabled();
+
+    await user.clear(screen.getByLabelText("Delivered quantity"));
+    await user.type(screen.getByLabelText("Delivered quantity"), "500");
+    expect(screen.queryByText(/Delivered quantity must be a non-negative integer/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Confirm delivery" })).toBeEnabled();
   });
 
   it("shows submitError and disables submit while submitting", () => {
