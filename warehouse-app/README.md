@@ -95,6 +95,23 @@ testnet in earlier sessions — see `api/HANDOFF.md` and
 `HarvestLock-Contracts/HANDOFF.md` — so this app isn't re-proving routes
 that were already proven, only the frontend wiring to them.
 
+**Automated accessibility checks** (`axe-core`, added via `src/test-setup.ts`):
+Automated axe assertions run against component render states to prevent regressions
+in form controls, labels, and ARIA markup. To add an assertion to a new component
+test, import `expectNoA11yViolations` and pass the rendered container:
+
+```ts
+import { expectNoA11yViolations } from "../test-setup"; // or "./test-setup"
+
+it("has no accessibility violations", async () => {
+  const { container } = render(<MyComponent />);
+  await expectNoA11yViolations(container);
+});
+```
+
+The `color-contrast` rule is disabled under jsdom because jsdom cannot compute layout
+or styles accurately; color contrast stays a manual and Lighthouse check (#145, #152).
+
 **A real gap this app's own `CommitmentDetail.tsx` surfaced while being
 built**: `api/src/server.ts`'s `serializeCommitment` already returns
 `contracted_quantity`,

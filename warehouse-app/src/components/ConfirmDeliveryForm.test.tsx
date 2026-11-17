@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ConfirmDeliveryForm } from "./ConfirmDeliveryForm";
+import { expectNoA11yViolations } from "../test-setup";
 
 const GRADE_PRICE_BPS = [10_000, 9_000, 7_500];
 
@@ -83,10 +84,26 @@ describe("ConfirmDeliveryForm", () => {
     expect(onSubmit).toHaveBeenCalledWith(1200, 0);
   });
 
+  it("renders when empty without accessibility violations", async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      <ConfirmDeliveryForm
+        contractedQuantity={1000}
+        gradePriceBps={GRADE_PRICE_BPS}
+        onSubmit={vi.fn()}
+        submitting={false}
+        submitError={null}
+      />,
+    );
+    await user.clear(screen.getByLabelText("Delivered quantity"));
+    expect(screen.getByLabelText("Delivered quantity")).toHaveValue(null);
+    await expectNoA11yViolations(container);
+  });
+
   it("disables submit while a negative or non-integer quantity is entered", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
-    render(
+    const { container } = render(
       <ConfirmDeliveryForm
         contractedQuantity={1000}
         gradePriceBps={GRADE_PRICE_BPS}
@@ -100,10 +117,11 @@ describe("ConfirmDeliveryForm", () => {
     await user.type(screen.getByLabelText("Delivered quantity"), "-5");
 
     expect(screen.getByRole("button", { name: "Confirm delivery" })).toBeDisabled();
+    await expectNoA11yViolations(container);
   });
 
-  it("shows submitError and disables submit while submitting", () => {
-    render(
+  it("shows submitError and disables submit while submitting", async () => {
+    const { container } = render(
       <ConfirmDeliveryForm
         contractedQuantity={1000}
         gradePriceBps={GRADE_PRICE_BPS}
@@ -114,5 +132,6 @@ describe("ConfirmDeliveryForm", () => {
     );
     expect(screen.getByText("warehouse_operator auth required")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Confirming…" })).toBeDisabled();
+    await expectNoA11yViolations(container);
   });
 });

@@ -3,6 +3,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { CommitmentDetail } from "./CommitmentDetail";
 import type { CommitmentDetail as CommitmentDetailType } from "../api";
+import { expectNoA11yViolations } from "../test-setup";
 
 const baseCommitment: CommitmentDetailType = {
   status: "Locked",
@@ -90,10 +91,11 @@ describe("CommitmentDetail", () => {
 });
 
 describe("CommitmentDetail's claim action", () => {
-  it("shows no Action column when no wallet is connected", () => {
-    render(<CommitmentDetail commitment={baseCommitment} contractId="CXXX" {...noopProps} />);
+  it("shows no Action column when no wallet is connected", async () => {
+    const { container } = render(<CommitmentDetail commitment={baseCommitment} contractId="CXXX" {...noopProps} />);
     expect(screen.queryByText("Action")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Claim" })).not.toBeInTheDocument();
+    await expectNoA11yViolations(container);
   });
 
   it("shows no Action column when the connected wallet isn't the cooperative", () => {
@@ -108,10 +110,10 @@ describe("CommitmentDetail's claim action", () => {
     expect(screen.queryByText("Action")).not.toBeInTheDocument();
   });
 
-  it("offers Claim for an open, unclaimed, unexpired tranche when connected as the cooperative", () => {
+  it("offers Claim for an open, unclaimed, unexpired tranche when connected as the cooperative", async () => {
     const futureDeadline = String(Math.floor(Date.now() / 1000) + 3600);
     const commitment = { ...baseCommitment, advance1_deadline: futureDeadline };
-    render(
+    const { container } = render(
       <CommitmentDetail
         commitment={commitment}
         contractId="CXXX"
@@ -120,6 +122,7 @@ describe("CommitmentDetail's claim action", () => {
       />,
     );
     expect(screen.getByRole("button", { name: "Claim" })).toBeInTheDocument();
+    await expectNoA11yViolations(container);
   });
 
   it("does not offer Claim for a tranche that hasn't opened yet (deadline 0)", () => {

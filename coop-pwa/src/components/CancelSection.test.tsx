@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { CancelSection } from "./CancelSection";
 import type { CommitmentDetail } from "../api";
 import * as wallet from "../wallet";
+import { expectNoA11yViolations } from "../test-setup";
 
 // Same mocking shape as App.test.tsx -- no real Freighter extension exists
 // in this environment; what's verified here is CancelSection's own
@@ -147,11 +148,12 @@ describe("CancelSection", () => {
     vi.mocked(wallet.signAuthEntry).mockResolvedValueOnce("SIGNED_ENTRY_XDR");
 
     const user = userEvent.setup();
-    render(
+    const { container } = render(
       <CancelSection commitment={baseCommitment} contractId="CXXX" walletAddress={baseCommitment.buyer} onCancelled={vi.fn()} />,
     );
 
     const approveButton = await screen.findByRole("button", { name: "Approve cancellation" });
+    await expectNoA11yViolations(container);
     await user.click(approveButton);
 
     expect(wallet.signAuthEntry).toHaveBeenCalledWith("ENTRY_XDR", baseCommitment.buyer);
@@ -177,7 +179,7 @@ describe("CancelSection", () => {
     const onCancelled = vi.fn();
 
     const user = userEvent.setup();
-    render(
+    const { container } = render(
       <CancelSection
         commitment={baseCommitment}
         contractId="CXXX"
@@ -187,6 +189,7 @@ describe("CancelSection", () => {
     );
 
     const finalizeButton = await screen.findByRole("button", { name: "Finalize cancellation" });
+    await expectNoA11yViolations(container);
     await user.click(finalizeButton);
 
     await waitFor(() => expect(onCancelled).toHaveBeenCalled());
@@ -256,11 +259,12 @@ describe("CancelSection", () => {
     vi.mocked(wallet.signAuthEntry).mockRejectedValueOnce(new Error("User declined to sign"));
 
     const user = userEvent.setup();
-    render(
+    const { container } = render(
       <CancelSection commitment={baseCommitment} contractId="CXXX" walletAddress={baseCommitment.buyer} onCancelled={vi.fn()} />,
     );
 
     const approveButton = await screen.findByRole("button", { name: "Approve cancellation" });
+    await expectNoA11yViolations(container);
     await user.click(approveButton);
 
     expect(await screen.findByText("User declined to sign")).toBeInTheDocument();

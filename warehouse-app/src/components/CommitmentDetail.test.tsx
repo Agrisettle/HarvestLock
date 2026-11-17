@@ -3,6 +3,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { CommitmentDetail } from "./CommitmentDetail";
 import type { CommitmentDetail as CommitmentDetailType } from "../api";
+import { expectNoA11yViolations } from "../test-setup";
 
 const baseCommitment: CommitmentDetailType = {
   status: "Advance1Released",
@@ -49,9 +50,23 @@ const noopProps = {
 };
 
 describe("CommitmentDetail's next action", () => {
-  it("offers 'Mark mid-season checkpoint' for an Advance1Released commitment", () => {
-    render(<CommitmentDetail commitment={baseCommitment} contractId="CXXX" {...noopProps} />);
+  it("offers 'Mark mid-season checkpoint' for an Advance1Released commitment", async () => {
+    const { container } = render(<CommitmentDetail commitment={baseCommitment} contractId="CXXX" {...noopProps} />);
     expect(screen.getByRole("button", { name: "Mark mid-season checkpoint" })).toBeInTheDocument();
+    await expectNoA11yViolations(container);
+  });
+
+  it("renders with a connected wallet without accessibility violations", async () => {
+    const { container } = render(
+      <CommitmentDetail
+        commitment={baseCommitment}
+        contractId="CXXX"
+        {...noopProps}
+        walletAddress={baseCommitment.warehouse_operator}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Mark mid-season checkpoint" })).toBeInTheDocument();
+    await expectNoA11yViolations(container);
   });
 
   it("calls onMarkCheckpoint when that button is clicked", async () => {

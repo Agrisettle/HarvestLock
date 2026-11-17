@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { DisputeSection } from "./DisputeSection";
 import type { CommitmentDetail } from "../api";
 import * as wallet from "../wallet";
+import { expectNoA11yViolations } from "../test-setup";
 
 // Same mocking shape as CancelSection.test.tsx/ReassignBuyerSection.test.tsx
 // -- no real Freighter extension exists in this environment; what's
@@ -215,7 +216,7 @@ describe("DisputeSection", () => {
     vi.mocked(wallet.signAuthEntry).mockResolvedValueOnce("SIGNED_BUYER_ENTRY_XDR");
 
     const user = userEvent.setup();
-    render(
+    const { container } = render(
       <DisputeSection
         commitment={disputed}
         contractId="CXXX"
@@ -225,6 +226,7 @@ describe("DisputeSection", () => {
     );
 
     const approveButton = await screen.findByRole("button", { name: "Approve resolution" });
+    await expectNoA11yViolations(container);
     await user.click(approveButton);
 
     expect(wallet.signAuthEntry).toHaveBeenCalledWith("BUYER_ENTRY_XDR", baseCommitment.buyer);
@@ -249,7 +251,7 @@ describe("DisputeSection", () => {
     const onDisputeChanged = vi.fn();
 
     const user = userEvent.setup();
-    render(
+    const { container } = render(
       <DisputeSection
         commitment={disputed}
         contractId="CXXX"
@@ -259,6 +261,7 @@ describe("DisputeSection", () => {
     );
 
     const finalizeButton = await screen.findByRole("button", { name: "Finalize resolution" });
+    await expectNoA11yViolations(container);
     await user.click(finalizeButton);
 
     await waitFor(() => expect(onDisputeChanged).toHaveBeenCalled());

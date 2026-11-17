@@ -58,6 +58,23 @@ project doesn't use — needs an explicit `afterEach(cleanup)` instead
 (`src/test-setup.ts`), found via a genuinely confusing failure (a count
 assertion off by exactly 2x) before it was added.
 
+**Automated accessibility checks** (`axe-core`, added via `src/test-setup.ts`):
+Automated axe assertions run against component render states to prevent regressions
+in form controls, labels, and ARIA markup. To add an assertion to a new component
+test, import `expectNoA11yViolations` and pass the rendered container:
+
+```ts
+import { expectNoA11yViolations } from "../test-setup"; // or "./test-setup"
+
+it("has no accessibility violations", async () => {
+  const { container } = render(<MyComponent />);
+  await expectNoA11yViolations(container);
+});
+```
+
+The `color-contrast` rule is disabled under jsdom because jsdom cannot compute layout
+or styles accurately; color contrast stays a manual and Lighthouse check (#145, #152).
+
 **Claim-advance write action** (`src/wallet.ts`, `src/App.tsx`, added 2 Sept
 2026): the app's first write. Build → Freighter signs → submit → refresh,
 same shape every write in this project follows, now running client-side.

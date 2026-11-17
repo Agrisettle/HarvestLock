@@ -5,6 +5,7 @@ import { IDBFactory } from "fake-indexeddb";
 import App from "./App";
 import type { CommitmentDetail, CommitmentSummary } from "./api";
 import * as wallet from "./wallet";
+import { expectNoA11yViolations } from "./test-setup";
 
 // wallet.ts talks to the real Freighter browser extension, which doesn't
 // exist in this test environment (and can't be meaningfully faked the
@@ -332,7 +333,7 @@ describe("App", () => {
       vi.mocked(wallet.connectWallet).mockResolvedValueOnce(detail.cooperative);
 
       const user = userEvent.setup();
-      render(<App />);
+      const { container } = render(<App />);
 
       await user.click(await screen.findByRole("button", { name: "Connect wallet" }));
       await user.click(await screen.findByTitle(summary.contract_id));
@@ -340,6 +341,7 @@ describe("App", () => {
 
       expect(await screen.findByText(/1 claim couldn't reach the network/)).toBeInTheDocument();
       expect(screen.getAllByText(/Advance 1/).length).toBeGreaterThan(0);
+      await expectNoA11yViolations(container);
       // Never got far enough to even ask Freighter to sign anything.
       expect(wallet.signTransactionXdr).not.toHaveBeenCalled();
 
