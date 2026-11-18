@@ -19,6 +19,13 @@ export class BadRequestError extends HttpError {
   }
 }
 
+/** The addressed resource does not exist. */
+export class NotFoundError extends HttpError {
+  constructor(message: string) {
+    super(404, message);
+  }
+}
+
 /** The request is well-formed but not permitted — a barred address trying to appear on a new commitment. */
 export class ForbiddenError extends HttpError {
   constructor(message: string) {

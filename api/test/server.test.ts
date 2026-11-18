@@ -294,7 +294,7 @@ describe("server (HTTP layer)", () => {
         payload: { sourcePublicKey: FAKE_PUBLIC_KEY },
       });
       expect(res.statusCode).toBe(400);
-      expect(res.json().error).toMatch(/unknown or unsupported method/);
+      expect(res.json().message).toMatch(/unknown or unsupported method/);
     },
     15_000,
   );
@@ -318,7 +318,7 @@ describe("server (HTTP layer)", () => {
         },
       });
       expect(res.statusCode).toBe(400);
-      expect(res.json().error).toMatch(/claimWindowSecs must be between/);
+      expect(res.json().message).toMatch(/claimWindowSecs must be between/);
     },
     15_000,
   );
@@ -342,7 +342,7 @@ describe("server (HTTP layer)", () => {
         },
       });
       expect(res.statusCode).toBe(400);
-      expect(res.json().error).toMatch(/claimWindowSecs must be between/);
+      expect(res.json().message).toMatch(/claimWindowSecs must be between/);
     },
     15_000,
   );
@@ -368,7 +368,7 @@ describe("server (HTTP layer)", () => {
         },
       });
       expect(res.statusCode).toBe(400);
-      expect(res.json().error).toMatch(/remainderWindowSecs must be between/);
+      expect(res.json().message).toMatch(/remainderWindowSecs must be between/);
     },
     15_000,
   );
@@ -394,7 +394,7 @@ describe("server (HTTP layer)", () => {
         },
       });
       expect(res.statusCode).toBe(400);
-      expect(res.json().error).toMatch(/remainderWindowSecs must be between/);
+      expect(res.json().message).toMatch(/remainderWindowSecs must be between/);
     },
     15_000,
   );
@@ -420,7 +420,7 @@ describe("server (HTTP layer)", () => {
         },
       });
       expect(res.statusCode).toBe(400);
-      expect(res.json().error).toMatch(/deliveryWindowSecs must be between/);
+      expect(res.json().message).toMatch(/deliveryWindowSecs must be between/);
     },
     15_000,
   );
@@ -446,7 +446,7 @@ describe("server (HTTP layer)", () => {
         },
       });
       expect(res.statusCode).toBe(400);
-      expect(res.json().error).toMatch(/deliveryWindowSecs must be between/);
+      expect(res.json().message).toMatch(/deliveryWindowSecs must be between/);
     },
     15_000,
   );
@@ -481,7 +481,7 @@ describe("server (HTTP layer)", () => {
         },
       });
       expect(res.statusCode).toBe(400);
-      expect(res.json().error).toMatch(/contractedQuantity must be a positive integer/);
+      expect(res.json().message).toMatch(/contractedQuantity must be a positive integer/);
     },
     15_000,
   );
@@ -507,7 +507,7 @@ describe("server (HTTP layer)", () => {
         },
       });
       expect(res.statusCode).toBe(400);
-      expect(res.json().error).toMatch(/gradePriceBps must be a non-empty array/);
+      expect(res.json().message).toMatch(/gradePriceBps must be a non-empty array/);
     },
     15_000,
   );
@@ -533,7 +533,7 @@ describe("server (HTTP layer)", () => {
         },
       });
       expect(res.statusCode).toBe(400);
-      expect(res.json().error).toMatch(/gradePriceBps must be a non-empty array/);
+      expect(res.json().message).toMatch(/gradePriceBps must be a non-empty array/);
     },
     15_000,
   );
@@ -587,7 +587,7 @@ describe("server (HTTP layer)", () => {
         },
       });
       expect(res.statusCode).toBe(400);
-      expect(res.json().error).toMatch(/priceAsset must be a non-empty string/);
+      expect(res.json().message).toMatch(/priceAsset must be a non-empty string/);
     },
     15_000,
   );
@@ -614,7 +614,7 @@ describe("server (HTTP layer)", () => {
         },
       });
       expect(res.statusCode).toBe(400);
-      expect(res.json().error).toMatch(/maxAgeSecs must be a positive integer/);
+      expect(res.json().message).toMatch(/maxAgeSecs must be a positive integer/);
     },
     15_000,
   );
@@ -646,7 +646,7 @@ describe("server (HTTP layer)", () => {
         },
       });
       expect(res.statusCode).toBe(400);
-      expect(res.json().error).toMatch(/denominatedAmount must be an integer/);
+      expect(res.json().message).toMatch(/denominatedAmount must be an integer/);
     },
     15_000,
   );
@@ -673,7 +673,7 @@ describe("server (HTTP layer)", () => {
         },
       });
       expect(res.statusCode).toBe(400);
-      expect(res.json().error).toMatch(/denominatedAmount must be positive/);
+      expect(res.json().message).toMatch(/denominatedAmount must be positive/);
     },
     15_000,
   );
@@ -701,7 +701,7 @@ describe("server (HTTP layer)", () => {
         payload: { deliveredQuantity: -1, gradeIndex: 0, sourcePublicKey: FAKE_PUBLIC_KEY },
       });
       expect(res.statusCode).toBe(400);
-      expect(res.json().error).toMatch(/deliveredQuantity must be a non-negative integer/);
+      expect(res.json().message).toMatch(/deliveredQuantity must be a non-negative integer/);
     },
     15_000,
   );
@@ -715,7 +715,7 @@ describe("server (HTTP layer)", () => {
         payload: { deliveredQuantity: 500, gradeIndex: -1, sourcePublicKey: FAKE_PUBLIC_KEY },
       });
       expect(res.statusCode).toBe(400);
-      expect(res.json().error).toMatch(/gradeIndex must be a non-negative integer/);
+      expect(res.json().message).toMatch(/gradeIndex must be a non-negative integer/);
     },
     15_000,
   );
@@ -757,7 +757,7 @@ describe("server (HTTP layer)", () => {
         payload: { members: [], sourcePublicKey: FAKE_PUBLIC_KEY },
       });
       expect(res.statusCode).toBe(400);
-      expect(res.json().error).toMatch(/members must be a non-empty array/);
+      expect(res.json().message).toMatch(/members must be a non-empty array/);
     },
     15_000,
   );
@@ -771,7 +771,7 @@ describe("server (HTTP layer)", () => {
         payload: { members: [{ phoneNumber: "", shareBps: 5_000 }], sourcePublicKey: FAKE_PUBLIC_KEY },
       });
       expect(res.statusCode).toBe(400);
-      expect(res.json().error).toMatch(/non-empty phoneNumber/);
+      expect(res.json().message).toMatch(/non-empty phoneNumber/);
     },
     15_000,
   );
@@ -785,7 +785,7 @@ describe("server (HTTP layer)", () => {
         payload: { members: [{ phoneNumber: "+2348012345678", shareBps: 10_001 }], sourcePublicKey: FAKE_PUBLIC_KEY },
       });
       expect(res.statusCode).toBe(400);
-      expect(res.json().error).toMatch(/shareBps must be an integer between 0 and 10000/);
+      expect(res.json().message).toMatch(/shareBps must be an integer between 0 and 10000/);
     },
     15_000,
   );
@@ -805,7 +805,7 @@ describe("server (HTTP layer)", () => {
         },
       });
       expect(res.statusCode).toBe(400);
-      expect(res.json().error).toMatch(/shareBps sum to 11000/);
+      expect(res.json().message).toMatch(/shareBps sum to 11000/);
     },
     15_000,
   );
@@ -834,12 +834,30 @@ describe("server (HTTP layer)", () => {
     15_000,
   );
 
+  it.each([
+    { label: "unknown tx method", method: "POST", url: `/commitments/${FAKE_CONTRACT_ID}/tx/not_a_real_method`, payload: { sourcePublicKey: FAKE_PUBLIC_KEY } },
+    { label: "confirm-delivery quantity", method: "POST", url: `/commitments/${FAKE_CONTRACT_ID}/tx/confirm-delivery`, payload: { deliveredQuantity: -1, gradeIndex: 0, sourcePublicKey: FAKE_PUBLIC_KEY } },
+    { label: "confirm-delivery grade", method: "POST", url: `/commitments/${FAKE_CONTRACT_ID}/tx/confirm-delivery`, payload: { deliveredQuantity: 5, gradeIndex: -1, sourcePublicKey: FAKE_PUBLIC_KEY } },
+    { label: "initialize window", method: "POST", url: `/commitments/${FAKE_CONTRACT_ID}/tx/initialize`, payload: { totalAmount: "1000000000", claimWindowSecs: "1", sourcePublicKey: FAKE_PUBLIC_KEY } },
+    { label: "initialize amount", method: "POST", url: `/commitments/${FAKE_CONTRACT_ID}/tx/initialize`, payload: { totalAmount: "abc", sourcePublicKey: FAKE_PUBLIC_KEY } },
+    { label: "set-allocation members", method: "POST", url: `/commitments/${FAKE_CONTRACT_ID}/tx/set-allocation`, payload: { members: [], sourcePublicKey: FAKE_PUBLIC_KEY } },
+    { label: "erasure memberHash", method: "DELETE", url: "/allocation-members/not-a-real-hash", payload: undefined },
+  ] as const)("returns the {statusCode, error, message} envelope for $label", async ({ method, url, payload }) => {
+    const res = await app.inject({ method, url, payload });
+    expect(res.statusCode).toBe(400);
+    const body = res.json();
+    expect(Object.keys(body).sort()).toEqual(["error", "message", "statusCode"]);
+    expect(body.statusCode).toBe(400);
+    expect(body.error).toBe("Bad Request");
+    expect(typeof body.message).toBe("string");
+  });
+
   it(
     "rejects a malformed memberHash on the erasure endpoint",
     async () => {
       const res = await app.inject({ method: "DELETE", url: "/allocation-members/not-a-real-hash" });
       expect(res.statusCode).toBe(400);
-      expect(res.json().error).toMatch(/64-character hex string/);
+      expect(res.json().message).toMatch(/64-character hex string/);
     },
     15_000,
   );
@@ -849,6 +867,8 @@ describe("server (HTTP layer)", () => {
     async () => {
       const res = await app.inject({ method: "DELETE", url: `/allocation-members/${"0".repeat(64)}` });
       expect(res.statusCode).toBe(404);
+      expect(Object.keys(res.json()).sort()).toEqual(["error", "message", "statusCode"]);
+      expect(res.json()).toMatchObject({ statusCode: 404, error: "Not Found" });
     },
     15_000,
   );
@@ -1306,7 +1326,7 @@ describe("server (HTTP layer)", () => {
         payload: { ...validInitializeBody(), ...overrides },
       });
       expect(res.statusCode).toBe(400);
-      expect(res.json().error).toMatch(pattern);
+      expect(res.json().message).toMatch(pattern);
     });
 
     it(
@@ -1476,7 +1496,7 @@ describe("server (HTTP layer)", () => {
         payload: { ...validAllocationBody, members },
       });
       expect(res.statusCode).toBe(400);
-      expect(res.json().error).toMatch(pattern);
+      expect(res.json().message).toMatch(pattern);
     });
 
     it(
@@ -1488,7 +1508,7 @@ describe("server (HTTP layer)", () => {
           payload: { members: "not-an-array", sourcePublicKey: FAKE_PUBLIC_KEY },
         });
         expect(res.statusCode).toBe(400);
-        expect(res.json().error).toMatch(/members must be a non-empty array/);
+        expect(res.json().message).toMatch(/members must be a non-empty array/);
       },
       15_000,
     );

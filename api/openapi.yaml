@@ -515,16 +515,19 @@ components:
                   - type: 'null'
                   - $ref: '#/components/schemas/Proposal'
     Error:
-      description: Error response. Validation and domain errors may return an `error` field; the configured error handler returns statusCode, error, and message.
+      description: Error response using the shared {statusCode, error, message} envelope.
       content:
         application/json:
           schema:
-            type: object
-            properties:
-              statusCode: { type: integer }
-              error: { type: string }
-              message: { type: string }
+            $ref: '#/components/schemas/Error'
   schemas:
+    Error:
+      type: object
+      required: [statusCode, error, message]
+      properties:
+        statusCode: { type: integer, example: 400 }
+        error: { type: string, example: Bad Request }
+        message: { type: string }
     InitializeRequest:
       type: object
       required: [buyer, cooperative, warehouseOperator, token, totalAmount, advance1Bps, advance2Bps, claimWindowSecs, remainderWindowSecs, deliveryWindowSecs, contractedQuantity, gradePriceBps, sourcePublicKey]
