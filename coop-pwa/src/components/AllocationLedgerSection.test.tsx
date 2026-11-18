@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { AllocationLedgerSection } from "./AllocationLedgerSection";
 import type { CommitmentDetail } from "../api";
 import * as wallet from "../wallet";
+import { expectNoA11yViolations } from "../a11y";
 
 // Same mocking shape as CancelSection.test.tsx/ReassignBuyerSection.test.tsx
 // -- no real Freighter extension exists in this environment; what's
@@ -140,14 +141,21 @@ describe("AllocationLedgerSection", () => {
 
   it("shows the recorded ledger (hashes + shares, never a phone number) once one exists, for any viewer", async () => {
     fetchMock.mockResolvedValueOnce(
-      jsonResponse({ members: [{ memberHash: "abcdef0123456789", shareBps: 6000 }] }),
+      jsonResponse({
+        members: [
+          { memberHash: "abcdef0123456789", shareBps: 6000 },
+          { memberHash: "0123456789abcdef", shareBps: 2500 },
+          { memberHash: "fedcba9876543210", shareBps: 1500 },
+        ],
+      }),
     );
-    render(<AllocationLedgerSection commitment={baseCommitment} contractId="CXXX" walletAddress={null} />);
+    const { container } = render(<AllocationLedgerSection commitment={baseCommitment} contractId="CXXX" walletAddress={null} />);
 
     expect(await screen.findByText("Allocation ledger")).toBeInTheDocument();
     expect(screen.getByText("60.00%")).toBeInTheDocument();
     expect(screen.getByText(/abcdef012345/)).toBeInTheDocument();
     expect(screen.queryByText("Record member allocation")).not.toBeInTheDocument();
+    await expectNoA11yViolations(container);
   });
 
   it("adds and removes member rows", async () => {

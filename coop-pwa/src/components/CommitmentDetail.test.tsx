@@ -3,6 +3,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { CommitmentDetail } from "./CommitmentDetail";
 import type { CommitmentDetail as CommitmentDetailType } from "../api";
+import { expectNoA11yViolations } from "../a11y";
 
 const baseCommitment: CommitmentDetailType = {
   status: "Locked",
@@ -83,9 +84,10 @@ describe("CommitmentDetail", () => {
     expect(screen.getByText("expired, reclaimable")).toBeInTheDocument();
   });
 
-  it("renders the current status badge", () => {
-    render(<CommitmentDetail commitment={{ ...baseCommitment, status: "Settled" }} contractId="CXXX" {...noopProps} />);
+  it("renders the current status badge", async () => {
+    const { container } = render(<CommitmentDetail commitment={{ ...baseCommitment, status: "Settled" }} contractId="CXXX" {...noopProps} />);
     expect(screen.getByText("Settled")).toHaveAttribute("data-status", "Settled");
+    await expectNoA11yViolations(container);
   });
 });
 
@@ -114,10 +116,10 @@ describe("CommitmentDetail's claim action", () => {
     expect(screen.getByText("1 hour")).toBeInTheDocument();
   });
 
-  it("offers Claim for an open, unclaimed, unexpired tranche when connected as the cooperative", () => {
+  it("offers Claim for an open, unclaimed, unexpired tranche when connected as the cooperative", async () => {
     const futureDeadline = String(Math.floor(Date.now() / 1000) + 3600);
     const commitment = { ...baseCommitment, advance1_deadline: futureDeadline };
-    render(
+    const { container } = render(
       <CommitmentDetail
         commitment={commitment}
         contractId="CXXX"
@@ -126,6 +128,7 @@ describe("CommitmentDetail's claim action", () => {
       />,
     );
     expect(screen.getByRole("button", { name: "Claim" })).toBeInTheDocument();
+    await expectNoA11yViolations(container);
   });
 
   it("does not offer Claim for a tranche that hasn't opened yet (deadline 0)", () => {

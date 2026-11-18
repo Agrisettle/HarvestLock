@@ -2,12 +2,13 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ConfirmDeliveryForm } from "./ConfirmDeliveryForm";
+import { expectNoA11yViolations } from "../a11y";
 
 const GRADE_PRICE_BPS = [10_000, 9_000, 7_500];
 
 describe("ConfirmDeliveryForm", () => {
-  it("defaults the delivered quantity to the full contracted amount and grade to index 0", () => {
-    render(
+  it("defaults the delivered quantity to the full contracted amount and grade to index 0", async () => {
+    const { container } = render(
       <ConfirmDeliveryForm
         contractedQuantity={1000}
         gradePriceBps={GRADE_PRICE_BPS}
@@ -18,6 +19,7 @@ describe("ConfirmDeliveryForm", () => {
     );
     expect(screen.getByLabelText("Delivered quantity")).toHaveValue(1000);
     expect(screen.getByLabelText("Grade")).toHaveValue("0");
+    await expectNoA11yViolations(container);
   });
 
   it("lists every grade_price_bps entry as a selectable option", () => {
@@ -86,7 +88,7 @@ describe("ConfirmDeliveryForm", () => {
   it("disables submit while a negative or non-integer quantity is entered", async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
-    render(
+    const { container } = render(
       <ConfirmDeliveryForm
         contractedQuantity={1000}
         gradePriceBps={GRADE_PRICE_BPS}
@@ -100,10 +102,11 @@ describe("ConfirmDeliveryForm", () => {
     await user.type(screen.getByLabelText("Delivered quantity"), "-5");
 
     expect(screen.getByRole("button", { name: "Confirm delivery" })).toBeDisabled();
+    await expectNoA11yViolations(container);
   });
 
-  it("shows submitError and disables submit while submitting", () => {
-    render(
+  it("shows submitError and disables submit while submitting", async () => {
+    const { container } = render(
       <ConfirmDeliveryForm
         contractedQuantity={1000}
         gradePriceBps={GRADE_PRICE_BPS}
@@ -114,5 +117,6 @@ describe("ConfirmDeliveryForm", () => {
     );
     expect(screen.getByText("warehouse_operator auth required")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Confirming…" })).toBeDisabled();
+    await expectNoA11yViolations(container);
   });
 });
