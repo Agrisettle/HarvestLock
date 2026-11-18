@@ -116,7 +116,9 @@ describe("App", () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ error: "db down" }, false));
     render(<App />);
 
-    expect(await screen.findByText(/-> 500/)).toBeInTheDocument();
+    expect(await screen.findByText(/db down/)).toBeInTheDocument();
+    // Only the human message: no request path, status code or raw JSON body.
+    expect(screen.queryByText(/->|statusCode|"error"/)).not.toBeInTheDocument();
   });
 
   it("shows the empty state when the list request succeeds with no commitments", async () => {
@@ -188,7 +190,7 @@ describe("App", () => {
     await user.type(screen.getByLabelText("Contract ID"), "CUNKNOWN");
     await user.click(screen.getByRole("button", { name: "Look up" }));
 
-    expect(await screen.findByText(/\/commitments\/CUNKNOWN -> 404:.*contract not found on chain/)).toBeInTheDocument();
+    expect(await screen.findByText(/contract not found on chain/)).toBeInTheDocument();
   });
 
   it("marks the checkpoint: build -> sign -> submit -> refresh, end to end through the app", async () => {

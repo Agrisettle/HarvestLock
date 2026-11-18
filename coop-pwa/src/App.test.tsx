@@ -168,7 +168,9 @@ describe("App", () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ error: "db down" }, false));
     render(<App />);
 
-    expect(await screen.findByText(/-> 500/)).toBeInTheDocument();
+    expect(await screen.findByText(/db down/)).toBeInTheDocument();
+    // Only the human message: no request path, status code or raw JSON body.
+    expect(screen.queryByText(/->|statusCode|"error"/)).not.toBeInTheDocument();
   });
 
   it("loads and renders detail when a cached row is clicked", async () => {

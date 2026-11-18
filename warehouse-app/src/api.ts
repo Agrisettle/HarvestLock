@@ -62,6 +62,56 @@ export interface CommitmentSummary {
   updated_at: string;
 }
 
+/**
+ * A non-ok API response. `message` is the human-readable reason only (what
+ * components show); the request path and raw response body stay on the
+ * object for debugging but are never part of the message.
+ */
+export class ApiError extends Error {
+  readonly status: number;
+  readonly path: string;
+  readonly body: string;
+  /** The contract error code (e.g. "Error(Contract, #23)") when the API message carries one. */
+  readonly contractError?: string;
+  /** Seconds from a 429's Retry-After header, when present. */
+  readonly retryAfterSecs?: number;
+
+  constructor(path: string, status: number, body: string, message: string, extra: { contractError?: string; retryAfterSecs?: number } = {}) {
+    super(message);
+    this.name = "ApiError";
+    this.path = path;
+    this.status = status;
+    this.body = body;
+    this.contractError = extra.contractError;
+    this.retryAfterSecs = extra.retryAfterSecs;
+  }
+}
+
+/** Builds an ApiError from a non-ok response: prefers the API's `message`, falls back to `error` (older handlers), then to the status text. */
+async function toApiError(path: string, res: Response): Promise<ApiError> {
+  const body = await res.text();
+  let message = "";
+  try {
+    const parsed: unknown = JSON.parse(body);
+    if (parsed && typeof parsed === "object") {
+      const { message: m, error: e } = parsed as { message?: unknown; error?: unknown };
+      if (typeof m === "string" && m) message = m;
+      else if (typeof e === "string" && e) message = e;
+    }
+  } catch {
+    // Non-JSON body: fall through to the status text.
+  }
+  let retryAfterSecs: number | undefined;
+  if (res.status === 429) {
+    const n = Number(res.headers?.get("Retry-After"));
+    if (Number.isFinite(n) && n > 0) retryAfterSecs = Math.ceil(n);
+    message = retryAfterSecs !== undefined ? `Too many requests, try again in ${retryAfterSecs} s` : "Too many requests, try again shortly";
+  }
+  if (!message) message = res.statusText || `Request failed (${res.status})`;
+  const contractError = /Error\(Contract, #\d+\)/.exec(message)?.[0];
+  return new ApiError(path, res.status, body, message, { contractError, retryAfterSecs });
+}
+
 // Retry policy: only a transport failure (fetch rejecting) is ever retried,
 // never a server rejection, and only for calls that are safe to replay.
 // GETs always are. A POST is retried only when the call opts in with
@@ -74,8 +124,7 @@ export interface CommitmentSummary {
 async function get<T>(path: string): Promise<T> {
   const res = await withRetry(() => fetch(`${API_URL}${path}`));
   if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`${path} -> ${res.status}: ${body}`);
+    throw await toApiError(path, res);
   }
   return res.json() as Promise<T>;
 }
@@ -89,8 +138,7 @@ async function post<T>(path: string, body: unknown, opts: { retry?: boolean } = 
     });
   const res = opts.retry ? await withRetry(send) : await send();
   if (!res.ok) {
-    const responseBody = await res.text();
-    throw new Error(`${path} -> ${res.status}: ${responseBody}`);
+    throw await toApiError(path, res);
   }
   return res.json() as Promise<T>;
 }
