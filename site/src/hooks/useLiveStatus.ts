@@ -32,6 +32,9 @@ export function useLiveStatus(contractId: string): LiveStatus | null {
     setLiveStatus(null);
 
     const refresh = async () => {
+      // Background tabs don't poll: each poll costs the API a chain
+      // simulation and a DB write. We refresh on becoming visible instead.
+      if (document.visibilityState === "hidden") return;
       try {
         const res = await fetch(`${apiUrl}/commitments/${encodeURIComponent(contractId)}`);
         if (!res.ok) return;
@@ -52,9 +55,18 @@ export function useLiveStatus(contractId: string): LiveStatus | null {
       void refresh();
     }, REFRESH_INTERVAL_MS);
 
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        setNow(Date.now());
+        void refresh();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
     return () => {
       cancelled = true;
       window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [contractId]);
 
