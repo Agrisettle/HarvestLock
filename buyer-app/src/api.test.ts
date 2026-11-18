@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { getCommitment, submitTx } from "./api";
+import { getCommitment, submitTx, buildTx, deployCommitment } from "./api";
 
 /**
  * These three apps each keep their own copy of api.ts rather than
@@ -96,12 +96,26 @@ describe("api transient-network retry", () => {
     expect(fetch).toHaveBeenCalledTimes(2);
   }, 10_000);
 
-  it("post gets the same retry treatment as get", async () => {
+  it("never retries submitTx: the first attempt may already have reached the API", async () => {
+    vi.mocked(fetch).mockRejectedValue(new TypeError("Failed to fetch"));
+
+    await expect(submitTx("SIGNED_XDR")).rejects.toThrow("Failed to fetch");
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("never retries /commitments/deploy: a replay would deploy a second, orphaned contract", async () => {
+    vi.mocked(fetch).mockRejectedValue(new TypeError("Failed to fetch"));
+
+    await expect(deployCommitment()).rejects.toThrow("Failed to fetch");
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("still retries POSTs that only build unsigned XDR", async () => {
     vi.mocked(fetch)
       .mockRejectedValueOnce(new TypeError("Failed to fetch"))
-      .mockResolvedValueOnce(ok({ status: "SUCCESS", hash: "abc" }));
+      .mockResolvedValueOnce(ok({ xdr: "UNSIGNED" }));
 
-    await expect(submitTx("SIGNED_XDR")).resolves.toEqual({ status: "SUCCESS", hash: "abc" });
+    await expect(buildTx("CABC", "lock", "GKEY")).resolves.toEqual({ xdr: "UNSIGNED" });
     expect(fetch).toHaveBeenCalledTimes(2);
   }, 10_000);
 
