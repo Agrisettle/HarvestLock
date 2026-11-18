@@ -5,7 +5,7 @@ import { STATUS_CODES } from "node:http";
 import { getBuildInfo } from "./buildInfo.js";
 import { StrKey, Address, nativeToScVal, xdr } from "@stellar/stellar-sdk";
 import { getAllocation, getCommitment, getOracleConfig, getOracleRate, type Commitment } from "./stellar/client.js";
-import { deployContractInstance, initializeArgs } from "./stellar/deploy.js";
+import { assertDeployerBalance, deployContractInstance, initializeArgs } from "./stellar/deploy.js";
 import { buildInvokeTransaction, submitSignedTransaction } from "./stellar/tx.js";
 import { upsertCommitment, listCommitments, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from "./db/commitments.js";
 import { pool } from "./db/pool.js";
@@ -396,7 +396,14 @@ export async function buildServer() {
   // JSON bodies get the body parser's own 400/415 before this handler
   // runs). Its remaining failure modes are an operator misconfiguration
   // (ConfigurationError, deliberately a 500) and the network itself.
-  app.post("/commitments/deploy", async (_req, reply) => {
+  // Per-route limit, far below the global one: every call spends real XLM
+  // from the deployer, which also pays for every read simulation.
+  const deployRateLimit = {
+    max: Number(process.env.DEPLOY_RATE_LIMIT_MAX ?? 5),
+    timeWindow: Number(process.env.DEPLOY_RATE_LIMIT_WINDOW_MS ?? 10 * 60_000),
+  };
+  app.post("/commitments/deploy", { config: { rateLimit: deployRateLimit } }, async (req, reply) => {
+    await assertDeployerBalance(req.log);
     const contractId = await deployContractInstance();
     return reply.code(201).send({ contractId });
   });
