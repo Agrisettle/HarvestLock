@@ -108,6 +108,12 @@ describe("CommitmentDetail's claim action", () => {
     expect(screen.queryByText("Action")).not.toBeInTheDocument();
   });
 
+  it("shows the total in USDC units and the claim window in hours, not raw stroops/seconds", () => {
+    render(<CommitmentDetail commitment={baseCommitment} contractId="CXXX" {...noopProps} walletAddress={null} />);
+    expect(screen.getByText("100.00")).toBeInTheDocument();
+    expect(screen.getByText("1 hour")).toBeInTheDocument();
+  });
+
   it("offers Claim for an open, unclaimed, unexpired tranche when connected as the cooperative", () => {
     const futureDeadline = String(Math.floor(Date.now() / 1000) + 3600);
     const commitment = { ...baseCommitment, advance1_deadline: futureDeadline };

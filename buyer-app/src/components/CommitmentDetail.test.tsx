@@ -108,7 +108,7 @@ describe("CommitmentDetail's shared formatting", () => {
   it("leads with total locked, not a raw party address", () => {
     render(<CommitmentDetail commitment={baseCommitment} contractId="CXXX" {...noopProps} />);
     expect(screen.getByText("Total locked")).toBeInTheDocument();
-    expect(screen.getByText(baseCommitment.total_amount)).toBeInTheDocument();
+    expect(screen.getByText("100.00")).toBeInTheDocument();
   });
 });
 
