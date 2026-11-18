@@ -1,4 +1,5 @@
 import { withRetry } from "./retry";
+import { OfflineError } from "./offlineQueue";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
 
@@ -121,8 +122,23 @@ async function toApiError(path: string, res: Response): Promise<ApiError> {
 // `/commitments/deploy` (would deploy a second, orphaned contract),
 // `/transactions/submit` (re-sends a possibly in-flight transaction) and the
 // propose/sign calls (can race themselves) are never retried.
+// `fetch` rejecting means no HTTP response at all. Wrapping exactly that
+// (and nothing else) in OfflineError is what lets the offline claim queue
+// tell "no network" apart from an unrelated TypeError elsewhere.
+async function request(url: string, init: RequestInit | undefined, retry: boolean): Promise<Response> {
+  const send = () => (init ? fetch(url, init) : fetch(url));
+  try {
+    return await (retry ? withRetry(send) : send());
+  } catch (err) {
+    if (err instanceof TypeError) {
+      throw new OfflineError(err.message, { cause: err });
+    }
+    throw err;
+  }
+}
+
 async function get<T>(path: string): Promise<T> {
-  const res = await withRetry(() => fetch(`${API_URL}${path}`));
+  const res = await request(`${API_URL}${path}`, undefined, true);
   if (!res.ok) {
     throw await toApiError(path, res);
   }
@@ -130,13 +146,15 @@ async function get<T>(path: string): Promise<T> {
 }
 
 async function post<T>(path: string, body: unknown, opts: { retry?: boolean } = {}): Promise<T> {
-  const send = () =>
-    fetch(`${API_URL}${path}`, {
+  const res = await request(
+    `${API_URL}${path}`,
+    {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
-    });
-  const res = opts.retry ? await withRetry(send) : await send();
+    },
+    opts.retry === true,
+  );
   if (!res.ok) {
     throw await toApiError(path, res);
   }
