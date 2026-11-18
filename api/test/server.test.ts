@@ -1,11 +1,12 @@
 import "dotenv/config";
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { Keypair, StrKey, Address, xdr } from "@stellar/stellar-sdk";
 import { randomBytes } from "node:crypto";
 import { buildServer } from "../src/server.js";
 import { recordBuyerDefault } from "../src/db/reputation.js";
 import { pool } from "../src/db/pool.js";
+import { server as rpcServer } from "../src/stellar/rpc.js";
 import { MAX_PAGE_SIZE } from "../src/db/commitments.js";
 import { createProposal } from "../src/db/pendingMultisigProposals.js";
 
@@ -1600,4 +1601,50 @@ describe("rate limiting (limiter engages; 429 carries Retry-After)", () => {
     },
     30_000,
   );
+});
+
+describe("POST /commitments/deploy protection", () => {
+  let deployApp: FastifyInstance;
+  const savedEnv = { ...process.env };
+
+  function stubBalance(xlm: bigint) {
+    return vi.spyOn(rpcServer, "getAccountEntry").mockResolvedValue({ balance: xlm * 10_000_000n } as never);
+  }
+
+  beforeAll(async () => {
+    process.env.DEPLOYER_SECRET_KEY = Keypair.random().secret();
+    process.env.DEPLOY_RATE_LIMIT_MAX = "3";
+    process.env.NODE_ENV = "development";
+    try {
+      deployApp = await buildServer();
+    } finally {
+      process.env.NODE_ENV = savedEnv.NODE_ENV;
+      process.env.DEPLOY_RATE_LIMIT_MAX = savedEnv.DEPLOY_RATE_LIMIT_MAX;
+      if (savedEnv.DEPLOY_RATE_LIMIT_MAX === undefined) delete process.env.DEPLOY_RATE_LIMIT_MAX;
+    }
+  });
+
+  afterAll(() => {
+    vi.restoreAllMocks();
+    if (savedEnv.DEPLOYER_SECRET_KEY === undefined) delete process.env.DEPLOYER_SECRET_KEY;
+    else process.env.DEPLOYER_SECRET_KEY = savedEnv.DEPLOYER_SECRET_KEY;
+  });
+
+  it("returns 503 without submitting anything when the deployer is below the balance floor", async () => {
+    stubBalance(1n);
+    const send = vi.spyOn(rpcServer, "sendTransaction");
+    const res = await deployApp.inject({ method: "POST", url: "/commitments/deploy" });
+    expect(res.statusCode).toBe(503);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("answers 429 on the deploy route well before the global limit", async () => {
+    stubBalance(1n);
+    const statuses: number[] = [];
+    for (let i = 0; i < 4; i++) {
+      statuses.push((await deployApp.inject({ method: "POST", url: "/commitments/deploy" })).statusCode);
+    }
+    // One request was already spent by the 503 test above (same IP bucket).
+    expect(statuses).toEqual([503, 503, 429, 429]);
+  });
 });

@@ -4,6 +4,7 @@ import { CancelSection } from "./CancelSection";
 import { ReassignBuyerSection } from "./ReassignBuyerSection";
 import { DisputeSection } from "./DisputeSection";
 import { AddressChip } from "./AddressChip";
+import { formatDuration, formatTokenAmount } from "../amount";
 
 const deadlineFormatter = new Intl.DateTimeFormat("en-GB", {
   dateStyle: "medium",
@@ -124,7 +125,7 @@ export function CommitmentDetail({
       <dl className="party-grid">
         <div>
           <dt>Total locked</dt>
-          <dd>{commitment.total_amount}</dd>
+          <dd>{formatTokenAmount(commitment.total_amount)}</dd>
         </div>
         <div>
           <dt>Cooperative</dt>
@@ -152,7 +153,7 @@ export function CommitmentDetail({
         </div>
         <div>
           <dt>Claim window</dt>
-          <dd>{commitment.claim_window_secs}s</dd>
+          <dd>{formatDuration(commitment.claim_window_secs)}</dd>
         </div>
       </dl>
 

@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { DisputeSection } from "./DisputeSection";
 import type { CommitmentDetail } from "../api";
 import * as wallet from "../wallet";
+import { expectNoA11yViolations } from "../a11y";
 
 // Same mocking shape as CancelSection.test.tsx/ReassignBuyerSection.test.tsx
 // -- no real Freighter extension exists in this environment; what's
@@ -169,7 +170,7 @@ describe("DisputeSection", () => {
     ); // proposeResolveDispute response
 
     const user = userEvent.setup();
-    render(
+    const { container } = render(
       <DisputeSection
         commitment={disputed}
         contractId="CXXX"
@@ -188,6 +189,7 @@ describe("DisputeSection", () => {
     );
     expect(proposeCall).toBeDefined();
     expect(String(proposeCall?.[1]?.body)).toContain(baseCommitment.warehouse_operator);
+    await expectNoA11yViolations(container);
   });
 
   it("shows an approve button for a pending signer, and approving signs via signAuthEntry then waits for the remaining party", async () => {
@@ -249,7 +251,7 @@ describe("DisputeSection", () => {
     const onDisputeChanged = vi.fn();
 
     const user = userEvent.setup();
-    render(
+    const { container } = render(
       <DisputeSection
         commitment={disputed}
         contractId="CXXX"
@@ -266,5 +268,6 @@ describe("DisputeSection", () => {
     const submitCall = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/transactions/submit"));
     expect(submitCall).toBeDefined();
     expect(String(submitCall?.[1]?.body)).toContain("prop-1"); // completeProposalId included
+    await expectNoA11yViolations(container);
   });
 });

@@ -297,13 +297,14 @@ describe("App", () => {
     await user.type(screen.getByLabelText("Cooperative address"), "GCOOPADDR");
     await user.type(screen.getByLabelText("Warehouse operator address"), "GWHADDR");
     await user.type(screen.getByLabelText("Token contract address"), "CTOKENADDR");
-    await user.type(screen.getByLabelText("Total amount (stroops)"), "1000000000");
-    await user.clear(screen.getByLabelText("Advance 1 share (basis points)"));
-    await user.type(screen.getByLabelText("Advance 1 share (basis points)"), "1500");
-    await user.clear(screen.getByLabelText("Advance 2 share (basis points)"));
-    await user.type(screen.getByLabelText("Advance 2 share (basis points)"), "2000");
-    await user.clear(screen.getByLabelText("Claim window (seconds)"));
-    await user.type(screen.getByLabelText("Claim window (seconds)"), "3600");
+    await user.type(screen.getByLabelText("Total amount (USDC)"), "100");
+    await user.clear(screen.getByLabelText("Advance 1 share (%)"));
+    await user.type(screen.getByLabelText("Advance 1 share (%)"), "15");
+    await user.clear(screen.getByLabelText("Advance 2 share (%)"));
+    await user.type(screen.getByLabelText("Advance 2 share (%)"), "20");
+    await user.clear(screen.getByLabelText("Claim window"));
+    await user.type(screen.getByLabelText("Claim window"), "1");
+    await user.selectOptions(screen.getByLabelText("Claim window unit"), "hours");
     await user.type(screen.getByLabelText(/Contracted quantity/), "1000");
     await user.click(screen.getByRole("checkbox", { name: /Roles & Responsibilities/ }));
 

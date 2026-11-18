@@ -45,6 +45,8 @@ Fund the new public address on Stellar testnet (friendbot or faucet) so it can p
 **`DATABASE_URL`:**
 Create a new Neon database or rotate the Neon password in the Neon console, then copy the new connection string.
 
+Fund it above `DEPLOYER_MIN_BALANCE_XLM` (default 10 XLM): `POST /commitments/deploy` returns 503 while the deployer is below that floor, and logs a warning below `DEPLOYER_BALANCE_WARN_XLM` (default 25). The route is also limited per IP by `DEPLOY_RATE_LIMIT_MAX` / `DEPLOY_RATE_LIMIT_WINDOW_MS` (default 5 per 10 minutes). Tune all four in Render's environment.
+
 ### Step 2: Add the new secret to Render
 
 1. Open the Render dashboard → `harvestlock-api` service → Environment.

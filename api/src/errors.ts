@@ -39,6 +39,13 @@ export class ForbiddenError extends HttpError {
  * *why* simulation failed, that's the API's actual feedback mechanism,
  * not a bug to paper over.
  */
+/** The service cannot do this right now (e.g. the deployer account is below its balance floor). */
+export class ServiceUnavailableError extends HttpError {
+  constructor(message: string) {
+    super(503, message);
+  }
+}
+
 export class ConfigurationError extends Error {
   constructor(message: string) {
     super(message);

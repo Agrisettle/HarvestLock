@@ -118,3 +118,13 @@ reader (this project's own stated rule — see the main repo's
 time too — see `buyer-app/README.md`'s "Grade price schedule + FX/oracle
 fields" entry. Still correctly not this app's job either way —
 `mark_checkpoint`/`confirm_delivery` never touch oracle config.
+
+## Accessibility assertions in component tests
+
+`src/a11y.ts` exports `expectNoA11yViolations(container)`, which runs
+axe-core against a rendered component. To cover a new component, take the
+`container` from the existing `render(...)` in its test and end the test
+with `await expectNoA11yViolations(container);` for each state that
+matters (empty, error, pending, ready). `color-contrast` is disabled
+because jsdom can't compute it; contrast stays a manual and Lighthouse
+check (#145, #152).

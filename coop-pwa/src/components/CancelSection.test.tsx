@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { CancelSection } from "./CancelSection";
 import type { CommitmentDetail } from "../api";
 import * as wallet from "../wallet";
+import { expectNoA11yViolations } from "../a11y";
 
 // Same mocking shape as App.test.tsx -- no real Freighter extension exists
 // in this environment; what's verified here is CancelSection's own
@@ -113,7 +114,7 @@ describe("CancelSection", () => {
     ); // proposeCancel response
 
     const user = userEvent.setup();
-    render(
+    const { container } = render(
       <CancelSection
         commitment={baseCommitment}
         contractId="CXXX"
@@ -128,6 +129,7 @@ describe("CancelSection", () => {
     expect(await screen.findByText(/waiting for the other party to approve/i)).toBeInTheDocument();
     const proposeCall = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/tx/cancel/propose"));
     expect(proposeCall).toBeDefined();
+    await expectNoA11yViolations(container);
   });
 
   it("shows an approve button when the connected wallet has a pending entry, and approving signs it via signAuthEntry", async () => {
@@ -177,7 +179,7 @@ describe("CancelSection", () => {
     const onCancelled = vi.fn();
 
     const user = userEvent.setup();
-    render(
+    const { container } = render(
       <CancelSection
         commitment={baseCommitment}
         contractId="CXXX"
@@ -194,6 +196,7 @@ describe("CancelSection", () => {
     const submitCall = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/transactions/submit"));
     expect(submitCall).toBeDefined();
     expect(String(submitCall?.[1]?.body)).toContain("prop-1"); // completeProposalId included
+    await expectNoA11yViolations(container);
   });
 
   it("stops the 10-second proposal poll once it becomes this viewer's own turn to finalize", async () => {

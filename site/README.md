@@ -52,6 +52,7 @@ cp .env.example .env   # optional — only for the Status section's live badge
 npm run dev       # http://localhost:5173
 npm run build     # production build to dist/ (typechecks: tsc -b && vite build)
 npm run preview   # serve the production build locally
+npm test          # Vitest + jsdom (src/**/*.test.ts); CI runs it too
 ```
 
 `.env` really is optional — `VITE_API_URL` is its only knob, and
