@@ -14,6 +14,11 @@
  * for) but *resolves* for every HTTP response, however bad the status.
  * Non-ok responses are handled and thrown as ordinary errors outside the
  * retry loop, so a server rejection is never replayed.
+ *
+ * Which calls may use it: GETs, and POSTs that explicitly opt in with
+ * `{ retry: true }` in api.ts (building unsigned XDR is safe to replay).
+ * A transport failure can happen after the request already reached the
+ * API, so deploy, submit and propose/sign calls never retry.
  */
 export async function withRetry<T>(
   fn: () => Promise<T>,

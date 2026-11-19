@@ -16,11 +16,16 @@ import { AddressChip } from "./AddressChip";
 export function OfflineQueueBanner({
   queuedClaims,
   retryingId,
+  retryErrors = {},
   onRetry,
+  onDismiss,
 }: {
   queuedClaims: QueuedClaim[];
   retryingId: number | null;
+  /** Why a claim's last retry failed, keyed by queue id. */
+  retryErrors?: Record<number, string>;
   onRetry: (claim: QueuedClaim) => void;
+  onDismiss?: (claim: QueuedClaim) => void;
 }) {
   if (queuedClaims.length === 0) return null;
 
@@ -51,6 +56,16 @@ export function OfflineQueueBanner({
             >
               {retryingId === claim.id ? "Retrying…" : "Retry"}
             </button>
+            {retryErrors[claim.id] && onDismiss && (
+              <button className="action-button secondary" onClick={() => onDismiss(claim)} disabled={retryingId !== null}>
+                Dismiss
+              </button>
+            )}
+            {retryErrors[claim.id] && (
+              <div className="error-banner" role="alert">
+                {retryErrors[claim.id]}
+              </div>
+            )}
           </li>
         ))}
       </ul>

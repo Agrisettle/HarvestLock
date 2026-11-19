@@ -34,6 +34,9 @@ export default function App() {
 
   const [queuedClaims, setQueuedClaims] = useState<QueuedClaim[]>([]);
   const [retryingId, setRetryingId] = useState<number | null>(null);
+  // Per-item retry failures, shown in the banner itself so they stay visible
+  // whatever commitment (or none) is selected.
+  const [retryErrors, setRetryErrors] = useState<Record<number, string>>({});
 
   // Best-effort: IndexedDB can be unavailable (private-browsing mode in
   // some browsers) without that being this app's problem to surface as
@@ -148,6 +151,7 @@ export default function App() {
     (claim: QueuedClaim) => {
       if (!walletAddress) return;
       setRetryingId(claim.id);
+      setRetryErrors(({ [claim.id]: _cleared, ...rest }) => rest);
       const method = claim.tranche === 1 ? "claim_advance_1" : "claim_advance_2";
       buildTx(claim.contractId, method, walletAddress)
         .then(({ xdr }) => signTransactionXdr(xdr, walletAddress))
@@ -161,15 +165,23 @@ export default function App() {
         })
         .catch((err: unknown) => {
           if (isOfflineError(err)) return; // still offline -- leave it queued, say nothing new
-          // A real rejection, not just "still offline" -- don't retry
-          // this forever, surface why and let the cooperative decide
-          // what to do next.
-          removeQueuedClaim(claim.id).then(refreshQueue);
-          setClaimError(err instanceof Error ? err.message : String(err));
+          // A real rejection, not just "still offline". Keep the item and
+          // show why on it in the banner: the cooperative decides whether
+          // to retry again or dismiss it, and it never vanishes unseen.
+          const message = err instanceof Error ? err.message : String(err);
+          setRetryErrors((prev) => ({ ...prev, [claim.id]: message }));
         })
         .finally(() => setRetryingId(null));
     },
     [walletAddress, selectedId, refreshQueue],
+  );
+
+  const dismissQueuedClaim = useCallback(
+    (claim: QueuedClaim) => {
+      removeQueuedClaim(claim.id).then(refreshQueue);
+      setRetryErrors(({ [claim.id]: _dismissed, ...rest }) => rest);
+    },
+    [refreshQueue],
   );
 
   return (
@@ -191,7 +203,13 @@ export default function App() {
       <main>
         {walletError && <div className="error-banner">{walletError}</div>}
 
-        <OfflineQueueBanner queuedClaims={queuedClaims} retryingId={retryingId} onRetry={retryQueuedClaim} />
+        <OfflineQueueBanner
+          queuedClaims={queuedClaims}
+          retryingId={retryingId}
+          retryErrors={retryErrors}
+          onRetry={retryQueuedClaim}
+          onDismiss={dismissQueuedClaim}
+        />
 
         <form
           className="lookup"

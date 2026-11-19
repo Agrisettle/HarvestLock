@@ -9,7 +9,7 @@ import { assertDeployerBalance, deployContractInstance, initializeArgs } from ".
 import { buildInvokeTransaction, submitSignedTransaction } from "./stellar/tx.js";
 import { upsertCommitment, listCommitments, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from "./db/commitments.js";
 import { pool } from "./db/pool.js";
-import { HttpError, BadRequestError, ForbiddenError, ConfigurationError } from "./errors.js";
+import { HttpError, BadRequestError, NotFoundError, ForbiddenError, ConfigurationError } from "./errors.js";
 import { applyReputationConsequences, getStanding } from "./reputation.js";
 import { buildMultiPartyProposal, finalizeMultiPartyProposal } from "./stellar/multiParty.js";
 import {
@@ -436,18 +436,18 @@ export async function buildServer() {
       // is the caller's clear 400, never a 500.
       let totalAmount: bigint;
       if (typeof b.totalAmount !== "string" && typeof b.totalAmount !== "number") {
-        return reply.code(400).send({ error: `totalAmount must be an integer, got ${b.totalAmount}` });
+        throw new BadRequestError(`totalAmount must be an integer, got ${b.totalAmount}`);
       }
       try {
         totalAmount = BigInt(b.totalAmount);
       } catch {
-        return reply.code(400).send({ error: `totalAmount must be an integer, got ${b.totalAmount}` });
+        throw new BadRequestError(`totalAmount must be an integer, got ${b.totalAmount}`);
       }
       if (totalAmount <= 0n) {
-        return reply.code(400).send({ error: `totalAmount must be positive, got ${b.totalAmount}` });
+        throw new BadRequestError(`totalAmount must be positive, got ${b.totalAmount}`);
       }
       if (totalAmount > I128_MAX) {
-        return reply.code(400).send({ error: `totalAmount is out of range for a 128-bit integer, got ${b.totalAmount}` });
+        throw new BadRequestError(`totalAmount is out of range for a 128-bit integer, got ${b.totalAmount}`);
       }
 
       for (const [field, value] of [
@@ -455,15 +455,13 @@ export async function buildServer() {
         ["advance2Bps", b.advance2Bps],
       ] as const) {
         if (!Number.isInteger(value) || value < 0 || value > 10_000) {
-          return reply.code(400).send({ error: `${field} must be an integer between 0 and 10000, got ${value}` });
+          throw new BadRequestError(`${field} must be an integer between 0 and 10000, got ${value}`);
         }
       }
 
       const claimWindowSecs = Number(b.claimWindowSecs);
       if (!Number.isInteger(claimWindowSecs) || claimWindowSecs < MIN_CLAIM_WINDOW_SECS || claimWindowSecs > MAX_CLAIM_WINDOW_SECS) {
-        return reply.code(400).send({
-          error: `claimWindowSecs must be between ${MIN_CLAIM_WINDOW_SECS} and ${MAX_CLAIM_WINDOW_SECS} seconds, got ${b.claimWindowSecs}`,
-        });
+        throw new BadRequestError(`claimWindowSecs must be between ${MIN_CLAIM_WINDOW_SECS} and ${MAX_CLAIM_WINDOW_SECS} seconds, got ${b.claimWindowSecs}`);
       }
       const remainderWindowSecs = Number(b.remainderWindowSecs);
       if (
@@ -471,9 +469,7 @@ export async function buildServer() {
         remainderWindowSecs < MIN_REMAINDER_WINDOW_SECS ||
         remainderWindowSecs > MAX_REMAINDER_WINDOW_SECS
       ) {
-        return reply.code(400).send({
-          error: `remainderWindowSecs must be between ${MIN_REMAINDER_WINDOW_SECS} and ${MAX_REMAINDER_WINDOW_SECS} seconds, got ${b.remainderWindowSecs}`,
-        });
+        throw new BadRequestError(`remainderWindowSecs must be between ${MIN_REMAINDER_WINDOW_SECS} and ${MAX_REMAINDER_WINDOW_SECS} seconds, got ${b.remainderWindowSecs}`);
       }
       const deliveryWindowSecs = Number(b.deliveryWindowSecs);
       if (
@@ -481,9 +477,7 @@ export async function buildServer() {
         deliveryWindowSecs < MIN_DELIVERY_WINDOW_SECS ||
         deliveryWindowSecs > MAX_DELIVERY_WINDOW_SECS
       ) {
-        return reply.code(400).send({
-          error: `deliveryWindowSecs must be between ${MIN_DELIVERY_WINDOW_SECS} and ${MAX_DELIVERY_WINDOW_SECS} seconds, got ${b.deliveryWindowSecs}`,
-        });
+        throw new BadRequestError(`deliveryWindowSecs must be between ${MIN_DELIVERY_WINDOW_SECS} and ${MAX_DELIVERY_WINDOW_SECS} seconds, got ${b.deliveryWindowSecs}`);
       }
       // Mirrors lib.rs's initialize() guards exactly -- no API-specific
       // narrowing here the way the three windows above have, since there's
@@ -494,18 +488,14 @@ export async function buildServer() {
       // nativeToScVal's encoding) can actually represent -- an oversized
       // integer used to throw out of the encoder as a 500.
       if (!Number.isInteger(b.contractedQuantity) || b.contractedQuantity <= 0 || b.contractedQuantity > 0xffff_ffff) {
-        return reply.code(400).send({
-          error: `contractedQuantity must be a positive integer (max 4294967295), got ${b.contractedQuantity}`,
-        });
+        throw new BadRequestError(`contractedQuantity must be a positive integer (max 4294967295), got ${b.contractedQuantity}`);
       }
       if (
         !Array.isArray(b.gradePriceBps) ||
         b.gradePriceBps.length === 0 ||
         b.gradePriceBps.some((bps) => !Number.isInteger(bps) || bps < 0 || bps > 10_000)
       ) {
-        return reply.code(400).send({
-          error: `gradePriceBps must be a non-empty array of integers between 0 and 10000, got ${JSON.stringify(b.gradePriceBps)}`,
-        });
+        throw new BadRequestError(`gradePriceBps must be a non-empty array of integers between 0 and 10000, got ${JSON.stringify(b.gradePriceBps)}`);
       }
       let parsedOracleConfig: {
         oracleContract: string;
@@ -516,7 +506,7 @@ export async function buildServer() {
       if (b.oracleConfig != null) {
         requireValidContractId(b.oracleConfig.oracleContract);
         if (typeof b.oracleConfig.priceAsset !== "string" || b.oracleConfig.priceAsset.trim().length === 0) {
-          return reply.code(400).send({ error: "oracleConfig.priceAsset must be a non-empty string" });
+          throw new BadRequestError("oracleConfig.priceAsset must be a non-empty string");
         }
         const maxAgeSecs = Number(b.oracleConfig.maxAgeSecs);
         // Safe-integer, not just integer: Number.isInteger("1e21" via
@@ -530,32 +520,22 @@ export async function buildServer() {
           !Number.isSafeInteger(maxAgeSecs) ||
           maxAgeSecs <= 0
         ) {
-          return reply.code(400).send({
-            error: `oracleConfig.maxAgeSecs must be a positive integer, got ${b.oracleConfig.maxAgeSecs}`,
-          });
+          throw new BadRequestError(`oracleConfig.maxAgeSecs must be a positive integer, got ${b.oracleConfig.maxAgeSecs}`);
         }
         let denominatedAmount: bigint;
         if (typeof b.oracleConfig.denominatedAmount !== "string" && typeof b.oracleConfig.denominatedAmount !== "number") {
-          return reply.code(400).send({
-            error: `oracleConfig.denominatedAmount must be an integer, got ${b.oracleConfig.denominatedAmount}`,
-          });
+          throw new BadRequestError(`oracleConfig.denominatedAmount must be an integer, got ${b.oracleConfig.denominatedAmount}`);
         }
         try {
           denominatedAmount = BigInt(b.oracleConfig.denominatedAmount);
         } catch {
-          return reply.code(400).send({
-            error: `oracleConfig.denominatedAmount must be an integer, got ${b.oracleConfig.denominatedAmount}`,
-          });
+          throw new BadRequestError(`oracleConfig.denominatedAmount must be an integer, got ${b.oracleConfig.denominatedAmount}`);
         }
         if (denominatedAmount <= 0n) {
-          return reply.code(400).send({
-            error: `oracleConfig.denominatedAmount must be positive, got ${b.oracleConfig.denominatedAmount}`,
-          });
+          throw new BadRequestError(`oracleConfig.denominatedAmount must be positive, got ${b.oracleConfig.denominatedAmount}`);
         }
         if (denominatedAmount > I128_MAX) {
-          return reply.code(400).send({
-            error: `oracleConfig.denominatedAmount is out of range for a 128-bit integer, got ${b.oracleConfig.denominatedAmount}`,
-          });
+          throw new BadRequestError(`oracleConfig.denominatedAmount is out of range for a 128-bit integer, got ${b.oracleConfig.denominatedAmount}`);
         }
         parsedOracleConfig = {
           oracleContract: b.oracleConfig.oracleContract,
@@ -598,7 +578,7 @@ export async function buildServer() {
       const { contractId, method } = req.params;
       requireValidContractId(contractId);
       if (!NO_ARG_METHODS.has(method)) {
-        return reply.code(400).send({ error: `unknown or unsupported method: ${method}` });
+        throw new BadRequestError(`unknown or unsupported method: ${method}`);
       }
       // The generic no-arg route is what resolve_dispute and
       // expire_dispute_window go through (along with every other no-arg
@@ -655,10 +635,10 @@ export async function buildServer() {
     requireValidContractId(contractId);
     const { deliveredQuantity, gradeIndex } = req.body;
     if (!Number.isInteger(deliveredQuantity) || deliveredQuantity < 0) {
-      return reply.code(400).send({ error: `deliveredQuantity must be a non-negative integer, got ${deliveredQuantity}` });
+      throw new BadRequestError(`deliveredQuantity must be a non-negative integer, got ${deliveredQuantity}`);
     }
     if (!Number.isInteger(gradeIndex) || gradeIndex < 0) {
-      return reply.code(400).send({ error: `gradeIndex must be a non-negative integer, got ${gradeIndex}` });
+      throw new BadRequestError(`gradeIndex must be a non-negative integer, got ${gradeIndex}`);
     }
     requireValidPublicKey(req.body.sourcePublicKey, "sourcePublicKey");
 
@@ -736,7 +716,7 @@ export async function buildServer() {
     requireValidContractId(contractId);
     const { members } = req.body;
     if (!Array.isArray(members) || members.length === 0) {
-      return reply.code(400).send({ error: "members must be a non-empty array" });
+      throw new BadRequestError("members must be a non-empty array");
     }
     let totalBps = 0;
     for (const m of members) {
@@ -745,15 +725,15 @@ export async function buildServer() {
       // before this check ever ran (issue #203). Optional chaining makes
       // every non-object element fail the same clear 400 instead.
       if (typeof m?.phoneNumber !== "string" || m.phoneNumber.trim().length === 0) {
-        return reply.code(400).send({ error: "every member needs a non-empty phoneNumber" });
+        throw new BadRequestError("every member needs a non-empty phoneNumber");
       }
       if (!Number.isInteger(m.shareBps) || m.shareBps < 0 || m.shareBps > 10_000) {
-        return reply.code(400).send({ error: `shareBps must be an integer between 0 and 10000, got ${m.shareBps}` });
+        throw new BadRequestError(`shareBps must be an integer between 0 and 10000, got ${m.shareBps}`);
       }
       totalBps += m.shareBps;
     }
     if (totalBps > 10_000) {
-      return reply.code(400).send({ error: `members' shareBps sum to ${totalBps}, over the 10000 bps ceiling` });
+      throw new BadRequestError(`members' shareBps sum to ${totalBps}, over the 10000 bps ceiling`);
     }
     requireValidPublicKey(req.body.sourcePublicKey, "sourcePublicKey");
 
@@ -836,11 +816,11 @@ export async function buildServer() {
   app.delete<{ Params: { memberHash: string } }>("/allocation-members/:memberHash", async (req, reply) => {
     const { memberHash } = req.params;
     if (!/^[0-9a-f]{64}$/i.test(memberHash)) {
-      return reply.code(400).send({ error: "memberHash must be a 64-character hex string (32 bytes)" });
+      throw new BadRequestError("memberHash must be a 64-character hex string (32 bytes)");
     }
     const found = await eraseAllocationMember(memberHash.toLowerCase());
     if (!found) {
-      return reply.code(404).send({ error: `no allocation member with hash ${memberHash}` });
+      throw new NotFoundError(`no allocation member with hash ${memberHash}`);
     }
     return { erased: true };
   });

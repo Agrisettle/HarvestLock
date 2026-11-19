@@ -212,7 +212,7 @@ describe("CommitmentDetail's claim action", () => {
         contractId="CXXX"
         {...noopProps}
         walletAddress={baseCommitment.cooperative}
-        claimError="claim_advance_1 -> 500: something went wrong"
+        claimError="something went wrong"
       />,
     );
     expect(screen.getByText(/something went wrong/)).toBeInTheDocument();
