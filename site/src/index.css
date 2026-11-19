@@ -302,7 +302,8 @@ section {
     transform 0.7s var(--ease);
 }
 
-.reveal.in-view {
+.reveal.in-view,
+.reveal:focus-within {
   opacity: 1;
   transform: translateY(0);
 }

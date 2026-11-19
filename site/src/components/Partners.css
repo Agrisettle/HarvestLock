@@ -35,3 +35,17 @@
   gap: 14px;
   flex-wrap: wrap;
 }
+
+.partners-cta .btn:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 3px;
+}
+
+.partners-cta .btn-ghost {
+  border-color: var(--bone-dim);
+}
+
+.partners-cta .btn-ghost:hover {
+  border-color: var(--gold-bright);
+  color: var(--gold-bright);
+}

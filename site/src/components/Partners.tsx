@@ -3,11 +3,11 @@ import "./Partners.css";
 
 export function Partners() {
   return (
-    <section id="partners" className="partners">
+    <section id="partners" className="partners" aria-labelledby="partners-heading">
       <div className="wrap">
         <Reveal as="div" className="partners-card">
           <div className="partners-mark" aria-hidden="true">
-            <svg viewBox="0 0 1024 1024" width="100%" height="100%">
+            <svg viewBox="0 0 1024 1024" width="100%" height="100%" focusable="false" aria-hidden="true">
               <polygon points="512,200 222,824 802,824" fill="var(--pine)" />
               <polygon points="512,200 435,520 589,520" fill="var(--void)" />
               <polygon points="426,560 598,560 662,824 362,824" fill="var(--void)" />
@@ -15,7 +15,7 @@ export function Partners() {
           </div>
           <div className="partners-content">
             <div className="eyebrow">For partners</div>
-            <h2>
+            <h2 id="partners-heading">
               Running an outgrower programme, or a warehouse that grades and
               stores?
             </h2>
@@ -30,7 +30,8 @@ export function Partners() {
                 className="btn btn-primary"
                 href="https://github.com/Agrisettle/HarvestLock/issues"
                 target="_blank"
-                rel="noreferrer"
+                rel="noreferrer noopener"
+                aria-label="Open an issue on GitHub for partnership inquiries (opens in a new tab)"
               >
                 Open an issue on GitHub →
               </a>
@@ -38,7 +39,8 @@ export function Partners() {
                 className="btn btn-ghost"
                 href="https://github.com/Agrisettle/HarvestLock/blob/main/docs/PRD.md"
                 target="_blank"
-                rel="noreferrer"
+                rel="noreferrer noopener"
+                aria-label="Read the full Product Requirements Document (PRD) on GitHub (opens in a new tab)"
               >
                 Read the full PRD first
               </a>

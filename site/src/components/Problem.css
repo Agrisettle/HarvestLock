@@ -4,6 +4,9 @@
   gap: 1px;
   background: var(--void-line-soft);
   border: 1px solid var(--void-line-soft);
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .problem-card {
@@ -12,7 +15,14 @@
   transition: background 0.3s var(--ease);
 }
 
-.problem-card:hover {
+.problem-card:hover,
+.problem-card:focus-within {
+  background: var(--void-raised);
+}
+
+.problem-card:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: -2px;
   background: var(--void-raised);
 }
 
