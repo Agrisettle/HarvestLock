@@ -16,11 +16,15 @@ import { Footer } from "./Footer";
 export function RolesPage() {
   return (
     <>
-      <section className="roles-hero">
-        <div className="wrap">
-          <a href="/" className="roles-back">
-            ← HarvestLock
-          </a>
+      <a href="#roles-content" className="skip-link">
+        Skip to content
+      </a>
+      <main id="roles-content" tabIndex={-1}>
+        <section className="roles-hero">
+          <div className="wrap">
+            <a href="/" className="roles-back" aria-label="Back to HarvestLock homepage">
+              <span aria-hidden="true">←</span> HarvestLock
+            </a>
           <span className="eyebrow">Before you commit</span>
           <h1>Roles &amp; responsibilities</h1>
           <p className="lede">
@@ -167,27 +171,34 @@ export function RolesPage() {
             not assume the defaults below. These are simply the values HarvestLock suggests when
             a commitment is created:
           </p>
-          <table className="roles-windows-table">
-            <thead>
-              <tr>
-                <th>Window</th>
-                <th>Default</th>
-                <th>Starts when</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>Remainder-payment window</td>
-                <td>7 days</td>
-                <td>the cooperative signals ready-for-delivery</td>
-              </tr>
-              <tr>
-                <td>Delivery window</td>
-                <td>120 days</td>
-                <td>the commitment is created</td>
-              </tr>
-            </tbody>
-          </table>
+          <div
+            className="roles-table-wrap"
+            tabIndex={0}
+            role="region"
+            aria-label="Commitment window lengths"
+          >
+            <table className="roles-windows-table">
+              <thead>
+                <tr>
+                  <th>Window</th>
+                  <th>Default</th>
+                  <th>Starts when</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Remainder-payment window</td>
+                  <td>7 days</td>
+                  <td>the cooperative signals ready-for-delivery</td>
+                </tr>
+                <tr>
+                  <td>Delivery window</td>
+                  <td>120 days</td>
+                  <td>the commitment is created</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </section>
 
@@ -223,6 +234,7 @@ export function RolesPage() {
           </p>
         </div>
       </section>
+      </main>
 
       <Footer />
     </>

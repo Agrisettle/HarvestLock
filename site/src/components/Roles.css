@@ -18,6 +18,12 @@
   color: var(--gold);
 }
 
+.roles-back:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 4px;
+  color: var(--gold);
+}
+
 .roles-updated {
   font-family: var(--mono);
   font-size: 0.82rem;
@@ -117,6 +123,23 @@
 
 .roles-appeal p:last-child {
   margin-bottom: 0;
+}
+
+.roles-appeal .text-link:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.roles-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: 6px;
+}
+
+.roles-table-wrap:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
 }
 
 .roles-windows-table {
