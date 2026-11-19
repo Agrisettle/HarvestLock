@@ -425,7 +425,47 @@ paths:
           content:
             application/json:
               schema: { type: object, additionalProperties: true }
+        '202':
+          description: >-
+            The network accepted the transaction but confirmation took longer
+            than the 30-second poll window. Persisted server-side so
+            GET /transactions/{hash} can report the outcome and apply the
+            request's side effects exactly once.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, hash]
+                properties:
+                  status: { type: string, const: PENDING }
+                  hash: { type: string, pattern: '^[0-9a-f]{64}$' }
         '400': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+  /transactions/{hash}:
+    get:
+      operationId: getTransactionStatus
+      summary: Poll a transaction that was reported PENDING
+      description: >-
+        Returns PENDING, SUCCESS, or FAILED. On the first SUCCESS observation
+        the stored side effects (cache refresh, proposal completion, allocation
+        member persistence) run exactly once. Unknown hashes are 404.
+      parameters:
+        - $ref: '#/components/parameters/transactionHash'
+      responses:
+        '200':
+          description: Current status of the transaction.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, hash]
+                properties:
+                  status:
+                    type: string
+                    enum: [PENDING, SUCCESS, FAILED]
+                  hash: { type: string, pattern: '^[0-9a-f]{64}$' }
+        '400': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
         default: { $ref: '#/components/responses/Error' }
   /commitments/{contractId}:
     get:
@@ -487,6 +527,12 @@ components:
       required: true
       description: Stellar contract ID (C-address).
       schema: { type: string }
+    transactionHash:
+      name: hash
+      in: path
+      required: true
+      description: Stellar transaction hash, exactly 64 hexadecimal characters.
+      schema: { type: string, pattern: '^[0-9a-fA-F]{64}$' }
   responses:
     Xdr:
       description: Unsigned transaction envelope XDR.
@@ -515,7 +561,10 @@ components:
                   - type: 'null'
                   - $ref: '#/components/schemas/Proposal'
     Error:
-      description: Error response using the shared {statusCode, error, message} envelope.
+      description: >-
+        Error response using the shared {statusCode, error, message} envelope.
+        Contract rejections additionally carry contractError {code, name} and
+        use HTTP 409 (or 404 on a read of a missing/uninitialized contract).
       content:
         application/json:
           schema:
@@ -525,9 +574,22 @@ components:
       type: object
       required: [statusCode, error, message]
       properties:
-        statusCode: { type: integer, example: 400 }
-        error: { type: string, example: Bad Request }
+        statusCode: { type: integer, example: 409 }
+        error: { type: string, example: Conflict }
         message: { type: string }
+        contractError:
+          type: object
+          description: Present only when the Soroban contract itself rejected the call; absent on genuine RPC/transport 5xx failures.
+          required: [code, name]
+          properties:
+            code:
+              type: [integer, 'null']
+              description: The contract's Error discriminant (see docs/contract-glossary.md). Null when the contract instance does not exist on this network.
+              example: 8
+            name:
+              type: string
+              description: The glossary name for code, or ContractNotFound / UnknownContractError.
+              example: AlreadyClaimed
     InitializeRequest:
       type: object
       required: [buyer, cooperative, warehouseOperator, token, totalAmount, advance1Bps, advance2Bps, claimWindowSecs, remainderWindowSecs, deliveryWindowSecs, contractedQuantity, gradePriceBps, sourcePublicKey]

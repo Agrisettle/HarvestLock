@@ -1,4 +1,5 @@
 import type { CommitmentSummary } from "../api";
+import { useI18n } from "../i18n";
 import { StatusBadge } from "./StatusBadge";
 import { AddressChip } from "./AddressChip";
 
@@ -55,10 +56,12 @@ export function CommitmentList({
   loadMoreError?: string | null;
   onLoadMore?: () => void;
 }) {
+  const { t } = useI18n();
+
   if (commitments.length === 0) {
     return (
       <div className="empty-state">
-        No commitments cached yet. Look one up by contract ID above, or check back once one's been created.
+        {t("commitmentList.empty")}
       </div>
     );
   }
@@ -66,7 +69,7 @@ export function CommitmentList({
   return (
     <div className="commitment-list">
       <button className="refresh-button" onClick={() => downloadCsv(commitments)}>
-        Download CSV
+        {t("commitmentList.downloadCsv")}
       </button>
       {commitments.map((c) => (
         <button key={c.id} className="commitment-row" onClick={() => onSelect(c.contract_id)}>
@@ -79,7 +82,7 @@ export function CommitmentList({
       {loadMoreError && <div className="error-banner" role="alert">{loadMoreError}</div>}
       {hasMore && onLoadMore && (
         <button className="refresh-button" onClick={onLoadMore} disabled={loadingMore}>
-          {loadingMore ? "Loading more…" : "Load more"}
+          {loadingMore ? t("commitmentList.loadingMore") : t("commitmentList.loadMore")}
         </button>
       )}
     </div>

@@ -11,6 +11,9 @@ for what's real today versus still ahead.
 Every contract `Status` and `Error` variant a caller can see — a `status`
 field's value, or an `Error(Contract, #N)` rejection — is decoded into
 plain English in [`../docs/contract-glossary.md`](../docs/contract-glossary.md).
+Rejected calls also return the numeric `code` and that glossary `name` as
+structured fields (see “Contract rejections” below), so a frontend can
+branch on the code instead of parsing a diagnostic string.
 
 ## Architecture: the API never holds a party's private key
 
@@ -184,7 +187,8 @@ drifts from `src/server.ts`.
 | DELETE | `/allocation-members/:memberHash` | NDPA s.34 erasure: nulls the phone number behind an on-chain hash. Idempotent. See below. |
 | GET | `/commitments/:contractId/oracle-config` | Live on-chain read of the configured oracle (address, price asset, max quote age). `{"config": null}` if `initialize` never set one — a valid state, not an error. See below. |
 | GET | `/commitments/:contractId/oracle-rate` | A genuinely live cross-contract call to the configured Reflector oracle on every request, never cached. Fails (500, contract error propagated) if no oracle is configured, the oracle doesn't quote that asset, or the quote is older than the configured bound. See below. |
-| POST | `/transactions/submit` | Submits a signed envelope, polls for confirmation, optionally refreshes the Postgres cache (`refreshContractId`), marks a multisig proposal completed (`completeProposalId`), and/or persists a staged allocation ledger's phone numbers (`allocationContractId`/`allocationMembers`) now that the on-chain call is confirmed. |
+| POST | `/transactions/submit` | Submits a signed envelope, polls for confirmation, optionally refreshes the Postgres cache (`refreshContractId`), marks a multisig proposal completed (`completeProposalId`), and/or persists a staged allocation ledger's phone numbers (`allocationContractId`/`allocationMembers`) now that the on-chain call is confirmed. If confirmation takes longer than the 30-second poll window, returns **202** `{status: "PENDING", hash}` instead of a 500 — see “Slow transactions” below. |
+| GET | `/transactions/:hash` | Follow-up for a 202: polls the chain and returns `{status, hash}` with `PENDING`, `SUCCESS`, or `FAILED`. On the first `SUCCESS`, applies the pending submission's stored side effects exactly once. `:hash` must be 64 hex characters. |
 | GET | `/commitments/:contractId` | Live read straight from chain (source of truth), refreshes the cache as a side effect. Also applies any reputation consequence observed for a `Defaulted`/`Forfeited` commitment, idempotently via `standing_events`' UNIQUE `(contract_id, event_type)` — see above. |
 | GET | `/commitments` | Lists the Postgres-cached mirror — the only way to list commitments at all, since the chain has no such query. Paginated: `?limit=&offset=`, default page size 20, limit clamped to 100 (`DEFAULT_PAGE_SIZE`/`MAX_PAGE_SIZE` in `src/db/commitments.ts`); unusable values fall back to the defaults rather than erroring. Response is a bare array — clients treat a full page as "maybe more", not "done". Ordered `created_at DESC, id`, so pages partition the set with no skipped or duplicated rows across page edges. |
 | GET | `/parties/:address/standing` | A party's current reputation: strike count, whether they're barred, and why. Returns a clean default (not 404) for an address with no history. |
@@ -277,8 +281,9 @@ configured oracle on every single request — it is never cached, since
 serving a stale rate from this API's own cache would defeat the entire
 point of the staleness bound the contract itself enforces. A missing
 oracle, an asset the oracle doesn't quote, or a quote older than
-`maxAgeSecs` all surface as a 500 with the contract's own error
-propagated through, not a quietly-wrong number.
+`maxAgeSecs` surfaces as a 409 with the contract's own code/name (or a
+404 if the commitment's contract was never initialized), not a
+quietly-wrong number and not an opaque 500.
 
 **`settle`'s payout math genuinely consumes this now.** PRD §4.2 names
 three different options for who bears FX risk between lock-in and
@@ -416,6 +421,96 @@ Registration is now awaited (`await app.register(rateLimit, ...)`), and
 with the limiter enabled and asserts the 429 + `retry-after` behavior
 above, so this can't quietly break again.
 
+## Contract rejections — 409 with a structured `contractError`
+
+A simulation that comes back with `HostError: Error(Contract, #N)` is an
+ordinary state-machine rejection (wrong status for that method, an advance
+already claimed, and so on), not a server fault. Instead of the opaque 500
+every bare `Error` used to get, the API returns **409 Conflict** with the
+glossary code and name as fields:
+
+```json
+{
+  "statusCode": 409,
+  "error": "Conflict",
+  "message": "contract rejected claim_advance_1: AlreadyClaimed (Error(Contract, #8))",
+  "contractError": { "code": 8, "name": "AlreadyClaimed" }
+}
+```
+
+`code` and `name` mirror
+[`../docs/contract-glossary.md`](../docs/contract-glossary.md) codes 1–38.
+The contract only appends codes, so a newer code the API's table doesn't
+know yet still comes back structured as
+`{"code": N, "name": "UnknownContractError"}` rather than a 500. Frontends
+should branch on `contractError.code` (or display `name`) instead of
+parsing `message`. Staged multi-party propose calls (`cancel`,
+`reassign_buyer`, `resolve_dispute`) get the same 409 shape when the
+contract rejects them.
+
+On **read** routes, asking for a contract that has no instance on the
+configured network, or one that exists but was never initialized (#2), is a
+**404 Not Found** instead — the resource genuinely isn't there:
+
+```json
+{
+  "statusCode": 404,
+  "error": "Not Found",
+  "message": "contract C... is not initialized (NotInitialized, Error(Contract, #2))",
+  "contractError": { "code": 2, "name": "NotInitialized" }
+}
+```
+
+A missing instance has no contract code, so it returns
+`"contractError": {"code": null, "name": "ContractNotFound"}`.
+
+Everything that is *not* a contract rejection — RPC unreachable, a read
+timeout, `fetch failed`, a malformed SDK response — stays a 5xx with no
+`contractError` field. A 409 or 404 is therefore always a contract/business
+rule; a 5xx still means the API or its network dependency is actually in
+trouble. (A *submission* that misses its confirmation poll is different:
+the network already accepted it, so that returns 202 — see “Slow
+transactions” below.)
+
+## Slow transactions — 202 `PENDING` and `GET /transactions/:hash`
+
+`POST /transactions/submit` sends the envelope and then polls
+`getTransaction` for up to 30 seconds. Testnet inclusion can take longer
+than that (see “Known testnet flakiness” in `HANDOFF.md`), and the
+transaction is already accepted by the network when the poll gives up.
+Telling the caller that was a failure invited them to retry an action
+that may already have happened.
+
+Instead, a slow confirmation now returns **202 Accepted**:
+
+```json
+{ "status": "PENDING", "hash": "ab12…" }
+```
+
+The API persists the hash and the request's side-effect fields
+(`refreshContractId`, `completeProposalId`, `allocationContractId`,
+`allocationMembers`) in `pending_submissions` (migration
+`007_pending_submissions.sql`). Poll:
+
+```sh
+curl -s "$API/transactions/$HASH" | jq
+# {"status":"PENDING","hash":"…"}      → still not included; poll again
+# {"status":"SUCCESS","hash":"…"}      → landed
+# {"status":"FAILED","hash":"…"}       → on chain, but failed
+```
+
+The first poll that sees `SUCCESS` atomically claims the row and applies
+the stored side effects **exactly once** — the same cache refresh,
+`markCompleted`, and allocation phone-number persistence a 200 response
+applies. Later polls answer from Postgres without re-running them.
+`FAILED` applies nothing. A hash that was never reported pending is a
+404; a malformed hash (not 64 hex characters) is a 400.
+
+This is specifically about *inclusion latency*, not acceptance: if the
+network rejects the envelope outright (`sendTransaction` returns
+`ERROR`), that still throws. And if a `PENDING` transaction later lands
+but fails, `GET` reports `FAILED`. Neither is disguised as success.
+
 ## Setup
 
 Requires Node.js 20.19+ (or 22.12+) and PostgreSQL. To run a local
@@ -466,7 +561,9 @@ because each other party has to sign a single Soroban **auth entry**, not a
 whole envelope — that needs a wallet exposing `signAuthEntry` (Freighter) or
 the SDK; the per-step curl shapes are still shown in §7. Any rejection that
 comes back as `Error(Contract, #N)` is decoded in
-[`../docs/contract-glossary.md`](../docs/contract-glossary.md).
+[`../docs/contract-glossary.md`](../docs/contract-glossary.md), and the same
+HTTP response carries `contractError: {code, name}` — see “Contract
+rejections” above.
 
 Shell variables used throughout:
 
@@ -637,10 +734,13 @@ curl -s -X POST "$API/transactions/submit" \
 
 | Response | Meaning |
 |---|---|
-| `400` | Malformed contract ID / address, out-of-range window, unknown method — rejected before any network call. |
+| `202` | `POST /transactions/submit` only: the network accepted the transaction but confirmation missed the 30 s poll window. Body is `{status: "PENDING", hash}`; poll `GET /transactions/:hash`. Not a failure. |
+| `400` | Malformed contract ID / address / transaction hash, out-of-range window, unknown method — rejected before any network call. |
 | `403` | A business rule: wrong party proposing, or a barred buyer/cooperative on `initialize`. |
 | `429` | Rate limit (100 req/min per IP, global). Sleep the `retry-after` seconds — it's the time left in the current window, not a fixed cooldown. See the rate-limiting section above. |
-| `500` with `Error(Contract, #N)` | The contract rejected it (e.g. wrong status for that method). Find `N` in [`../docs/contract-glossary.md`](../docs/contract-glossary.md). |
+| `409` | The contract rejected the action (e.g. wrong status for that method). The body carries `contractError: {code, name}`; find `N` in [`../docs/contract-glossary.md`](../docs/contract-glossary.md) — see “Contract rejections” above. |
+| `404` | A read against a contract that isn't on this network, or exists but was never initialized (#2). Also carries `contractError`. |
+| `500` | A genuine infrastructure failure — RPC unreachable, a read timeout, or an unexpected SDK error. No `contractError` field; retrying may help. |
 
 CORS is a browser concern only — curl doesn't enforce it, so a curl call
 succeeding says nothing about whether a browser frontend's origin is
@@ -648,7 +748,8 @@ allow-listed (see the CORS section above).
 
 ## Testing
 
-`npm test` runs five suites, all against real infrastructure: `stellar.test.ts`
+`npm test` runs every suite under `test/`, all against real infrastructure
+except where noted: `stellar.test.ts`
 (**live Stellar testnet**, no mocks, same discipline as the contracts
 repo) deploys real throwaway contract instances and builds/submits real
 `initialize`/`lock`/`cancel`/`reassign_buyer` transactions — `cancel`
@@ -721,6 +822,25 @@ point of salting per member, not per contract), `recordAllocationMembers`/
 `getAllocationMembers` round-trip correctly and never surface a phone
 number, and `eraseAllocationMember` is idempotent and leaves
 `share_bps`/`member_hash` untouched.
+
+`test/errors.test.ts` is a network-free suite: it parses
+captured-format Soroban diagnostics (`HostError: Error(Contract, #8)` with
+and without an appended event log) and checks every glossary code 1–38
+against its name, that an unknown future code stays structured, and that a
+diagnostic with no contract code (a transport failure) is left alone so it
+can stay a 5xx. `server.test.ts` additionally drives a real route with the
+builder stubbed to throw a contract rejection (asserting the 409 +
+`contractError` body) and a real read through the RPC boundary (asserting
+#2 and a missing instance both become 404).
+
+`server.test.ts` also covers issue #405's slow-transaction path without
+the network: `submitSignedTransaction` is driven with fake timers past
+its 30 s deadline and must return `PENDING` rather than throw; the submit
+route then returns 202 with the hash; and `GET /transactions/:hash` is
+polled twice against a stubbed SUCCESS/FAILED `getTransaction`, asserting
+the stored side effects run exactly once (and never on FAILED). That
+suite is real-Postgres, like `reputation.test.ts` and
+`allocationMembers.test.ts` — no live chain calls.
 
 Two real bugs worth knowing about, found while building the allocation
 ledger, both now fixed: `nativeToScVal`'s automatic object-to-map

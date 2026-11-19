@@ -1,4 +1,4 @@
-import Fastify from "fastify";
+import Fastify, { type FastifyBaseLogger } from "fastify";
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import { STATUS_CODES } from "node:http";
@@ -6,10 +6,10 @@ import { getBuildInfo } from "./buildInfo.js";
 import { StrKey, Address, nativeToScVal, xdr } from "@stellar/stellar-sdk";
 import { getAllocation, getCommitment, getOracleConfig, getOracleRate, type Commitment } from "./stellar/client.js";
 import { assertDeployerBalance, deployContractInstance, initializeArgs } from "./stellar/deploy.js";
-import { buildInvokeTransaction, submitSignedTransaction } from "./stellar/tx.js";
+import { buildInvokeTransaction, submitSignedTransaction, getTransactionStatus } from "./stellar/tx.js";
 import { upsertCommitment, listCommitments, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from "./db/commitments.js";
 import { pool } from "./db/pool.js";
-import { HttpError, BadRequestError, NotFoundError, ForbiddenError, ConfigurationError } from "./errors.js";
+import { HttpError, BadRequestError, NotFoundError, ForbiddenError, ConfigurationError, ContractError } from "./errors.js";
 import { applyReputationConsequences, getStanding } from "./reputation.js";
 import { buildMultiPartyProposal, finalizeMultiPartyProposal } from "./stellar/multiParty.js";
 import {
@@ -21,6 +21,12 @@ import {
   markCompleted,
   type PendingMultisigProposal,
 } from "./db/pendingMultisigProposals.js";
+import {
+  createPendingSubmission,
+  getPendingSubmission,
+  claimPendingSubmissionSuccess,
+  markPendingSubmissionFailed,
+} from "./db/pendingSubmissions.js";
 import {
   stageAllocationMembers,
   recordAllocationMembers,
@@ -72,6 +78,69 @@ function requireValidPublicKey(publicKey: string, fieldName: string): void {
 function requireValidUuid(value: string, fieldName: string): void {
   if (typeof value !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) {
     throw new BadRequestError(`${fieldName} must be a UUID, got ${value}`);
+  }
+}
+
+/**
+ * Stellar transaction hashes are SHA-256 digests rendered as 64 hex
+ * characters. Checked before any Postgres/RPC lookup so a typo'd or
+ * truncated hash is a clear 400 rather than a driver/RPC error with no
+ * status code.
+ */
+function requireValidTransactionHash(hash: string): void {
+  if (typeof hash !== "string" || !/^[0-9a-f]{64}$/i.test(hash)) {
+    throw new BadRequestError(`hash must be 64 hexadecimal characters, got ${hash}`);
+  }
+}
+
+interface SubmitSideEffects {
+  refreshContractId?: string;
+  completeProposalId?: string;
+  allocationContractId?: string;
+  allocationMembers?: StagedAllocationMember[];
+}
+
+/**
+ * The off-chain work that was historically inlined in
+ * POST /transactions/submit after a confirmed submission. Shared with
+ * GET /transactions/:hash so a transaction that was reported PENDING —
+ * and only later landed — still gets exactly the same treatment.
+ *
+ * Every branch is best-effort and logged, never thrown: the on-chain
+ * transaction has already succeeded, so a cache/Postgres failure must not
+ * turn that into an error response. The caller guarantees this runs at
+ * most once per submission (the atomic claim in
+ * db/pendingSubmissions.ts covers the GET path).
+ */
+async function applySubmitSideEffects(log: FastifyBaseLogger, effects: SubmitSideEffects): Promise<void> {
+  if (effects.refreshContractId) {
+    const refreshContractId = effects.refreshContractId;
+    await getCommitment(refreshContractId)
+      .then((commitment) =>
+        upsertCommitment(refreshContractId, commitment).then(({ previousStatus }) =>
+          applyReputationConsequences(refreshContractId, previousStatus, commitment),
+        ),
+      )
+      .catch((err: unknown) => {
+        log.warn({ err }, "failed to refresh commitments cache after submit");
+      });
+  }
+  // Marks the proposal finished so a stale "ready to finalize" state
+  // doesn't linger for other viewers once the cancel actually landed.
+  if (effects.completeProposalId) {
+    await markCompleted(effects.completeProposalId).catch((err: unknown) => {
+      log.warn({ err }, "failed to mark multisig proposal completed");
+    });
+  }
+  // Persists the phone-number mapping only now that set_allocation has
+  // actually landed on-chain -- see stageAllocationMembers's doc comment
+  // for why this waits until here instead of writing at build time.
+  if (effects.allocationContractId && effects.allocationMembers) {
+    await recordAllocationMembers(effects.allocationContractId, effects.allocationMembers).catch(
+      (err: unknown) => {
+        log.warn({ err }, "failed to persist allocation member phone numbers");
+      },
+    );
   }
 }
 
@@ -316,19 +385,19 @@ export async function buildServer() {
   // actually did). `HttpError` subclasses (BadRequestError, ForbiddenError)
   // keep exactly the behavior Fastify's default already gave them --
   // their own statusCode, their own message, both written to be
-  // client-facing on purpose. `ConfigurationError` (a missing/invalid
+  // client-facing on purpose. `ContractError` additionally carries the
+  // contract's own `{ code, name }` (see errors.ts), so a state-machine
+  // rejection is a structured 409 (or a 404 on a read) rather than a 500
+  // that looks like an outage. `ConfigurationError` (a missing/invalid
   // deployment env var, see errors.ts) is the one category genuinely
   // worth hiding from an external caller -- it's an operator mistake,
   // not client input, and naming the specific env var externally is
   // pure information disclosure with zero benefit to a legitimate
-  // caller. Everything else (Stellar simulation/submission/timeout
-  // failures, SDK decoding assertions) is deliberately left to
+  // caller. Everything else (genuine RPC/transport failures, submission
+  // timeouts, SDK decoding assertions) is deliberately left to
   // propagate with its real message and original statusCode, same as
-  // before this handler existed -- see stellar/client.ts's "let the
-  // contract error propagate" convention and every build/submit route's
-  // simulation-failure feedback, which callers genuinely need to build
-  // a working transaction. Checked, not assumed, that this doesn't leak
-  // secret material: Keypair.fromSecret() never echoes an invalid
+  // before this handler existed. Checked, not assumed, that this doesn't
+  // leak secret material: Keypair.fromSecret() never echoes an invalid
   // value back in its error message, and this project's own testing of
   // a pg connection failure showed an empty `.message`, not connection
   // detail -- see api/HANDOFF.md.
@@ -338,6 +407,14 @@ export async function buildServer() {
     // existing test that reads `.json().message`, not `.json().error`,
     // for a thrown HttpError -- this handler replaces Fastify's default,
     // it isn't free to invent a different one).
+    if (err instanceof ContractError) {
+      return reply.code(err.statusCode).send({
+        statusCode: err.statusCode,
+        error: STATUS_CODES[err.statusCode],
+        message: err.message,
+        contractError: err.contractError,
+      });
+    }
     if (err instanceof HttpError) {
       return reply.code(err.statusCode).send({ statusCode: err.statusCode, error: STATUS_CODES[err.statusCode], message: err.message });
     }
@@ -1060,7 +1137,7 @@ export async function buildServer() {
       allocationContractId?: string;
       allocationMembers?: StagedAllocationMember[];
     };
-  }>("/transactions/submit", async (req) => {
+  }>("/transactions/submit", async (req, reply) => {
     // Validated before submitting, not after: a bad refreshContractId
     // shouldn't leave the caller wondering whether their (real, funds-
     // moving) transaction went through or not because the response came
@@ -1072,49 +1149,72 @@ export async function buildServer() {
       requireValidContractId(req.body.allocationContractId);
     }
     const result = await submitSignedTransaction(req.body.xdr);
-    // Best-effort, same reasoning as completeProposalId/allocationMembers
-    // below (and GET /commitments/:contractId's equivalent refresh): this
-    // whole block is a post-submission cache refresh, not the point of
-    // this endpoint — the real, funds-moving submission already
-    // succeeded above. A transient live-chain-read or Postgres failure
-    // here used to turn an already-successful submission into a 500,
-    // inconsistent with every other best-effort side effect in this same
-    // handler; fixed to match.
-    if (req.body.refreshContractId) {
-      const refreshContractId = req.body.refreshContractId;
-      await getCommitment(refreshContractId)
-        .then((commitment) =>
-          upsertCommitment(refreshContractId, commitment).then(({ previousStatus }) =>
-            applyReputationConsequences(refreshContractId, previousStatus, commitment),
-          ),
-        )
-        .catch((err: unknown) => {
-          req.log.warn({ err }, "failed to refresh commitments cache after submit");
-        });
+
+    // The network accepted the transaction but confirmation outlived the
+    // poll window. Persist the hash and every side-effect field so
+    // GET /transactions/:hash can report the real outcome later and apply
+    // them exactly once on the first SUCCESS. A persistence failure is
+    // logged but still answered 202: the transaction is already on-chain,
+    // so a 500 here would repeat the exact lie this change removes.
+    if (result.status === "PENDING") {
+      await createPendingSubmission({
+        hash: result.hash,
+        refreshContractId: req.body.refreshContractId,
+        completeProposalId: req.body.completeProposalId,
+        allocationContractId: req.body.allocationContractId,
+        allocationMembers: req.body.allocationMembers,
+      }).catch((err: unknown) => {
+        req.log.error(
+          { err },
+          "failed to persist pending submission; GET /transactions/:hash will not be able to report it",
+        );
+      });
+      return reply.code(202).send({ status: "PENDING", hash: result.hash });
     }
-    // Marks the proposal finished so a stale "ready to finalize" state
-    // doesn't linger for other viewers once the cancel actually landed.
-    // Best-effort: a failure here shouldn't mask that the real,
-    // funds-moving submission above already succeeded.
-    if (req.body.completeProposalId) {
-      await markCompleted(req.body.completeProposalId).catch((err: unknown) => {
-        req.log.warn({ err }, "failed to mark multisig proposal completed");
+
+    await applySubmitSideEffects(req.log, req.body);
+    return result;
+  });
+
+  /**
+   * The follow-up for a PENDING submit. Polls the chain for the hash and
+   * returns the same three-state vocabulary the submit route uses. The
+   * first observation of SUCCESS atomically claims the stored side-effect
+   * fields, so exactly one poll applies them even if a frontend polls
+   * twice (or from two tabs) at once. Terminal rows are answered from
+   * Postgres without touching the chain again.
+   */
+  app.get<{ Params: { hash: string } }>("/transactions/:hash", async (req) => {
+    requireValidTransactionHash(req.params.hash);
+    const hash = req.params.hash.toLowerCase();
+
+    const pending = await getPendingSubmission(hash);
+    if (!pending) {
+      throw new NotFoundError(`no pending submission with hash ${hash}`);
+    }
+    if (pending.status !== "pending") {
+      return { status: pending.status === "success" ? "SUCCESS" : "FAILED", hash };
+    }
+
+    const status = await getTransactionStatus(hash);
+    if (status === "PENDING") {
+      return { status, hash };
+    }
+    if (status === "FAILED") {
+      await markPendingSubmissionFailed(hash);
+      return { status, hash };
+    }
+
+    const claimed = await claimPendingSubmissionSuccess(hash);
+    if (claimed) {
+      await applySubmitSideEffects(req.log, {
+        refreshContractId: claimed.refresh_contract_id ?? undefined,
+        completeProposalId: claimed.complete_proposal_id ?? undefined,
+        allocationContractId: claimed.allocation_contract_id ?? undefined,
+        allocationMembers: claimed.allocation_members ?? undefined,
       });
     }
-    // Persists the phone-number mapping only now that set_allocation has
-    // actually landed on-chain -- see stageAllocationMembers's doc
-    // comment for why this waits until here instead of writing at
-    // /tx/set-allocation build time. Best-effort, same reasoning as
-    // completeProposalId above: the on-chain write already succeeded,
-    // don't mask that behind an off-chain persistence failure.
-    if (req.body.allocationContractId && req.body.allocationMembers) {
-      await recordAllocationMembers(req.body.allocationContractId, req.body.allocationMembers).catch(
-        (err: unknown) => {
-          req.log.warn({ err }, "failed to persist allocation member phone numbers");
-        },
-      );
-    }
-    return result;
+    return { status, hash };
   });
 
   // Live chain read — the source of truth, per PRD §17. Refreshes the

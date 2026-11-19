@@ -132,6 +132,7 @@ VS Code Markdown preview (with Mermaid support) and at <https://mermaid.live>.
   (`POST .../tx/cancel`), which only helps when one process can sign as
   both parties. Signing the same envelope once per wallet fails on
   submission (`tx_bad_auth_extra`), which is why the staged flow exists.
-- **Failure surfaces:** a simulation failure at propose time surfaces the
-  real contract error. The Postgres side effects after a successful submit
-  are best-effort and logged; they never mask a transaction that landed.
+- **Failure surfaces:** a simulation failure at propose time returns a
+  typed 409 with the contract's `{code, name}` (`contractError`), not an
+  opaque 500. The Postgres side effects after a successful submit are
+  best-effort and logged; they never mask a transaction that landed.

@@ -140,7 +140,8 @@ VS Code Markdown preview (with Mermaid support) and at <https://mermaid.live>.
   roles — so against that instance a repeated role would fail during
   simulation with a host auth error instead.)
 - **Failure surfaces:** a simulation failure (e.g. `InvalidState`) at
-  propose time propagates the real contract error (500); Postgres
-  `completeProposalId` / `refreshContractId` side effects after a
-  successful submit are best-effort and logged, never masking a landed
-  transaction (`src/server.ts:932`).
+  propose time returns a typed 409 with the contract's `{code, name}`
+  (`contractError`), not an opaque 500; Postgres `completeProposalId` /
+  `refreshContractId` side effects after a successful submit are
+  best-effort and logged, never masking a landed transaction
+  (`src/server.ts:932`).

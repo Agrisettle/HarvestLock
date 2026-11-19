@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
-import { Keypair, StrKey, Address, xdr } from "@stellar/stellar-sdk";
+import { Keypair, Account, StrKey, Address, xdr, rpc, TransactionBuilder, BASE_FEE, Operation } from "@stellar/stellar-sdk";
 import { randomBytes } from "node:crypto";
 import { buildServer } from "../src/server.js";
 import * as txModule from "../src/stellar/tx.js";
@@ -9,11 +9,13 @@ import * as clientModule from "../src/stellar/client.js";
 import type { Commitment } from "../src/stellar/client.js";
 import { recordBuyerDefault } from "../src/db/reputation.js";
 import { pool } from "../src/db/pool.js";
-import { server as rpcServer } from "../src/stellar/rpc.js";
+import { server as rpcServer, networkPassphrase } from "../src/stellar/rpc.js";
 import { MAX_PAGE_SIZE } from "../src/db/commitments.js";
 import * as commitmentsDb from "../src/db/commitments.js";
+import * as allocationDb from "../src/db/allocationMembers.js";
 import { recordAllocationMembers, stageAllocationMembers } from "../src/db/allocationMembers.js";
 import { createProposal } from "../src/db/pendingMultisigProposals.js";
+import { ContractError, contractErrorFromSimulation } from "../src/errors.js";
 
 /**
  * First HTTP-layer test coverage for server.ts — everything before this
@@ -1857,6 +1859,326 @@ describe("server (HTTP layer)", () => {
       15_000,
     );
   });
+});
+
+/**
+ * Contract rejections are ordinary business outcomes, not server faults:
+ * the API must return the contract's own code/name as structured fields
+ * (issue #404) instead of the opaque 500 every bare Error used to get.
+ * These tests drive the real routes/handler; the two read cases stub only
+ * the RPC boundary so the actual simulation-error translation in
+ * stellar/client.ts is what runs.
+ */
+describe("contract error translation (issue #404)", () => {
+  it(
+    "buildInvokeTransaction translates a simulation rejection instead of throwing a bare Error",
+    async () => {
+      const getAccount = vi
+        .spyOn(rpcServer, "getAccount")
+        .mockResolvedValue(new Account(FAKE_PUBLIC_KEY, "1"));
+      const simulate = vi
+        .spyOn(rpcServer, "simulateTransaction")
+        .mockResolvedValue({ error: "HostError: Error(Contract, #8)" } as never);
+      try {
+        const err = await txModule
+          .buildInvokeTransaction({
+            contractId: FAKE_CONTRACT_ID,
+            method: "claim_advance_1",
+            sourcePublicKey: FAKE_PUBLIC_KEY,
+          })
+          .catch((e: unknown) => e);
+
+        expect(err).toBeInstanceOf(ContractError);
+        expect((err as ContractError).statusCode).toBe(409);
+        expect((err as ContractError).contractError).toEqual({ code: 8, name: "AlreadyClaimed" });
+      } finally {
+        getAccount.mockRestore();
+        simulate.mockRestore();
+      }
+    },
+    15_000,
+  );
+
+  it(
+    "returns 409 with contractError.code/name when the build simulation rejects a write",
+    async () => {
+      const diagnostic =
+        'HostError: Error(Contract, #8)\n\nEvent log (newest first):\n   0: [diagnostic event] topics:[symbol: "FnCall"]';
+      const buildInvoke = vi
+        .spyOn(txModule, "buildInvokeTransaction")
+        .mockRejectedValueOnce(contractErrorFromSimulation("claim_advance_1", diagnostic)!);
+      try {
+        const res = await app.inject({
+          method: "POST",
+          url: `/commitments/${FAKE_CONTRACT_ID}/tx/claim_advance_1`,
+          payload: { sourcePublicKey: FAKE_PUBLIC_KEY },
+        });
+
+        expect(res.statusCode).toBe(409);
+        expect(res.json()).toMatchObject({
+          statusCode: 409,
+          error: "Conflict",
+          contractError: { code: 8, name: "AlreadyClaimed" },
+        });
+        expect(res.json().message).toMatch(/AlreadyClaimed/);
+      } finally {
+        buildInvoke.mockRestore();
+      }
+    },
+    15_000,
+  );
+
+  it.each([
+    ["uninitialized (#2)", "HostError: Error(Contract, #2)", { code: 2, name: "NotInitialized" }],
+    [
+      "a missing contract instance",
+      "HostError: Error(Storage, MissingValue)",
+      { code: null, name: "ContractNotFound" },
+    ],
+  ])("returns 404 when a read hits %s", async (_label, diagnostic, expectedContractError) => {
+    const savedKey = process.env.DEPLOYER_SECRET_KEY;
+    process.env.DEPLOYER_SECRET_KEY = Keypair.random().secret();
+    const getAccount = vi
+      .spyOn(rpcServer, "getAccount")
+      .mockResolvedValue(new Account(Keypair.random().publicKey(), "1"));
+    const simulate = vi
+      .spyOn(rpcServer, "simulateTransaction")
+      .mockResolvedValue({ error: diagnostic } as never);
+    try {
+      const res = await app.inject({ method: "GET", url: `/commitments/${FAKE_CONTRACT_ID}` });
+
+      expect(res.statusCode).toBe(404);
+      expect(res.json()).toMatchObject({
+        statusCode: 404,
+        error: "Not Found",
+        contractError: expectedContractError,
+      });
+    } finally {
+      getAccount.mockRestore();
+      simulate.mockRestore();
+      if (savedKey === undefined) delete process.env.DEPLOYER_SECRET_KEY;
+      else process.env.DEPLOYER_SECRET_KEY = savedKey;
+    }
+  });
+
+  it(
+    "leaves a genuine RPC/transport failure as a 500 with no contractError",
+    async () => {
+      const getCommitment = vi
+        .spyOn(clientModule, "getCommitment")
+        .mockRejectedValueOnce(new Error("fetch failed"));
+      try {
+        const res = await app.inject({ method: "GET", url: `/commitments/${FAKE_CONTRACT_ID}` });
+
+        expect(res.statusCode).toBe(500);
+        expect(res.json().message).toMatch(/fetch failed/);
+        expect(res.json().contractError).toBeUndefined();
+      } finally {
+        getCommitment.mockRestore();
+      }
+    },
+    15_000,
+  );
+});
+
+/**
+ * Issue #405: a transaction the network accepted but that missed the
+ * 30-second confirmation poll must not be reported as a failure. These
+ * tests stub the RPC boundary (no live network) but drive the real
+ * routes, the real pending_submissions table, and the real side-effect
+ * helper.
+ */
+describe("pending submissions (issue #405)", () => {
+  // Fixed, valid 64-hex hashes so cleanup is deterministic. A real
+  // Stellar hash would work identically; the route/RPC are both stubbed.
+  const PENDING_HASH = "a".repeat(64);
+  const FAILED_HASH = "b".repeat(64);
+  const UNKNOWN_HASH = "c".repeat(64);
+
+  async function createTestProposal(): Promise<string> {
+    const row = await createProposal({
+      contractId: FAKE_CONTRACT_ID,
+      method: "set_allocation",
+      proposerAddress: FAKE_PUBLIC_KEY,
+      funcXdr: "AAAA",
+      sorobanDataXdr: "AAAA",
+      entries: [],
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+    });
+    return row.id;
+  }
+
+  it("returns 202 with the hash, then applies stored side effects exactly once on the first SUCCESS poll", async () => {
+    const proposalId = await createTestProposal();
+    const staged = stageAllocationMembers([{ phoneNumber: "+2348012345678", shareBps: 6_000 }]);
+    const submit = vi
+      .spyOn(txModule, "submitSignedTransaction")
+      .mockResolvedValueOnce({ status: "PENDING", hash: PENDING_HASH });
+    const record = vi.spyOn(allocationDb, "recordAllocationMembers").mockResolvedValue(undefined);
+    const get = vi.spyOn(rpcServer, "getTransaction");
+    try {
+      const submitted = await app.inject({
+        method: "POST",
+        url: "/transactions/submit",
+        payload: {
+          xdr: "AAAA",
+          completeProposalId: proposalId,
+          allocationContractId: FAKE_CONTRACT_ID,
+          allocationMembers: staged,
+        },
+      });
+
+      expect(submitted.statusCode).toBe(202);
+      expect(submitted.json()).toEqual({ status: "PENDING", hash: PENDING_HASH });
+
+      const stored = await pool.query(
+        `SELECT status, complete_proposal_id, allocation_contract_id, allocation_members, side_effects_applied_at
+         FROM pending_submissions WHERE hash = $1`,
+        [PENDING_HASH],
+      );
+      expect(stored.rows[0]).toMatchObject({
+        status: "pending",
+        complete_proposal_id: proposalId,
+        allocation_contract_id: FAKE_CONTRACT_ID,
+        side_effects_applied_at: null,
+      });
+      expect(stored.rows[0].allocation_members).toEqual(staged);
+      expect(record).not.toHaveBeenCalled();
+
+      // Still NOT_FOUND on chain: report PENDING and run nothing.
+      get.mockResolvedValue({ status: rpc.Api.GetTransactionStatus.NOT_FOUND } as never);
+      const stillPending = await app.inject({ method: "GET", url: `/transactions/${PENDING_HASH}` });
+      expect(stillPending.statusCode).toBe(200);
+      expect(stillPending.json()).toEqual({ status: "PENDING", hash: PENDING_HASH });
+      expect(record).not.toHaveBeenCalled();
+
+      get.mockResolvedValue({ status: rpc.Api.GetTransactionStatus.SUCCESS } as never);
+
+      const first = await app.inject({ method: "GET", url: `/transactions/${PENDING_HASH}` });
+      expect(first.statusCode).toBe(200);
+      expect(first.json()).toEqual({ status: "SUCCESS", hash: PENDING_HASH });
+      expect(record).toHaveBeenCalledTimes(1);
+
+      const completed = await pool.query("SELECT status FROM pending_multisig_proposals WHERE id = $1", [
+        proposalId,
+      ]);
+      expect(completed.rows[0].status).toBe("completed");
+
+      const applied = await pool.query(
+        "SELECT status, side_effects_applied_at FROM pending_submissions WHERE hash = $1",
+        [PENDING_HASH],
+      );
+      expect(applied.rows[0].status).toBe("success");
+      expect(applied.rows[0].side_effects_applied_at).not.toBeNull();
+
+      // Polling again reports the same terminal answer without re-running
+      // anything (or even asking the chain again).
+      const second = await app.inject({ method: "GET", url: `/transactions/${PENDING_HASH}` });
+      expect(second.json()).toEqual({ status: "SUCCESS", hash: PENDING_HASH });
+      expect(record).toHaveBeenCalledTimes(1);
+      // One NOT_FOUND poll + one SUCCESS poll; the terminal poll after
+      // that was answered from Postgres.
+      expect(get).toHaveBeenCalledTimes(2);
+    } finally {
+      submit.mockRestore();
+      record.mockRestore();
+      get.mockRestore();
+      await pool.query("DELETE FROM pending_submissions WHERE hash = $1", [PENDING_HASH]);
+      await pool.query("DELETE FROM pending_multisig_proposals WHERE id = $1", [proposalId]);
+    }
+  }, 15_000);
+
+  it("reports FAILED and runs no side effects for a transaction that landed but failed", async () => {
+    const proposalId = await createTestProposal();
+    const staged = stageAllocationMembers([{ phoneNumber: "+2348099999999", shareBps: 4_000 }]);
+    const submit = vi
+      .spyOn(txModule, "submitSignedTransaction")
+      .mockResolvedValueOnce({ status: "PENDING", hash: FAILED_HASH });
+    const record = vi.spyOn(allocationDb, "recordAllocationMembers").mockResolvedValue(undefined);
+    const get = vi
+      .spyOn(rpcServer, "getTransaction")
+      .mockResolvedValue({ status: rpc.Api.GetTransactionStatus.FAILED } as never);
+    try {
+      const submitted = await app.inject({
+        method: "POST",
+        url: "/transactions/submit",
+        payload: {
+          xdr: "AAAA",
+          completeProposalId: proposalId,
+          allocationContractId: FAKE_CONTRACT_ID,
+          allocationMembers: staged,
+        },
+      });
+      expect(submitted.statusCode).toBe(202);
+
+      const failed = await app.inject({ method: "GET", url: `/transactions/${FAILED_HASH}` });
+      expect(failed.statusCode).toBe(200);
+      expect(failed.json()).toEqual({ status: "FAILED", hash: FAILED_HASH });
+      expect(record).not.toHaveBeenCalled();
+
+      const proposal = await pool.query("SELECT status FROM pending_multisig_proposals WHERE id = $1", [
+        proposalId,
+      ]);
+      expect(proposal.rows[0].status).not.toBe("completed");
+
+      const stored = await pool.query("SELECT status FROM pending_submissions WHERE hash = $1", [FAILED_HASH]);
+      expect(stored.rows[0].status).toBe("failed");
+
+      // FAILED is terminal too: a second poll answers from the row.
+      const second = await app.inject({ method: "GET", url: `/transactions/${FAILED_HASH}` });
+      expect(second.json()).toEqual({ status: "FAILED", hash: FAILED_HASH });
+      expect(get).toHaveBeenCalledTimes(1);
+    } finally {
+      submit.mockRestore();
+      record.mockRestore();
+      get.mockRestore();
+      await pool.query("DELETE FROM pending_submissions WHERE hash = $1", [FAILED_HASH]);
+      await pool.query("DELETE FROM pending_multisig_proposals WHERE id = $1", [proposalId]);
+    }
+  }, 15_000);
+
+  it("rejects a malformed hash with 400 and an untracked hash with 404", async () => {
+    const malformed = await app.inject({ method: "GET", url: "/transactions/not-a-hash" });
+    expect(malformed.statusCode).toBe(400);
+    expect(malformed.json().message).toMatch(/64 hexadecimal/);
+
+    const unknown = await app.inject({ method: "GET", url: `/transactions/${UNKNOWN_HASH}` });
+    expect(unknown.statusCode).toBe(404);
+  });
+
+  it(
+    "submitSignedTransaction returns PENDING instead of throwing when confirmation outlives the poll window",
+    async () => {
+      const envelope = new TransactionBuilder(new Account(FAKE_PUBLIC_KEY, "1"), {
+        fee: BASE_FEE,
+        networkPassphrase,
+      })
+        .addOperation(Operation.bumpSequence({ bumpTo: "2" }))
+        .setTimeout(30)
+        .build()
+        .toXDR();
+      const send = vi
+        .spyOn(rpcServer, "sendTransaction")
+        .mockResolvedValue({ status: "PENDING", hash: PENDING_HASH } as never);
+      const get = vi
+        .spyOn(rpcServer, "getTransaction")
+        .mockResolvedValue({ status: rpc.Api.GetTransactionStatus.NOT_FOUND } as never);
+      vi.useFakeTimers();
+      try {
+        const promise = txModule.submitSignedTransaction(envelope);
+        // Drives the 1.5 s sleeps past the 30 s deadline without waiting.
+        // 32 s, not 31: the check runs at exactly 30,000 ms first and
+        // needs one more 1.5 s tick to cross the boundary.
+        await vi.advanceTimersByTimeAsync(32_000);
+        await expect(promise).resolves.toEqual({ status: "PENDING", hash: PENDING_HASH });
+      } finally {
+        vi.useRealTimers();
+        send.mockRestore();
+        get.mockRestore();
+      }
+    },
+    15_000,
+  );
 });
 
 /**

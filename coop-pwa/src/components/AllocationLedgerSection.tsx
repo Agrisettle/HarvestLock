@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AllocationMember, CommitmentDetail as CommitmentDetailType } from "../api";
 import { buildSetAllocationTx, getAllocationLedger, submitTx } from "../api";
+import { useI18n } from "../i18n";
 import { signTransactionXdr } from "../wallet";
 
 // Mirrors lib.rs's set_allocation() guard: cooperative-gated, and only
@@ -43,6 +44,7 @@ export function AllocationLedgerSection({
   contractId: string;
   walletAddress: string | null;
 }) {
+  const { t, intlLocale } = useI18n();
   const [members, setMembers] = useState<AllocationMember[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [readError, setReadError] = useState<string | null>(null);
@@ -52,6 +54,14 @@ export function AllocationLedgerSection({
 
   const settable = SETTABLE_STATUSES.has(commitment.status);
   const isCooperative = walletAddress !== null && walletAddress === commitment.cooperative;
+  const percentFormatter = useMemo(
+    () =>
+      new Intl.NumberFormat(intlLocale, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }),
+    [intlLocale],
+  );
 
   const refresh = useCallback(() => {
     setLoading(true);
@@ -61,11 +71,14 @@ export function AllocationLedgerSection({
       .catch((err: unknown) => {
         setMembers(null);
         setReadError(
-          `Unable to load allocation ledger for ${contractId}: ${err instanceof Error ? err.message : String(err)}`,
+          t("allocation.readError", {
+            contractId,
+            message: err instanceof Error ? err.message : String(err),
+          }),
         );
       })
       .finally(() => setLoading(false));
-  }, [contractId]);
+  }, [contractId, t]);
 
   useEffect(() => {
     refresh();
@@ -74,7 +87,7 @@ export function AllocationLedgerSection({
   if (loading) {
     return (
       <div className="allocation-section">
-        <div className="loading-state" role="status" aria-live="polite">Loading allocation ledger…</div>
+        <div className="loading-state" role="status" aria-live="polite">{t("allocation.loading")}</div>
       </div>
     );
   }
@@ -82,7 +95,7 @@ export function AllocationLedgerSection({
     return (
       <div className="allocation-section">
         <div className="error-banner" role="alert">{readError}</div>
-        <button className="action-button secondary" type="button" onClick={refresh}>Retry</button>
+        <button className="action-button secondary" type="button" onClick={refresh}>{t("allocation.retry")}</button>
       </div>
     );
   }
@@ -109,16 +122,16 @@ export function AllocationLedgerSection({
     // "fail fast client-side, the API is what actually enforces it"
     // convention as every other form in this project.
     if (parsed.some((m) => m.phoneNumber.length === 0)) {
-      setError("Every member needs a phone number.");
+      setError(t("allocation.errorPhone"));
       return;
     }
     if (parsed.some((m) => !Number.isInteger(m.shareBps) || m.shareBps < 0 || m.shareBps > 10_000)) {
-      setError("Every share must be a whole number between 0 and 10000 basis points.");
+      setError(t("allocation.errorShareRange"));
       return;
     }
     const totalBps = parsed.reduce((sum, m) => sum + m.shareBps, 0);
     if (totalBps > 10_000) {
-      setError(`Shares sum to ${totalBps} basis points, over the 10000 (100%) ceiling.`);
+      setError(t("allocation.errorShareTotal", { total: totalBps }));
       return;
     }
 
@@ -139,22 +152,22 @@ export function AllocationLedgerSection({
     <div className="allocation-section">
       {error && <div className="error-banner">{error}</div>}
 
-      {!hasLedger && <p className="empty-state">No allocation ledger has been recorded yet.</p>}
+      {!hasLedger && <p className="empty-state">{t("allocation.empty")}</p>}
 
       {hasLedger && (
         <table className="allocation-table">
-          <caption>Allocation ledger</caption>
+          <caption>{t("allocation.caption")}</caption>
           <thead>
             <tr>
-              <th>Member hash</th>
-              <th>Share</th>
+              <th>{t("allocation.memberHash")}</th>
+              <th>{t("allocation.share")}</th>
             </tr>
           </thead>
           <tbody>
             {members.map((m) => (
               <tr key={m.memberHash}>
-                <td className="allocation-hash">{m.memberHash.slice(0, 12)}…</td>
-                <td>{(m.shareBps / 100).toFixed(2)}%</td>
+                <td className="allocation-hash">{`${m.memberHash.slice(0, 12)}…`}</td>
+                <td>{t("common.percent", { value: percentFormatter.format(m.shareBps / 100) })}</td>
               </tr>
             ))}
           </tbody>
@@ -163,20 +176,20 @@ export function AllocationLedgerSection({
 
       {!hasLedger && isCooperative && settable && (
         <form className="allocation-form" onSubmit={handleSubmit}>
-          <h4>Record member allocation</h4>
+          <h4>{t("allocation.formHeading")}</h4>
           {rows.map((row, i) => (
             <div className="allocation-row" key={i}>
               <input
-                aria-label={`Member ${i + 1} phone number`}
+                aria-label={t("allocation.memberPhoneLabel", { number: i + 1 })}
                 value={row.phoneNumber}
                 onChange={(e) => updateRow(i, { phoneNumber: e.target.value })}
-                placeholder="Phone number"
+                placeholder={t("allocation.phonePlaceholder")}
               />
               <input
-                aria-label={`Member ${i + 1} share (basis points)`}
+                aria-label={t("allocation.memberShareLabel", { number: i + 1 })}
                 value={row.shareBps}
                 onChange={(e) => updateRow(i, { shareBps: e.target.value.replace(/[^0-9]/g, "") })}
-                placeholder="Share (bps)"
+                placeholder={t("allocation.sharePlaceholder")}
                 inputMode="numeric"
               />
               <button
@@ -185,15 +198,15 @@ export function AllocationLedgerSection({
                 onClick={() => removeRow(i)}
                 disabled={rows.length === 1}
               >
-                Remove
+                {t("allocation.remove")}
               </button>
             </div>
           ))}
           <button type="button" className="action-button secondary" onClick={addRow}>
-            Add member
+            {t("allocation.addMember")}
           </button>
           <button className="action-button" type="submit" disabled={busy}>
-            {busy ? "Recording…" : "Record allocation"}
+            {busy ? t("allocation.recording") : t("allocation.record")}
           </button>
         </form>
       )}

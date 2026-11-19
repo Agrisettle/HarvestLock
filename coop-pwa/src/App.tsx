@@ -11,9 +11,20 @@ import { connectWallet, signTransactionXdr } from "./wallet";
 import { CommitmentDetail } from "./components/CommitmentDetail";
 import { CommitmentList } from "./components/CommitmentList";
 import { OfflineQueueBanner } from "./components/OfflineQueueBanner";
+import { LanguagePicker } from "./components/LanguagePicker";
+import { I18nProvider, useI18n } from "./i18n";
 import { enqueueClaim, listQueuedClaims, removeQueuedClaim, isOfflineError, type QueuedClaim } from "./offlineQueue";
 
 export default function App() {
+  return (
+    <I18nProvider>
+      <AppContent />
+    </I18nProvider>
+  );
+}
+
+function AppContent() {
+  const { t } = useI18n();
   const [commitments, setCommitments] = useState<CommitmentSummary[]>([]);
   const [listError, setListError] = useState<string | null>(null);
   const [listLoading, setListLoading] = useState(true);
@@ -62,10 +73,12 @@ export default function App() {
         setHasMoreCommitments(page.length === 20);
       })
       .catch((err: unknown) =>
-        setListError(`Unable to load known commitments: ${err instanceof Error ? err.message : String(err)}`),
+        setListError(
+          t("app.listError", { message: err instanceof Error ? err.message : String(err) }),
+        ),
       )
       .finally(() => setListLoading(false));
-  }, []);
+  }, [t]);
 
   const loadMoreCommitments = useCallback(() => {
     if (listMoreLoading || !hasMoreCommitments) return;
@@ -77,28 +90,38 @@ export default function App() {
         setHasMoreCommitments(page.length === 20);
       })
       .catch((err: unknown) =>
-        setListMoreError(`Unable to load more commitments: ${err instanceof Error ? err.message : String(err)}`),
+        setListMoreError(
+          t("app.listMoreError", { message: err instanceof Error ? err.message : String(err) }),
+        ),
       )
       .finally(() => setListMoreLoading(false));
-  }, [commitments.length, hasMoreCommitments, listMoreLoading]);
+  }, [commitments.length, hasMoreCommitments, listMoreLoading, t]);
 
   useEffect(() => {
     refreshList();
   }, [refreshList]);
 
-  const loadDetail = useCallback((contractId: string) => {
-    setSelectedId(contractId);
-    setDetailLoading(true);
-    setDetailError(null);
-    setClaimError(null);
-    getCommitment(contractId)
-      .then(setDetail)
-      .catch((err: unknown) => {
-        setDetail(null);
-        setDetailError(`Unable to load commitment ${contractId}: ${err instanceof Error ? err.message : String(err)}`);
-      })
-      .finally(() => setDetailLoading(false));
-  }, []);
+  const loadDetail = useCallback(
+    (contractId: string) => {
+      setSelectedId(contractId);
+      setDetailLoading(true);
+      setDetailError(null);
+      setClaimError(null);
+      getCommitment(contractId)
+        .then(setDetail)
+        .catch((err: unknown) => {
+          setDetail(null);
+          setDetailError(
+            t("app.detailError", {
+              contractId,
+              message: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        })
+        .finally(() => setDetailLoading(false));
+    },
+    [t],
+  );
 
   const handleConnectWallet = useCallback(() => {
     setWalletError(null);
@@ -187,14 +210,15 @@ export default function App() {
   return (
     <>
       <header className="app-header">
-        <h1>HarvestLock — Cooperative Dashboard</h1>
+        <h1>{t("app.title")}</h1>
         <div className="header-actions">
-          <span className="tag">read-only reads · testnet</span>
+          <LanguagePicker />
+          <span className="tag">{t("app.tag")}</span>
           {walletAddress ? (
-            <span className="wallet-address">{walletAddress.slice(0, 4)}…{walletAddress.slice(-4)}</span>
+            <span className="wallet-address">{`${walletAddress.slice(0, 4)}…${walletAddress.slice(-4)}`}</span>
           ) : (
             <button className="wallet-button" onClick={handleConnectWallet}>
-              Connect wallet
+              {t("app.connectWallet")}
             </button>
           )}
         </div>
@@ -219,27 +243,27 @@ export default function App() {
           }}
         >
           <label htmlFor="contract-lookup" className="sr-only">
-            Contract ID
+            {t("app.contractIdLabel")}
           </label>
           <input
             id="contract-lookup"
             value={lookupInput}
             onChange={(e) => setLookupInput(e.target.value)}
-            placeholder="Contract ID (C...)"
+            placeholder={t("app.contractIdPlaceholder")}
             spellCheck={false}
           />
           <button type="submit" disabled={!lookupInput.trim()}>
-            Look up
+            {t("app.lookUp")}
           </button>
         </form>
 
-        <section aria-label="Commitment details">
+        <section aria-label={t("app.detailsRegion")}>
           {!selectedId && (
-            <div className="empty-state">Look up a contract ID or select a known commitment to view its details.</div>
+            <div className="empty-state">{t("app.emptyDetail")}</div>
           )}
           {detailLoading && (
             <div className="loading-state" role="status" aria-live="polite">
-              Reading commitment {selectedId} from chain…
+              {t("app.readingCommitment", { contractId: selectedId ?? "" })}
             </div>
           )}
           {detailError && <div className="error-banner" role="alert">{detailError}</div>}
@@ -261,14 +285,14 @@ export default function App() {
         <section>
           <div className="detail-header">
             <h2 className="section-title">
-              Known commitments
+              {t("app.knownCommitments")}
             </h2>
             <button className="refresh-button" onClick={refreshList} disabled={listLoading}>
-              {listLoading ? "Refreshing…" : "Refresh"}
+              {listLoading ? t("app.refreshing") : t("app.refresh")}
             </button>
           </div>
           {listLoading ? (
-            <div className="loading-state" role="status" aria-live="polite">Loading known commitments…</div>
+            <div className="loading-state" role="status" aria-live="polite">{t("app.loadingKnown")}</div>
           ) : listError ? (
             <div className="error-banner" role="alert">{listError}</div>
           ) : (
@@ -284,7 +308,7 @@ export default function App() {
         </section>
       </main>
       {import.meta.env.VITE_BUILD_SHA && (
-        <footer className="build-info">build {import.meta.env.VITE_BUILD_SHA}</footer>
+        <footer className="build-info">{t("app.build", { sha: import.meta.env.VITE_BUILD_SHA })}</footer>
       )}
     </>
   );

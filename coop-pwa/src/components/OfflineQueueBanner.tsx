@@ -1,4 +1,5 @@
 import type { QueuedClaim } from "../offlineQueue";
+import { useI18n } from "../i18n";
 import { AddressChip } from "./AddressChip";
 
 /**
@@ -27,13 +28,14 @@ export function OfflineQueueBanner({
   onRetry: (claim: QueuedClaim) => void;
   onDismiss?: (claim: QueuedClaim) => void;
 }) {
+  const { t, tPlural } = useI18n();
+
   if (queuedClaims.length === 0) return null;
 
   return (
     <div className="offline-queue-banner">
       <p className="offline-queue-summary">
-        {queuedClaims.length} claim{queuedClaims.length === 1 ? "" : "s"} couldn't reach the network and{" "}
-        {queuedClaims.length === 1 ? "is" : "are"} waiting to retry.
+        {tPlural("offline.claimsSummary", queuedClaims.length)}
       </p>
       <ul className="offline-queue-list">
         {queuedClaims.map((claim) => (
@@ -47,18 +49,18 @@ export function OfflineQueueBanner({
                 ugly. The chip truncates and keeps the full value in a
                 title tooltip. */}
             <span className="offline-queue-item-label">
-              Advance {claim.tranche} — <AddressChip address={claim.contractId} />
+              {t("offline.advanceLabel", { tranche: claim.tranche })}<AddressChip address={claim.contractId} />
             </span>
             <button
               className="action-button secondary"
               onClick={() => onRetry(claim)}
               disabled={retryingId !== null}
             >
-              {retryingId === claim.id ? "Retrying…" : "Retry"}
+              {retryingId === claim.id ? t("offline.retrying") : t("offline.retry")}
             </button>
             {retryErrors[claim.id] && onDismiss && (
               <button className="action-button secondary" onClick={() => onDismiss(claim)} disabled={retryingId !== null}>
-                Dismiss
+                {t("offline.dismiss")}
               </button>
             )}
             {retryErrors[claim.id] && (
