@@ -179,6 +179,39 @@ describe("AllocationLedgerSection", () => {
     expect(screen.getByRole("button", { name: "Remove" })).toBeDisabled();
   });
 
+  it("rejects a single empty row left after removing every filled row, with the phone-number message", async () => {
+    fetchMock.mockResolvedValueOnce(allocationNotSetResponse());
+    const user = userEvent.setup();
+    render(
+      <AllocationLedgerSection commitment={baseCommitment} contractId="CXXX" walletAddress={baseCommitment.cooperative} />,
+    );
+    await screen.findByText("Record member allocation");
+
+    // Fill two rows, then add a third and leave it empty.
+    await user.click(screen.getByRole("button", { name: "Add member" }));
+    await user.type(screen.getByLabelText("Member 1 phone number"), "+2348000000001");
+    await user.type(screen.getByLabelText("Member 1 share (basis points)"), "6000");
+    await user.type(screen.getByLabelText("Member 2 phone number"), "+2348000000002");
+    await user.type(screen.getByLabelText("Member 2 share (basis points)"), "4000");
+    await user.click(screen.getByRole("button", { name: "Add member" }));
+    expect(screen.getAllByLabelText(/phone number/i)).toHaveLength(3);
+
+    // Remove every row but the last one -- the empty row added above.
+    await user.click(screen.getAllByRole("button", { name: "Remove" })[0]);
+    await user.click(screen.getAllByRole("button", { name: "Remove" })[0]);
+
+    expect(screen.getAllByLabelText(/phone number/i)).toHaveLength(1);
+    expect(screen.getByLabelText("Member 1 phone number")).toHaveValue("");
+    expect(screen.getByLabelText("Member 1 share (basis points)")).toHaveValue("");
+
+    await user.click(screen.getByRole("button", { name: "Record allocation" }));
+
+    expect(await screen.findByText("Every member needs a phone number.")).toBeInTheDocument();
+    // Only the initial allocation-ledger read should have hit the network --
+    // validation failing client-side means set-allocation was never built.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("rejects shares summing to over 10000 bps before touching the network", async () => {
     fetchMock.mockResolvedValueOnce(allocationNotSetResponse());
     const user = userEvent.setup();

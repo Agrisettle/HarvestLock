@@ -188,6 +188,22 @@ export function validateCreateCommitmentFields(fields: CreateCommitmentFields): 
   return null;
 }
 
+// Every message validateCreateCommitmentFields can emit for the FX/oracle
+// group. Turning FX conversion off hides those inputs, so an error that
+// points at one would be left in the banner with nothing the buyer can do
+// about it -- clear those when the group closes, but leave unrelated
+// validation errors alone.
+const FX_VALIDATION_ERROR_PREFIXES = [
+  "Oracle contract address",
+  "Price asset",
+  "Oracle max quote age",
+  "Deal value in the price asset",
+];
+
+function isFxValidationError(message: string): boolean {
+  return FX_VALIDATION_ERROR_PREFIXES.some((prefix) => message.startsWith(prefix));
+}
+
 export function CreateCommitmentForm({
   onSubmit,
   submitting,
@@ -203,6 +219,13 @@ export function CreateCommitmentForm({
 
   function update<K extends keyof CreateCommitmentFields>(key: K, value: CreateCommitmentFields[K]) {
     setFields((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function toggleFxConversion(enabled: boolean) {
+    update("fxConversionEnabled", enabled);
+    if (!enabled) {
+      setValidationError((current) => (current && isFxValidationError(current) ? null : current));
+    }
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -351,7 +374,7 @@ export function CreateCommitmentForm({
         <input
           type="checkbox"
           checked={fields.fxConversionEnabled}
-          onChange={(e) => update("fxConversionEnabled", e.target.checked)}
+          onChange={(e) => toggleFxConversion(e.target.checked)}
         />
         <span>This deal needs FX conversion to stablecoin at settlement (optional) — leave unchecked for a plain deal.</span>
       </label>

@@ -5,10 +5,18 @@ const TERMINAL_STATUSES_WITH_CONSEQUENCES = new Set(["Defaulted", "Forfeited"]);
 
 /**
  * Applies the buyer-default/cooperative-forfeiture reputation consequence
- * for a commitment, exactly once — the first time this API observes the
- * transition into a terminal status, never on a later re-read of an
- * already-terminal one. Call this after `upsertCommitment`, passing the
- * `previousStatus` it returned.
+ * for a commitment, exactly once per (contract, event type). Call this
+ * after `upsertCommitment` whenever the observed status is terminal.
+ *
+ * `previousStatus` is intentionally not consulted: idempotency lives in
+ * `standing_events`' UNIQUE constraint, checked by each record* function.
+ * Comparing against the previous cached status was wrong in both
+ * directions — two concurrent first reads of an already-terminal contract
+ * could both see `null` and double-strike, and a write that failed after
+ * the cache said Defaulted/Forfeited was never retried because every
+ * later read saw the status "unchanged". The parameter is kept so callers
+ * that already have it don't need a second read; it has no effect on
+ * whether a consequence is recorded.
  *
  * Deliberately observation-triggered, not backed by a chain indexer or
  * background watcher — same caveat `api/README.md` already documents for
@@ -20,10 +28,9 @@ const TERMINAL_STATUSES_WITH_CONSEQUENCES = new Set(["Defaulted", "Forfeited"]);
  */
 export async function applyReputationConsequences(
   contractId: string,
-  previousStatus: string | null,
+  _previousStatus: string | null,
   commitment: Commitment,
 ): Promise<void> {
-  if (previousStatus === commitment.status) return;
   if (!TERMINAL_STATUSES_WITH_CONSEQUENCES.has(commitment.status)) return;
 
   if (commitment.status === "Defaulted") {
