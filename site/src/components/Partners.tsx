@@ -30,7 +30,8 @@ export function Partners() {
                 className="btn btn-primary"
                 href="https://github.com/Agrisettle/HarvestLock/issues"
                 target="_blank"
-                rel="noreferrer"
+                rel="noreferrer noopener"
+                aria-label="Open an issue on GitHub for partnership inquiries (opens in a new tab)"
               >
                 Open an issue on GitHub →
               </a>
@@ -38,7 +39,8 @@ export function Partners() {
                 className="btn btn-ghost"
                 href="https://github.com/Agrisettle/HarvestLock/blob/main/docs/PRD.md"
                 target="_blank"
-                rel="noreferrer"
+                rel="noreferrer noopener"
+                aria-label="Read the full Product Requirements Document (PRD) on GitHub (opens in a new tab)"
               >
                 Read the full PRD first
               </a>

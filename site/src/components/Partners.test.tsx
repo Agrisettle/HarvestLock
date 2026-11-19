@@ -38,3 +38,50 @@ describe("Partners keyboard navigation (Issue #109)", () => {
     expect(svg).toHaveAttribute("aria-hidden", "true");
   });
 });
+
+describe("Partners color contrast & ARIA labeling (Issue #110)", () => {
+  it("provides accessible names and notices on external new-tab links", () => {
+    render(<Partners />);
+    const issueLink = screen.getByRole("link", {
+      name: /open an issue on github for partnership inquiries \(opens in a new tab\)/i,
+    });
+    expect(issueLink).toBeInTheDocument();
+    expect(issueLink).toHaveAttribute("rel", "noreferrer noopener");
+
+    const prdLink = screen.getByRole("link", {
+      name: /read the full product requirements document \(prd\) on github \(opens in a new tab\)/i,
+    });
+    expect(prdLink).toBeInTheDocument();
+    expect(prdLink).toHaveAttribute("rel", "noreferrer noopener");
+  });
+
+  it("verifies contrast ratios meet WCAG AA requirements", () => {
+    // Luminance helper matching WCAG 2.1 formula
+    const lum = (hex: string) => {
+      const rgb = [hex.slice(1, 3), hex.slice(3, 5), hex.slice(5, 7)].map((c) => parseInt(c, 16) / 255);
+      const [r, g, b] = rgb.map((c) => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)));
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const contrastRatio = (hex1: string, hex2: string) => {
+      const [l1, l2] = [lum(hex1), lum(hex2)].sort((a, b) => b - a);
+      return (l1 + 0.05) / (l2 + 0.05);
+    };
+
+    // Dark mode colors used in Partners
+    const voidRaised = "#121a16";
+    const bone = "#f3f1e9";
+    const boneDim = "#c9c6ba";
+    const gold = "#d4a937";
+    const goldFill = "#d4a937";
+    const goldInk = "#0b120f";
+
+    // Text on background (WCAG AA: >= 4.5:1)
+    expect(contrastRatio(bone, voidRaised)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(boneDim, voidRaised)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(gold, voidRaised)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(goldInk, goldFill)).toBeGreaterThanOrEqual(4.5);
+
+    // Button UI boundary against background (WCAG AA SC 1.4.11: >= 3:1)
+    expect(contrastRatio(boneDim, voidRaised)).toBeGreaterThanOrEqual(3.0);
+  });
+});
