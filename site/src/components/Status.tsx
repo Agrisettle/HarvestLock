@@ -60,6 +60,7 @@ export function Status() {
             href="https://github.com/Agrisettle/HarvestLock"
             target="_blank"
             rel="noreferrer noopener"
+            aria-label="View Agrisettle/HarvestLock repository on GitHub (opens in a new tab)"
           >
             <span className="status-link-label">Repository</span>
             <span className="mono status-link-value">Agrisettle/HarvestLock</span>
@@ -69,15 +70,17 @@ export function Status() {
             href="https://github.com/Agrisettle/HarvestLock-Contracts"
             target="_blank"
             rel="noreferrer noopener"
+            aria-label="View HarvestLock smart contracts source code on GitHub (opens in a new tab)"
           >
             <span className="status-link-label">Contract source</span>
             <span className="mono status-link-value">agrisettle/HarvestLock-Contracts</span>
           </a>
           <a
             className="status-link"
-            href="https://stellar.expert/explorer/testnet/contract/CDVF6UVJOLF3OHCFSYSJ72RMG2T6DUQ42VRJ6IHL6MVEFDYEBZ3KTFK4"
+            href={`https://stellar.expert/explorer/testnet/contract/${REFERENCE_CONTRACT_ID}`}
             target="_blank"
             rel="noreferrer noopener"
+            aria-label={`View testnet contract ${REFERENCE_CONTRACT_ID} on Stellar Expert (opens in a new tab)${liveStatus ? `, state: ${liveStatus.status}${liveStatus.isStale ? ", data is stale" : ""}` : ""}`}
           >
             <span className="status-link-label">Testnet contract</span>
             <span className="mono status-link-value">
@@ -86,7 +89,8 @@ export function Status() {
                 <span
                   className={`status-live-badge${liveStatus.isStale ? " status-live-badge--stale" : ""}`}
                   title={`Last successful chain read: ${new Date(liveStatus.updatedAt).toLocaleString()}`}
-                  aria-label={`${liveStatus.status}${liveStatus.isStale ? ", data is stale" : ""}`}
+                  role="status"
+                  aria-label={`Contract status: ${liveStatus.status}${liveStatus.isStale ? ", data is stale" : ""}`}
                 >
                   {liveStatus.status}{liveStatus.isStale ? " · stale" : ""}
                 </span>
