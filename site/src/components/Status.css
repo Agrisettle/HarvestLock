@@ -74,6 +74,13 @@
   background: var(--void-raised);
 }
 
+.status-link:focus-visible {
+  background: var(--void-raised);
+  outline: 2px solid var(--gold);
+  outline-offset: -2px;
+  z-index: 1;
+}
+
 .status-link-label {
   font-size: 0.78rem;
   color: var(--bone-faint);
