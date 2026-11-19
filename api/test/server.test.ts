@@ -441,7 +441,7 @@ describe("server (HTTP layer)", () => {
           totalAmount: "1000000000",
           advance1Bps: 1500,
           advance2Bps: 2000,
-          claimWindowSecs: "60",
+          claimWindowSecs: "3599",
           sourcePublicKey: FAKE_PUBLIC_KEY,
         },
       });
@@ -465,7 +465,7 @@ describe("server (HTTP layer)", () => {
           totalAmount: "1000000000",
           advance1Bps: 1500,
           advance2Bps: 2000,
-          claimWindowSecs: String(60 * 60 * 24 * 365),
+          claimWindowSecs: String(60 * 60 * 24 * 90 + 1),
           sourcePublicKey: FAKE_PUBLIC_KEY,
         },
       });
@@ -490,7 +490,7 @@ describe("server (HTTP layer)", () => {
           advance1Bps: 1500,
           advance2Bps: 2000,
           claimWindowSecs: "3600",
-          remainderWindowSecs: "60",
+          remainderWindowSecs: "3599",
           deliveryWindowSecs: String(60 * 60 * 24 * 120),
           sourcePublicKey: FAKE_PUBLIC_KEY,
         },
@@ -516,7 +516,7 @@ describe("server (HTTP layer)", () => {
           advance1Bps: 1500,
           advance2Bps: 2000,
           claimWindowSecs: "3600",
-          remainderWindowSecs: String(60 * 60 * 24 * 365),
+          remainderWindowSecs: String(60 * 60 * 24 * 30 + 1),
           deliveryWindowSecs: String(60 * 60 * 24 * 120),
           sourcePublicKey: FAKE_PUBLIC_KEY,
         },
@@ -587,6 +587,68 @@ describe("server (HTTP layer)", () => {
     remainderWindowSecs: String(60 * 60 * 24 * 7),
     deliveryWindowSecs: String(60 * 60 * 24 * 120),
   };
+
+  it("accepts claimWindowSecs at both inclusive boundaries", async () => {
+    const buildInvoke = vi.spyOn(txModule, "buildInvokeTransaction").mockResolvedValue("FAKE-UNSIGNED-XDR");
+    try {
+      for (const claimWindowSecs of ["3600", String(60 * 60 * 24 * 90)]) {
+        const res = await app.inject({
+          method: "POST",
+          url: `/commitments/${FAKE_CONTRACT_ID}/tx/initialize`,
+          payload: {
+            buyer: FAKE_PUBLIC_KEY,
+            cooperative: FAKE_PUBLIC_KEY,
+            warehouseOperator: FAKE_PUBLIC_KEY,
+            token: FAKE_CONTRACT_ID,
+            totalAmount: "1000000000",
+            advance1Bps: 1500,
+            advance2Bps: 2000,
+            ...validWindows,
+            claimWindowSecs,
+            contractedQuantity: 1,
+            gradePriceBps: [10_000],
+            sourcePublicKey: FAKE_PUBLIC_KEY,
+          },
+        });
+        expect(res.statusCode).toBe(200);
+        expect(res.json()).toEqual({ xdr: "FAKE-UNSIGNED-XDR" });
+      }
+      expect(buildInvoke).toHaveBeenCalledTimes(2);
+    } finally {
+      buildInvoke.mockRestore();
+    }
+  }, 15_000);
+
+  it("accepts remainderWindowSecs at both inclusive boundaries", async () => {
+    const buildInvoke = vi.spyOn(txModule, "buildInvokeTransaction").mockResolvedValue("FAKE-UNSIGNED-XDR");
+    try {
+      for (const remainderWindowSecs of ["3600", String(60 * 60 * 24 * 30)]) {
+        const res = await app.inject({
+          method: "POST",
+          url: `/commitments/${FAKE_CONTRACT_ID}/tx/initialize`,
+          payload: {
+            buyer: FAKE_PUBLIC_KEY,
+            cooperative: FAKE_PUBLIC_KEY,
+            warehouseOperator: FAKE_PUBLIC_KEY,
+            token: FAKE_CONTRACT_ID,
+            totalAmount: "1000000000",
+            advance1Bps: 1500,
+            advance2Bps: 2000,
+            ...validWindows,
+            remainderWindowSecs,
+            contractedQuantity: 1,
+            gradePriceBps: [10_000],
+            sourcePublicKey: FAKE_PUBLIC_KEY,
+          },
+        });
+        expect(res.statusCode).toBe(200);
+        expect(res.json()).toEqual({ xdr: "FAKE-UNSIGNED-XDR" });
+      }
+      expect(buildInvoke).toHaveBeenCalledTimes(2);
+    } finally {
+      buildInvoke.mockRestore();
+    }
+  }, 15_000);
 
   it(
     "rejects a contractedQuantity of 0 (one below the smallest valid value) before touching the network",
@@ -831,6 +893,44 @@ describe("server (HTTP layer)", () => {
       });
       expect(res.statusCode).toBe(400);
       expect(res.json().message).toMatch(/maxAgeSecs must be a positive integer/);
+    },
+    15_000,
+  );
+
+  it(
+    "accepts oracleConfig.maxAgeSecs at its smallest valid value of 1",
+    async () => {
+      const buildInvoke = vi.spyOn(txModule, "buildInvokeTransaction").mockResolvedValue("FAKE-UNSIGNED-XDR");
+      try {
+        const res = await app.inject({
+          method: "POST",
+          url: `/commitments/${FAKE_CONTRACT_ID}/tx/initialize`,
+          payload: {
+            buyer: FAKE_PUBLIC_KEY,
+            cooperative: FAKE_PUBLIC_KEY,
+            warehouseOperator: FAKE_PUBLIC_KEY,
+            token: FAKE_CONTRACT_ID,
+            totalAmount: "1000000000",
+            advance1Bps: 1500,
+            advance2Bps: 2000,
+            ...validWindows,
+            contractedQuantity: 1,
+            gradePriceBps: [10_000],
+            oracleConfig: {
+              oracleContract: FAKE_CONTRACT_ID,
+              priceAsset: "NGN",
+              maxAgeSecs: "1",
+              denominatedAmount: "1000",
+            },
+            sourcePublicKey: FAKE_PUBLIC_KEY,
+          },
+        });
+        expect(res.statusCode).toBe(200);
+        expect(res.json()).toEqual({ xdr: "FAKE-UNSIGNED-XDR" });
+        expect(buildInvoke).toHaveBeenCalledTimes(1);
+      } finally {
+        buildInvoke.mockRestore();
+      }
     },
     15_000,
   );
