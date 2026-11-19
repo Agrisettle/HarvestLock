@@ -18,6 +18,12 @@
   color: var(--gold);
 }
 
+.roles-back:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 4px;
+  color: var(--gold);
+}
+
 .roles-updated {
   font-family: var(--mono);
   font-size: 0.82rem;
@@ -92,14 +98,14 @@
 
 .roles-severity.immediate {
   color: var(--signal);
-  border: 1px solid rgba(193, 67, 46, 0.4);
-  background: rgba(193, 67, 46, 0.08);
+  border: 1px solid rgba(240, 122, 99, 0.5);
+  background: rgba(240, 122, 99, 0.1);
 }
 
 .roles-severity.graduated {
   color: var(--gold);
-  border: 1px solid rgba(212, 169, 55, 0.4);
-  background: rgba(212, 169, 55, 0.08);
+  border: 1px solid rgba(212, 169, 55, 0.5);
+  background: rgba(212, 169, 55, 0.1);
 }
 
 .roles-appeal {
@@ -119,11 +125,36 @@
   margin-bottom: 0;
 }
 
+.roles-appeal .text-link:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.roles-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: 6px;
+}
+
+.roles-table-wrap:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
 .roles-windows-table {
   width: 100%;
   border-collapse: collapse;
   margin-top: 1.4rem;
   font-size: 0.95rem;
+}
+
+.roles-table-caption {
+  text-align: left;
+  font-size: 0.82rem;
+  font-family: var(--mono);
+  color: var(--bone-dim);
+  margin-bottom: 0.6rem;
 }
 
 .roles-windows-table th,
@@ -133,13 +164,22 @@
   border-bottom: 1px solid var(--void-line-soft);
 }
 
-.roles-windows-table th {
+.roles-windows-table thead th {
   font-family: var(--mono);
   font-size: 0.75rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--bone-faint);
+  color: var(--bone-dim);
   font-weight: 500;
+}
+
+.roles-windows-table tbody th {
+  font-family: var(--body);
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--bone);
+  text-transform: none;
+  letter-spacing: normal;
 }
 
 .roles-windows-table td {
