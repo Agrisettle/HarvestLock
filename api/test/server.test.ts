@@ -4,6 +4,7 @@ import type { FastifyInstance } from "fastify";
 import { Keypair, StrKey, Address, xdr } from "@stellar/stellar-sdk";
 import { randomBytes } from "node:crypto";
 import { buildServer } from "../src/server.js";
+import * as txModule from "../src/stellar/tx.js";
 import { recordBuyerDefault } from "../src/db/reputation.js";
 import { pool } from "../src/db/pool.js";
 import { server as rpcServer } from "../src/stellar/rpc.js";
@@ -461,7 +462,7 @@ describe("server (HTTP layer)", () => {
   };
 
   it(
-    "rejects a zero contractedQuantity before touching the network",
+    "rejects a contractedQuantity of 0 (one below the smallest valid value) before touching the network",
     async () => {
       const res = await app.inject({
         method: "POST",
@@ -482,6 +483,45 @@ describe("server (HTTP layer)", () => {
       });
       expect(res.statusCode).toBe(400);
       expect(res.json().message).toMatch(/contractedQuantity must be a positive integer/);
+    },
+    15_000,
+  );
+
+  it(
+    "accepts a contractedQuantity of exactly 1 (the smallest valid value)",
+    async () => {
+      // Same pattern as the gradePriceBps ceiling test below: the builder is
+      // stubbed so this stays a validation-boundary test with no network
+      // call. A 200 proves 1 cleared the route's `contractedQuantity <= 0`
+      // guard -- the exact off-by-one the zero case can't isolate, since it
+      // is rejected either way.
+      const buildInvoke = vi
+        .spyOn(txModule, "buildInvokeTransaction")
+        .mockResolvedValue("FAKE-UNSIGNED-XDR");
+      try {
+        const res = await app.inject({
+          method: "POST",
+          url: `/commitments/${FAKE_CONTRACT_ID}/tx/initialize`,
+          payload: {
+            buyer: FAKE_PUBLIC_KEY,
+            cooperative: FAKE_PUBLIC_KEY,
+            warehouseOperator: FAKE_PUBLIC_KEY,
+            token: FAKE_CONTRACT_ID,
+            totalAmount: "1000000000",
+            advance1Bps: 1500,
+            advance2Bps: 2000,
+            ...validWindows,
+            contractedQuantity: 1,
+            gradePriceBps: [10_000],
+            sourcePublicKey: FAKE_PUBLIC_KEY,
+          },
+        });
+        expect(res.statusCode).toBe(200);
+        expect(res.json()).toEqual({ xdr: "FAKE-UNSIGNED-XDR" });
+        expect(buildInvoke).toHaveBeenCalledTimes(1);
+      } finally {
+        buildInvoke.mockRestore();
+      }
     },
     15_000,
   );
@@ -513,27 +553,76 @@ describe("server (HTTP layer)", () => {
   );
 
   it(
-    "rejects a gradePriceBps entry over 10000 before touching the network",
+    "accepts a gradePriceBps entry at exactly 10000 (the inclusive ceiling)",
     async () => {
-      const res = await app.inject({
-        method: "POST",
-        url: `/commitments/${FAKE_CONTRACT_ID}/tx/initialize`,
-        payload: {
-          buyer: FAKE_PUBLIC_KEY,
-          cooperative: FAKE_PUBLIC_KEY,
-          warehouseOperator: FAKE_PUBLIC_KEY,
-          token: FAKE_CONTRACT_ID,
-          totalAmount: "1000000000",
-          advance1Bps: 1500,
-          advance2Bps: 2000,
-          ...validWindows,
-          contractedQuantity: 1_000,
-          gradePriceBps: [10_000, 10_001],
-          sourcePublicKey: FAKE_PUBLIC_KEY,
-        },
-      });
-      expect(res.statusCode).toBe(400);
-      expect(res.json().message).toMatch(/gradePriceBps must be a non-empty array/);
+      // The builder is stubbed so this stays a validation-boundary test with
+      // no network call. Reaching it with a 200 is the proof that 10000
+      // passed the route's `bps > 10_000` guard -- the exact off-by-one the
+      // existing [10_000, 10_001] case can't isolate, since that request is
+      // rejected for 10_001 regardless of how 10_000 behaves.
+      const buildInvoke = vi
+        .spyOn(txModule, "buildInvokeTransaction")
+        .mockResolvedValue("FAKE-UNSIGNED-XDR");
+      try {
+        const res = await app.inject({
+          method: "POST",
+          url: `/commitments/${FAKE_CONTRACT_ID}/tx/initialize`,
+          payload: {
+            buyer: FAKE_PUBLIC_KEY,
+            cooperative: FAKE_PUBLIC_KEY,
+            warehouseOperator: FAKE_PUBLIC_KEY,
+            token: FAKE_CONTRACT_ID,
+            totalAmount: "1000000000",
+            advance1Bps: 1500,
+            advance2Bps: 2000,
+            ...validWindows,
+            contractedQuantity: 1_000,
+            gradePriceBps: [10_000],
+            sourcePublicKey: FAKE_PUBLIC_KEY,
+          },
+        });
+        expect(res.statusCode).toBe(200);
+        expect(res.json()).toEqual({ xdr: "FAKE-UNSIGNED-XDR" });
+        expect(buildInvoke).toHaveBeenCalledTimes(1);
+      } finally {
+        buildInvoke.mockRestore();
+      }
+    },
+    15_000,
+  );
+
+  it(
+    "rejects a gradePriceBps entry at 10001 (one past the inclusive ceiling) before touching the network",
+    async () => {
+      // Stubbed only so a regression can't fall through to testnet -- the
+      // assertion is that validation stops the request before the builder.
+      const buildInvoke = vi
+        .spyOn(txModule, "buildInvokeTransaction")
+        .mockResolvedValue("FAKE-UNSIGNED-XDR");
+      try {
+        const res = await app.inject({
+          method: "POST",
+          url: `/commitments/${FAKE_CONTRACT_ID}/tx/initialize`,
+          payload: {
+            buyer: FAKE_PUBLIC_KEY,
+            cooperative: FAKE_PUBLIC_KEY,
+            warehouseOperator: FAKE_PUBLIC_KEY,
+            token: FAKE_CONTRACT_ID,
+            totalAmount: "1000000000",
+            advance1Bps: 1500,
+            advance2Bps: 2000,
+            ...validWindows,
+            contractedQuantity: 1_000,
+            gradePriceBps: [10_001],
+            sourcePublicKey: FAKE_PUBLIC_KEY,
+          },
+        });
+        expect(res.statusCode).toBe(400);
+        expect(res.json().message).toMatch(/gradePriceBps must be a non-empty array/);
+        expect(buildInvoke).not.toHaveBeenCalled();
+      } finally {
+        buildInvoke.mockRestore();
+      }
     },
     15_000,
   );
@@ -791,21 +880,66 @@ describe("server (HTTP layer)", () => {
   );
 
   it(
-    "rejects members whose shareBps sum over 10000 on set-allocation before touching the network",
+    "accepts members whose shareBps sum to exactly 10000 (the inclusive ceiling)",
     async () => {
-      const res = await app.inject({
-        method: "POST",
-        url: `/commitments/${FAKE_CONTRACT_ID}/tx/set-allocation`,
-        payload: {
-          members: [
-            { phoneNumber: "+2348012345678", shareBps: 6_000 },
-            { phoneNumber: "+2348098765432", shareBps: 5_000 },
-          ],
-          sourcePublicKey: FAKE_PUBLIC_KEY,
-        },
-      });
-      expect(res.statusCode).toBe(400);
-      expect(res.json().message).toMatch(/shareBps sum to 11000/);
+      // The builder is stubbed so this stays a validation-boundary test with
+      // no network call. A 200 is the proof that a total of exactly 10000
+      // cleared the route's `totalBps > 10_000` guard.
+      const buildInvoke = vi
+        .spyOn(txModule, "buildInvokeTransaction")
+        .mockResolvedValue("FAKE-UNSIGNED-XDR");
+      try {
+        const res = await app.inject({
+          method: "POST",
+          url: `/commitments/${FAKE_CONTRACT_ID}/tx/set-allocation`,
+          payload: {
+            members: [
+              { phoneNumber: "+2348012345678", shareBps: 6_000 },
+              { phoneNumber: "+2348098765432", shareBps: 4_000 },
+            ],
+            sourcePublicKey: FAKE_PUBLIC_KEY,
+          },
+        });
+        expect(res.statusCode).toBe(200);
+        expect(res.json().xdr).toBe("FAKE-UNSIGNED-XDR");
+        expect(res.json().members.map((m: { shareBps: number }) => m.shareBps)).toEqual([6_000, 4_000]);
+        expect(buildInvoke).toHaveBeenCalledTimes(1);
+      } finally {
+        buildInvoke.mockRestore();
+      }
+    },
+    15_000,
+  );
+
+  it(
+    "rejects members whose shareBps sum to 10001 (one over the inclusive ceiling)",
+    async () => {
+      // Stubbed only so a regression can't fall through to testnet -- the
+      // assertion is that the sum guard stops the request before the builder.
+      // Each member's own shareBps is valid (<= 10000); only the total is
+      // one past the boundary, which isolates the sum check from the
+      // per-member one above.
+      const buildInvoke = vi
+        .spyOn(txModule, "buildInvokeTransaction")
+        .mockResolvedValue("FAKE-UNSIGNED-XDR");
+      try {
+        const res = await app.inject({
+          method: "POST",
+          url: `/commitments/${FAKE_CONTRACT_ID}/tx/set-allocation`,
+          payload: {
+            members: [
+              { phoneNumber: "+2348012345678", shareBps: 6_000 },
+              { phoneNumber: "+2348098765432", shareBps: 4_001 },
+            ],
+            sourcePublicKey: FAKE_PUBLIC_KEY,
+          },
+        });
+        expect(res.statusCode).toBe(400);
+        expect(res.json().message).toMatch(/shareBps sum to 10001/);
+        expect(buildInvoke).not.toHaveBeenCalled();
+      } finally {
+        buildInvoke.mockRestore();
+      }
     },
     15_000,
   );
@@ -1582,7 +1716,7 @@ describe("rate limiting (limiter engages; 429 carries Retry-After)", () => {
   });
 
   it(
-    "enforces the per-IP limit and answers a 429 with Retry-After",
+    "allows the 100th request and rejects the 101st (the exact rate-limit boundary)",
     async () => {
       // The limiter keys on req.ip, and inject() always presents the
       // same address, so every request here shares one bucket — same as
@@ -1593,14 +1727,27 @@ describe("rate limiting (limiter engages; 429 carries Retry-After)", () => {
       // the earliest observable sign the limiter is engaged at all
       // (pre-fix, no response ever carried these).
       expect(first.headers["x-ratelimit-limit"]).toBe("100");
+      expect(first.headers["x-ratelimit-remaining"]).toBe("99");
 
-      // Requests 2..100 (first consumed 1): all still allowed.
-      for (let i = 0; i < 99; i++) {
+      // Requests 2..99 (first consumed 1): all still allowed, with the
+      // remaining count counting down one per request.
+      for (let i = 0; i < 98; i++) {
         const res = await limitedApp.inject({ method: "GET", url: "/health" });
         expect(res.statusCode).toBe(200);
+        expect(res.headers["x-ratelimit-remaining"]).toBe(String(98 - i));
       }
 
-      // Request 101: over max — the 429 with its backoff header.
+      // Request 100: exactly at the limit. This is the last *allowed*
+      // request, and the first response to report zero remaining — the
+      // inclusive side of the boundary the old loop swallowed.
+      const atTheLimit = await limitedApp.inject({ method: "GET", url: "/health" });
+      expect(atTheLimit.statusCode).toBe(200);
+      expect(atTheLimit.headers["x-ratelimit-remaining"]).toBe("0");
+
+      // Request 101: one past the limit — the first 429, with its backoff
+      // header. A limit of 99 or 101 would fail one of the two assertions
+      // above/below, so this pins the off-by-one rather than just "the
+      // limiter eventually kicks in".
       const blocked = await limitedApp.inject({ method: "GET", url: "/health" });
       expect(blocked.statusCode).toBe(429);
       expect(blocked.headers["x-ratelimit-remaining"]).toBe("0");
