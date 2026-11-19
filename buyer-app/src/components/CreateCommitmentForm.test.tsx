@@ -250,6 +250,35 @@ describe("CreateCommitmentForm", () => {
     expect(screen.getByText(/must confirm you've read Roles & Responsibilities/)).toBeInTheDocument();
   }, 15_000);
 
+  it("clears the oracle fields' validation errors when FX conversion is toggled off, not just hides the inputs", async () => {
+    const onSubmit = vi.fn();
+    const user = userEvent.setup();
+    render(<CreateCommitmentForm onSubmit={onSubmit} submitting={false} submitError={null} />);
+
+    await user.type(screen.getByLabelText("Cooperative address"), validFields.cooperative);
+    await user.type(screen.getByLabelText("Warehouse operator address"), validFields.warehouseOperator);
+    await user.type(screen.getByLabelText("Token contract address"), validFields.token);
+    await user.type(screen.getByLabelText("Total amount (USDC)"), "100");
+    await user.type(screen.getByLabelText(/Contracted quantity/), validFields.contractedQuantity);
+    await user.click(screen.getByRole("checkbox", { name: /Roles & Responsibilities/ }));
+
+    // Enable FX conversion but leave its oracle fields blank, so submitting
+    // fails with an oracle-specific validation error.
+    await user.click(screen.getByRole("checkbox", { name: /FX conversion/ }));
+    await user.click(screen.getByRole("button", { name: "Create commitment" }));
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByText(/Oracle contract address is required/)).toBeInTheDocument();
+
+    // Turning FX conversion back off hides the oracle inputs...
+    await user.click(screen.getByRole("checkbox", { name: /FX conversion/ }));
+    expect(screen.queryByLabelText("Reflector oracle contract address")).not.toBeInTheDocument();
+
+    // ...and must clear the now-irrelevant validation error, not leave it
+    // pointing at fields the buyer can no longer see.
+    expect(screen.queryByText(/Oracle contract address is required/)).not.toBeInTheDocument();
+  });
+
   it("shows 'Creating…' and disables the button while submitting", () => {
     render(<CreateCommitmentForm onSubmit={vi.fn()} submitting={true} submitError={null} />);
     expect(screen.getByRole("button", { name: "Creating…" })).toBeDisabled();

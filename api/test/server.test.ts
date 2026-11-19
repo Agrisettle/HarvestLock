@@ -1042,7 +1042,10 @@ describe("server (HTTP layer)", () => {
       // *new* commitment. Fires before window-bounds validation, so the
       // payload here can otherwise be minimal.
       const barredBuyer = Keypair.random().publicKey();
-      await recordBuyerDefault(barredBuyer, "CFAKECONTRACTFORTEST");
+      // Unique per run: standing_events is UNIQUE (contract_id, event_type),
+      // so a fixed fake ID would conflict with an earlier run's event and
+      // skip the bar this test depends on.
+      await recordBuyerDefault(barredBuyer, `CFAKE${barredBuyer}`);
 
       const res = await app.inject({
         method: "POST",
@@ -1069,7 +1072,7 @@ describe("server (HTTP layer)", () => {
     "rejects initialize with 403 when the cooperative address is barred",
     async () => {
       const barredCooperative = Keypair.random().publicKey();
-      await recordBuyerDefault(barredCooperative, "CFAKECONTRACTFORTEST");
+      await recordBuyerDefault(barredCooperative, `CFAKE${barredCooperative}`);
 
       const res = await app.inject({
         method: "POST",

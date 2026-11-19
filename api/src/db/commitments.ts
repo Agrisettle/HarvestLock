@@ -30,13 +30,13 @@ export interface UpsertResult {
 
 /**
  * Reads the prior cached status and writes the new one inside a single
- * transaction (`SELECT ... FOR UPDATE` then the upsert), so a caller can
- * tell whether this call is the one that just observed a transition into
- * a terminal status — see `src/reputation.ts`, which is the reason this
- * returns `previousStatus` at all. Doing the read and write in one
- * transaction, not two separate queries, avoids a race where two
- * concurrent refreshes of the same contract could both see the same
- * "previous" status and double-apply a reputation consequence.
+ * transaction (`SELECT ... FOR UPDATE` then the upsert), returning
+ * `previousStatus` alongside the row. Reputation idempotency no longer
+ * depends on this value — `standing_events`' UNIQUE (contract_id,
+ * event_type) is the exactly-once gate now (see `src/reputation.ts` and
+ * `src/db/reputation.ts`) — but the read/write pairing still gives any
+ * caller a consistent "before and after" view of the cache, and existing
+ * callers/tests use it.
  */
 export async function upsertCommitment(contractId: string, c: Commitment): Promise<UpsertResult> {
   const client = await pool.connect();
