@@ -155,6 +155,17 @@ main {
   color: var(--bone-dim);
 }
 
+.language-picker {
+  background: var(--void-raised);
+  border: 1px solid var(--void-line);
+  color: var(--bone);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-family: var(--body);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
 .claim-button {
   background: var(--gold);
   color: var(--void);

@@ -1419,7 +1419,7 @@
                 "oracle-rate"
               ]
             },
-            "description": "Live cross-contract call to the configured oracle, never cached. 500 if no oracle is configured, the asset isn't quoted, or the quote is too old."
+            "description": "Live cross-contract call to the configured oracle, never cached. 409 with contractError if no oracle is configured, the asset isn't quoted, or the quote is too old (404 if the contract itself was never initialized)."
           }
         }
       ]
@@ -1448,7 +1448,7 @@
                 "submit"
               ]
             },
-            "description": "Submits a signed envelope and polls for confirmation. Optional fields: `refreshContractId` (refresh the Postgres cache), `completeProposalId` (finalize a staged proposal), `allocationContractId` + `allocationMembers` (persist a staged allocation). Remove the ones you don't need. Built transactions are time-bounded (60 s; 300 s for a finalized proposal), so sign and submit promptly.",
+            "description": "Submits a signed envelope and polls for confirmation. Optional fields: `refreshContractId` (refresh the Postgres cache), `completeProposalId` (finalize a staged proposal), `allocationContractId` + `allocationMembers` (persist a staged allocation). Remove the ones you don't need. Built transactions are time-bounded (60 s; 300 s for a finalized proposal), so sign and submit promptly. Returns **202** `{status: \"PENDING\", hash}` if confirmation is slower than the poll window; poll `GET /transactions/{hash}` with that hash.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"xdr\": \"{{signedXdr}}\",\n  \"refreshContractId\": \"{{contractId}}\"\n}",
@@ -1458,6 +1458,24 @@
                 }
               }
             }
+          }
+        },
+        {
+          "name": "Get transaction status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/transactions/{{txHash}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transactions",
+                "{{txHash}}"
+              ]
+            },
+            "description": "Follow-up for a 202 from `/transactions/submit`. Returns `{status, hash}` where status is `PENDING`, `SUCCESS`, or `FAILED`. The first SUCCESS observation applies the pending submission's stored side effects exactly once. `:hash` must be 64 hex characters."
           }
         }
       ]

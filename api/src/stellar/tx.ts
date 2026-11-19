@@ -7,6 +7,7 @@ import {
 } from "@stellar/stellar-sdk";
 import { server, networkPassphrase } from "./rpc.js";
 import { withRetry } from "./retry.js";
+import { contractErrorFromSimulation } from "../errors.js";
 
 /**
  * Every write in this API follows the same shape: build an unsigned
@@ -38,7 +39,12 @@ export async function buildInvokeTransaction(opts: {
 
   const sim = await withRetry(() => server.simulateTransaction(tx));
   if (rpc.Api.isSimulationError(sim)) {
-    throw new Error(`simulation failed for ${opts.method}: ${sim.error}`);
+    // An ordinary state-machine rejection is a 409 with the contract's own
+    // code/name; only diagnostics with no contract code stay a 5xx.
+    throw (
+      contractErrorFromSimulation(opts.method, sim.error) ??
+      new Error(`simulation failed for ${opts.method}: ${sim.error}`)
+    );
   }
 
   const assembled = rpc.assembleTransaction(tx, sim).build();
@@ -46,7 +52,13 @@ export async function buildInvokeTransaction(opts: {
 }
 
 export interface SubmitResult {
-  status: "SUCCESS" | "FAILED";
+  /**
+   * PENDING is not an error: the network accepted the transaction but it
+   * hadn't been included within this call's poll window. The caller gets
+   * the hash back so it can ask GET /transactions/:hash later instead of
+   * being told (wrongly) that a real, funds-moving action failed.
+   */
+  status: "SUCCESS" | "FAILED" | "PENDING";
   hash: string;
   returnValue?: unknown;
 }
@@ -78,7 +90,11 @@ export async function submitSignedTransaction(signedXdr: string): Promise<Submit
       // fall through to the timeout check / sleep below and retry
     }
     if (Date.now() - started > timeoutMs) {
-      throw new Error(`timed out waiting for transaction ${hash} to be included`);
+      // The transaction was already accepted; only its confirmation is
+      // slow. Returning PENDING (rather than throwing) is what lets the
+      // route answer 202 and persist the hash for later polling — see
+      // db/pendingSubmissions.ts and GET /transactions/:hash.
+      return { status: "PENDING", hash };
     }
     await new Promise((r) => setTimeout(r, 1500));
   }
@@ -87,4 +103,24 @@ export async function submitSignedTransaction(signedXdr: string): Promise<Submit
     return { status: "SUCCESS", hash, returnValue: result.returnValue };
   }
   throw new Error(`transaction ${hash} failed: ${JSON.stringify(result)}`);
+}
+
+/**
+ * The status-only read behind GET /transactions/:hash. Kept here beside
+ * the submission poll rather than in server.ts so the RPC vocabulary
+ * (NOT_FOUND/SUCCESS/FAILED) stays in one module. A transient RPC error
+ * is reported as PENDING, not a 5xx: the caller's next poll can retry,
+ * and a hash that was accepted on-chain shouldn't look like an API
+ * outage just because one getTransaction call blipped.
+ */
+export async function getTransactionStatus(hash: string): Promise<"PENDING" | "SUCCESS" | "FAILED"> {
+  let result: rpc.Api.GetTransactionResponse;
+  try {
+    result = await server.getTransaction(hash);
+  } catch {
+    return "PENDING";
+  }
+  if (result.status === rpc.Api.GetTransactionStatus.SUCCESS) return "SUCCESS";
+  if (result.status === rpc.Api.GetTransactionStatus.NOT_FOUND) return "PENDING";
+  return "FAILED";
 }

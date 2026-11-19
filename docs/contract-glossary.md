@@ -9,7 +9,10 @@ was rejected).
 dashboard has a `status` field whose value is one of the `Status` names
 below, verbatim. A rejected write (a lifecycle call that isn't allowed right
 now) comes back as an error mentioning `Error(Contract, #N)` — find `N` in
-the error table to see what it means. Status changes are also emitted as
+the error table to see what it means. The API also returns the code and this
+glossary name as `contractError: { code, name }` (HTTP 409, or 404 for a
+read of a missing/uninitialized contract), so a frontend can show the plain
+English without parsing the diagnostic. Status changes are also emitted as
 on-chain events; errors never change state.
 
 **Checked against the code, not from memory:** the enums in

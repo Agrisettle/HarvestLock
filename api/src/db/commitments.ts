@@ -43,11 +43,21 @@ export async function upsertCommitment(contractId: string, c: Commitment): Promi
   try {
     await client.query("BEGIN");
 
-    const { rows: existing } = await client.query<{ status: string }>(
-      "SELECT status FROM commitments WHERE contract_id = $1 FOR UPDATE",
+    const { rows: existing } = await client.query<CommitmentRow>(
+      "SELECT * FROM commitments WHERE contract_id = $1 FOR UPDATE",
       [contractId],
     );
     const previousStatus = existing[0]?.status ?? null;
+    const existingRow = existing[0] ?? null;
+
+    // Skip the write when nothing changed: status (and every other field)
+    // is immutable for an existing commitment, so an identical status means
+    // the cached row is already current. This keeps `updated_at` stable
+    // and avoids a pointless write on the hot read path.
+    if (existingRow && previousStatus === c.status) {
+      await client.query("COMMIT");
+      return { row: existingRow, previousStatus };
+    }
 
     const { rows } = await client.query<CommitmentRow>(
       `INSERT INTO commitments
