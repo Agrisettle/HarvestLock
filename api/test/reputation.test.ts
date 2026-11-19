@@ -124,6 +124,35 @@ describe("db/reputation", () => {
     expect(after3.barred_reason).toBe("cooperative_forfeiture_3x");
   });
 
+  it("flips the bar exactly on the 3rd strike -- persisted standing is unbarred at 2, barred at 3", async () => {
+    // The off-by-one this pins: FORFEITURE_STRIKES_BEFORE_BAR is 3, so the
+    // second strike must not bar (one-inside) and the third must (the
+    // boundary itself). Checking getStanding as well as the returned rows
+    // matters -- a caller could see barred=true from the in-memory result
+    // while a failed/partial write left the persisted row unbarred.
+    const cooperative = randomAddress();
+    await recordCooperativeForfeiture(cooperative, randomContractId());
+    const after2 = await recordCooperativeForfeiture(cooperative, randomContractId());
+
+    expect(after2).toMatchObject({ strike_count: 2, barred: false, barred_reason: null, barred_at: null });
+    expect(await getStanding(cooperative)).toMatchObject({
+      strike_count: 2,
+      barred: false,
+      barred_reason: null,
+      barred_at: null,
+    });
+
+    const after3 = await recordCooperativeForfeiture(cooperative, randomContractId());
+
+    expect(after3).toMatchObject({
+      strike_count: 3,
+      barred: true,
+      barred_reason: "cooperative_forfeiture_3x",
+    });
+    expect(after3.barred_at).not.toBeNull();
+    expect(await getStanding(cooperative)).toEqual(after3);
+  });
+
   it("a fourth forfeiture after the bar keeps incrementing but doesn't touch barred_at", async () => {
     const cooperative = randomAddress();
     await recordCooperativeForfeiture(cooperative, randomContractId());

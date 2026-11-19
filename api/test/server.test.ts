@@ -5,10 +5,14 @@ import { Keypair, StrKey, Address, xdr } from "@stellar/stellar-sdk";
 import { randomBytes } from "node:crypto";
 import { buildServer } from "../src/server.js";
 import * as txModule from "../src/stellar/tx.js";
+import * as clientModule from "../src/stellar/client.js";
+import type { Commitment } from "../src/stellar/client.js";
 import { recordBuyerDefault } from "../src/db/reputation.js";
 import { pool } from "../src/db/pool.js";
 import { server as rpcServer } from "../src/stellar/rpc.js";
 import { MAX_PAGE_SIZE } from "../src/db/commitments.js";
+import * as commitmentsDb from "../src/db/commitments.js";
+import { recordAllocationMembers, stageAllocationMembers } from "../src/db/allocationMembers.js";
 import { createProposal } from "../src/db/pendingMultisigProposals.js";
 
 /**
@@ -47,6 +51,50 @@ async function seedCommitments(prefix: string, count: number): Promise<void> {
      FROM (SELECT $1::text AS prefix) p, generate_series(1, $2::int) i`,
     [prefix, count],
   );
+}
+
+/**
+ * A complete, plausible on-chain commitment for tests that stub the live
+ * read. Only `status` varies between callers here; the rest just has to
+ * satisfy the cache table's NOT NULL/CHECK constraints so
+ * `upsertCommitment` can persist it.
+ */
+function fakeCommitment(overrides: Partial<Commitment> = {}): Commitment {
+  return {
+    buyer: FAKE_PUBLIC_KEY,
+    cooperative: FAKE_PUBLIC_KEY,
+    warehouse_operator: FAKE_PUBLIC_KEY,
+    token: FAKE_CONTRACT_ID,
+    total_amount: 1_000_000_000n,
+    advance1_bps: 1500,
+    advance2_bps: 2000,
+    claim_window_secs: 3600n,
+    remainder_window_secs: 3600n,
+    status: "Locked",
+    created_at: 0n,
+    delivery_deadline: 0n,
+    advance1_deadline: 0n,
+    advance1_claimed: false,
+    advance1_expired: false,
+    advance2_deadline: 0n,
+    advance2_claimed: false,
+    advance2_expired: false,
+    remainder_deadline: 0n,
+    remainder_funded: false,
+    contracted_quantity: 1_000,
+    grade_price_bps: [10_000],
+    delivered_quantity: 0,
+    grade_index: 0,
+    settlement_bps: 0,
+    fx_resolved: false,
+    fx_adjusted_total: 0n,
+    fx_shortfall_amount: 0n,
+    fx_shortfall_funded: false,
+    fx_shortfall_deadline: 0n,
+    dispute_pre_status: "Draft",
+    dispute_deadline: 0n,
+    ...overrides,
+  };
 }
 
 /**
@@ -270,6 +318,83 @@ describe("server (HTTP layer)", () => {
       }
     },
     30_000,
+  );
+
+  it(
+    "two concurrent GET /commitments/:contractId refreshes race the cache write without erroring or duplicating the row",
+    async () => {
+      // Issue #132's boundary: two refreshes for the same contract land
+      // at once, so both handlers are inside upsertCommitment's
+      // SELECT ... FOR UPDATE at the same time rather than one finishing
+      // before the other starts. The mock holds the first live read until
+      // the second arrives, making that overlap deterministic; whichever
+      // order Postgres grants the row lock, the second writer must see
+      // the first one's committed status (not the null it would have seen
+      // without FOR UPDATE), and the ON CONFLICT upsert must leave exactly
+      // one row.
+      const contractId = StrKey.encodeContract(randomBytes(32));
+      const statuses = ["Locked", "Funded"];
+      let readsArrived = 0;
+      let releaseReads!: () => void;
+      const bothReadsArrived = new Promise<void>((resolve) => {
+        releaseReads = resolve;
+      });
+
+      const getCommitmentMock = vi.spyOn(clientModule, "getCommitment").mockImplementation(async () => {
+        const status = statuses[readsArrived]!;
+        readsArrived += 1;
+        if (readsArrived === statuses.length) releaseReads();
+        await bothReadsArrived;
+        return fakeCommitment({ status });
+      });
+      // Call through to the real upsert, but keep each returned promise so
+      // the test can prove both writes actually completed: the route
+      // catches cache-refresh failures (deliberately — a read-only cache
+      // write must not mask a live chain read), so two 200s alone
+      // wouldn't distinguish "both wrote" from "one wrote, one failed".
+      const upsertSpy = vi.spyOn(commitmentsDb, "upsertCommitment");
+
+      try {
+        await pool.query("DELETE FROM commitments WHERE contract_id = $1", [contractId]);
+
+        const [first, second] = await Promise.all([
+          app.inject({ method: "GET", url: `/commitments/${contractId}` }),
+          app.inject({ method: "GET", url: `/commitments/${contractId}` }),
+        ]);
+
+        expect(first.statusCode).toBe(200);
+        expect(second.statusCode).toBe(200);
+        expect(new Set([first.json().status, second.json().status])).toEqual(new Set(statuses));
+
+        expect(upsertSpy.mock.results).toHaveLength(2);
+        const results = await Promise.all(
+          upsertSpy.mock.results.map((result) => result.value as ReturnType<typeof commitmentsDb.upsertCommitment>),
+        );
+
+        // Exactly one writer created the row and saw no prior status; the
+        // other was serialized behind it and saw the first writer's
+        // status. Two nulls would mean the lock didn't hold; a null plus
+        // anything other than one of the statuses above would mean the
+        // second read raced a half-written row.
+        const previousStatuses = results.map((result) => result.previousStatus);
+        expect(previousStatuses.filter((status) => status === null)).toHaveLength(1);
+        const observed = previousStatuses.filter((status): status is string => status !== null);
+        expect(observed).toHaveLength(1);
+        expect(statuses).toContain(observed[0]);
+
+        const { rows } = await pool.query<{ status: string }>(
+          "SELECT status FROM commitments WHERE contract_id = $1",
+          [contractId],
+        );
+        expect(rows).toHaveLength(1);
+        expect(statuses).toContain(rows[0]!.status);
+      } finally {
+        getCommitmentMock.mockRestore();
+        upsertSpy.mockRestore();
+        await pool.query("DELETE FROM commitments WHERE contract_id = $1", [contractId]);
+      }
+    },
+    15_000,
   );
 
   it(
@@ -1003,6 +1128,56 @@ describe("server (HTTP layer)", () => {
       expect(res.statusCode).toBe(404);
       expect(Object.keys(res.json()).sort()).toEqual(["error", "message", "statusCode"]);
       expect(res.json()).toMatchObject({ statusCode: 404, error: "Not Found" });
+    },
+    15_000,
+  );
+
+  it(
+    "DELETE /allocation-members/:memberHash called twice is an accepted no-op the second time, preserving the first erased_at",
+    async () => {
+      // Two DELETEs for exactly the same recorded hash: the first is a
+      // real erasure; the second must still be found (the row survives with
+      // phone_number nulled, unlike a genuinely unknown hash above), so it
+      // returns 200 rather than 404. eraseAllocationMember's COALESCE must
+      // also keep the original erased_at instead of re-stamping it, or the
+      // record would misreport when the NDPA erasure actually happened.
+      const contractId = StrKey.encodeContract(randomBytes(32));
+      const [member] = stageAllocationMembers([{ phoneNumber: "+2348012345678", shareBps: 6_000 }]);
+      await recordAllocationMembers(contractId, [member!]);
+
+      try {
+        const first = await app.inject({
+          method: "DELETE",
+          url: `/allocation-members/${member!.memberHash}`,
+        });
+        expect(first.statusCode).toBe(200);
+        expect(first.json()).toEqual({ erased: true });
+
+        const afterFirst = await pool.query<{ phone_number: string | null; erased_at: string | null }>(
+          "SELECT phone_number, erased_at::text AS erased_at FROM allocation_members WHERE member_hash = $1",
+          [member!.memberHash],
+        );
+        expect(afterFirst.rows).toHaveLength(1);
+        expect(afterFirst.rows[0]!.phone_number).toBeNull();
+        expect(afterFirst.rows[0]!.erased_at).not.toBeNull();
+
+        const second = await app.inject({
+          method: "DELETE",
+          url: `/allocation-members/${member!.memberHash}`,
+        });
+        expect(second.statusCode).toBe(200);
+        expect(second.json()).toEqual({ erased: true });
+
+        const afterSecond = await pool.query<{ phone_number: string | null; erased_at: string | null }>(
+          "SELECT phone_number, erased_at::text AS erased_at FROM allocation_members WHERE member_hash = $1",
+          [member!.memberHash],
+        );
+        expect(afterSecond.rows).toHaveLength(1);
+        expect(afterSecond.rows[0]!.phone_number).toBeNull();
+        expect(afterSecond.rows[0]!.erased_at).toBe(afterFirst.rows[0]!.erased_at);
+      } finally {
+        await pool.query("DELETE FROM allocation_members WHERE contract_id = $1", [contractId]);
+      }
     },
     15_000,
   );
