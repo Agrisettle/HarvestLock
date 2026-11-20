@@ -134,6 +134,28 @@ describe("ReassignBuyerSection", () => {
     expect(String(proposeCall?.[1]?.body)).toContain(newBuyer);
   });
 
+  it("tabs from the labeled address input to the propose button", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ proposal: null }));
+
+    const user = userEvent.setup();
+    render(
+      <ReassignBuyerSection
+        commitment={baseCommitment}
+        contractId="CXXX"
+        walletAddress={baseCommitment.buyer}
+        onReassigned={vi.fn()}
+      />,
+    );
+
+    const input = await screen.findByLabelText("Reassign to a new buyer");
+    await user.tab();
+    expect(input).toHaveFocus();
+
+    await user.type(input, newBuyer);
+    await user.tab();
+    expect(screen.getByRole("button", { name: "Propose reassignment" })).toHaveFocus();
+  });
+
   it("shows an approve button for a pending signer, and approving signs via signAuthEntry then waits for the other signer", async () => {
     const pendingProposal = {
       id: "prop-1",
@@ -240,6 +262,6 @@ describe("ReassignBuyerSection", () => {
     const approveButton = await screen.findByRole("button", { name: "Approve reassignment" });
     await user.click(approveButton);
 
-    expect(await screen.findByText("User declined to sign")).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent("User declined to sign");
   });
 });

@@ -152,7 +152,7 @@ export function DisputeSection({
 
   return (
     <div className="dispute-section">
-      {error && <div className="error-banner">{error}</div>}
+      {error && <div className="error-banner" role="alert">{error}</div>}
 
       {!disputed && (
         <button className="action-button secondary" onClick={handleFlag} disabled={busy}>

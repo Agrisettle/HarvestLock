@@ -125,7 +125,7 @@ export function ReassignBuyerSection({
 
   return (
     <div className="reassign-section">
-      {error && <div className="error-banner">{error}</div>}
+      {error && <div className="error-banner" role="alert">{error}</div>}
 
       {!proposal && isCurrentBuyer && (
         <form className="reassign-form" onSubmit={handlePropose}>
