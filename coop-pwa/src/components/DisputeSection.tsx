@@ -154,7 +154,9 @@ export function DisputeSection({
 
   return (
     <div className="dispute-section">
-      {error && <div className="error-banner">{error}</div>}
+      {/* `role="alert"` so the rejection message is announced rather than
+          silently painted above the button the user just activated. */}
+      {error && <div className="error-banner" role="alert">{error}</div>}
 
       {!disputed && (
         <button className="action-button secondary" onClick={handleFlag} disabled={busy}>
@@ -174,12 +176,12 @@ export function DisputeSection({
       )}
 
       {proposal?.status === "pending" && iAmProposer && (
-        <p className="cancel-status">{t("dispute.proposed")}</p>
+        <p className="cancel-status" role="status">{t("dispute.proposed")}</p>
       )}
 
       {proposal?.status === "pending" && isPendingSigner && (
         <>
-          <p className="cancel-status">{t("dispute.otherWants")}</p>
+          <p className="cancel-status" role="status">{t("dispute.otherWants")}</p>
           <button className="action-button secondary" onClick={handleApprove} disabled={busy}>
             {busy ? t("dispute.approving") : t("dispute.approve")}
           </button>
@@ -187,7 +189,7 @@ export function DisputeSection({
       )}
 
       {proposal?.status === "pending" && justApproved && !isPendingSigner && !iAmProposer && (
-        <p className="cancel-status">{t("dispute.approvedWaiting")}</p>
+        <p className="cancel-status" role="status">{t("dispute.approvedWaiting")}</p>
       )}
 
       {proposal?.status === "ready" && iAmProposer && (
@@ -197,7 +199,7 @@ export function DisputeSection({
       )}
 
       {proposal?.status === "ready" && !iAmProposer && (
-        <p className="cancel-status">{t("dispute.approvedWaitingProposer")}</p>
+        <p className="cancel-status" role="status">{t("dispute.approvedWaitingProposer")}</p>
       )}
     </div>
   );

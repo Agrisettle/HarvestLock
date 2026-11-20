@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { ReassignBuyerSection } from "./ReassignBuyerSection";
 import type { CommitmentDetail } from "../api";
 import * as wallet from "../wallet";
+import { expectNoA11yViolations } from "../a11y";
 
 // Same mocking shape as CancelSection.test.tsx -- no real Freighter
 // extension exists in this environment; what's verified here is
@@ -125,6 +126,10 @@ describe("ReassignBuyerSection", () => {
     await user.click(screen.getByRole("button", { name: "Propose reassignment" }));
 
     expect(await screen.findByText(/waiting for the cooperative and the new buyer to approve/i)).toBeInTheDocument();
+    // The form (and the button that had focus) unmounts when the proposal
+    // appears -- `role="status"` is what announces the new state to a
+    // screen-reader user instead of leaving it silent.
+    expect(screen.getByRole("status")).toHaveTextContent(/waiting for the cooperative and the new buyer to approve/i);
     // Both the initial poll (GET) and the propose call (POST) hit the same
     // URL -- distinguish by method, not just the path.
     const proposeCall = fetchMock.mock.calls.find(
@@ -241,5 +246,36 @@ describe("ReassignBuyerSection", () => {
     await user.click(approveButton);
 
     expect(await screen.findByText("User declined to sign")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("User declined to sign");
+  });
+
+  it("is fully keyboard operable: tab reaches the address input then the submit button, in visual order, with nothing skipped", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ proposal: null }));
+
+    const user = userEvent.setup();
+    const { container } = render(
+      <ReassignBuyerSection commitment={baseCommitment} contractId="CXXX" walletAddress={baseCommitment.buyer} onReassigned={vi.fn()} />,
+    );
+
+    const input = await screen.findByLabelText("Reassign to a new buyer");
+    const submit = screen.getByRole("button", { name: "Propose reassignment" });
+
+    await user.tab();
+    expect(input).toHaveFocus();
+
+    // The submit button is disabled until there's an address, so a
+    // keyboard user must be able to fill the field and reach it next --
+    // not have it silently skipped and the section unreachable.
+    await user.type(input, newBuyer);
+    await user.tab();
+    expect(submit).toBeEnabled();
+    expect(submit).toHaveFocus();
+
+    // Shift+Tab goes straight back to the input: no focus trap, no detour
+    // through a non-interactive element.
+    await user.tab({ shift: true });
+    expect(input).toHaveFocus();
+
+    await expectNoA11yViolations(container);
   });
 });

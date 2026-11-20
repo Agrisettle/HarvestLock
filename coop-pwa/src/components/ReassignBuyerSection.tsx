@@ -127,7 +127,10 @@ export function ReassignBuyerSection({
 
   return (
     <div className="reassign-section">
-      {error && <div className="error-banner">{error}</div>}
+      {/* `role="alert"` so a keyboard/screen-reader user hears why the
+          action failed -- the banner replaces nothing they were focused
+          on, so without it the failure is silent. */}
+      {error && <div className="error-banner" role="alert">{error}</div>}
 
       {!proposal && isCurrentBuyer && (
         <form className="reassign-form" onSubmit={handlePropose}>
@@ -146,14 +149,14 @@ export function ReassignBuyerSection({
       )}
 
       {proposal?.status === "pending" && proposal.proposer_address === walletAddress && (
-        <p className="cancel-status">
+        <p className="cancel-status" role="status">
           {t("reassign.proposed")}
         </p>
       )}
 
       {proposal?.status === "pending" && isPendingSigner && (
         <>
-          <p className="cancel-status">{t("reassign.otherWants")}</p>
+          <p className="cancel-status" role="status">{t("reassign.otherWants")}</p>
           <button className="action-button secondary" onClick={handleApprove} disabled={busy}>
             {busy ? t("reassign.approving") : t("reassign.approve")}
           </button>
@@ -161,7 +164,7 @@ export function ReassignBuyerSection({
       )}
 
       {proposal?.status === "pending" && justApproved && !isPendingSigner && (
-        <p className="cancel-status">{t("reassign.approvedWaitingOther")}</p>
+        <p className="cancel-status" role="status">{t("reassign.approvedWaitingOther")}</p>
       )}
 
       {proposal?.status === "ready" && proposal.proposer_address === walletAddress && (
@@ -171,7 +174,7 @@ export function ReassignBuyerSection({
       )}
 
       {proposal?.status === "ready" && proposal.proposer_address !== walletAddress && (
-        <p className="cancel-status">{t("reassign.approvedWaitingBuyer")}</p>
+        <p className="cancel-status" role="status">{t("reassign.approvedWaitingBuyer")}</p>
       )}
     </div>
   );
