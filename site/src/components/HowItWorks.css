@@ -21,10 +21,23 @@
   gap: 24px;
   padding-bottom: clamp(30px, 4vw, 44px);
   position: relative;
+  outline: none;
+  border-radius: 6px;
+  transition: background 0.2s var(--ease);
 }
 
 .step:last-child {
   padding-bottom: 0;
+}
+
+.step:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 4px;
+}
+
+.step:focus-visible .step-marker {
+  border-color: var(--gold);
+  color: var(--gold-bright);
 }
 
 .step-marker {
@@ -32,7 +45,7 @@
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  border: 1px solid var(--void-line);
+  border: 1px solid var(--bone-dim);
   background: var(--void);
   display: flex;
   align-items: center;
@@ -41,6 +54,13 @@
   font-size: 0.82rem;
   position: relative;
   z-index: 1;
+  transition: border-color 0.2s var(--ease), color 0.2s var(--ease);
+}
+
+.step:hover .step-marker,
+.step:focus-visible .step-marker {
+  border-color: var(--gold);
+  color: var(--gold-bright);
 }
 
 .step-body {
@@ -65,6 +85,7 @@
   font-size: 0.8rem;
   color: var(--pine-text);
   background: var(--pine-soft);
+  border: 1px solid var(--pine-text);
   padding: 2px 8px;
   border-radius: 3px;
 }
