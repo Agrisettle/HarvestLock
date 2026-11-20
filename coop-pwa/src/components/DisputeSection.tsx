@@ -154,8 +154,6 @@ export function DisputeSection({
 
   return (
     <div className="dispute-section">
-      {/* `role="alert"` so the rejection message is announced rather than
-          silently painted above the button the user just activated. */}
       {error && <div className="error-banner" role="alert">{error}</div>}
 
       {!disputed && (
