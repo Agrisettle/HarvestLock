@@ -1194,6 +1194,47 @@ export async function buildServer(options: BuildServerOptions = {}) {
     return serializeProposal(result.row);
   });
 
+  // A `ready` proposal's stored final XDR was built when the last signer
+  // posted, not when the proposer gets around to finalizing. Its time bound
+  // (300 s) and the proposer's sequence number can both be stale by then,
+  // which turned "Finalize" into a button that failed for the remaining
+  // proposal TTL while every signed entry was still valid. Rebuild from the
+  // stored pieces here, at click time, with a fresh account + time bound;
+  // the signed auth entries and simulation footprint are reused unchanged.
+  // Only the proposer can sign the result, and the XDR was already public
+  // via the GET proposal route, so this adds no new capability.
+  app.post<{ Params: { contractId: string; proposalId: string } }>(
+    "/commitments/:contractId/tx/propose/:proposalId/refresh-ready",
+    async (req) => {
+      const { contractId, proposalId } = req.params;
+      requireValidContractId(contractId);
+      requireValidUuid(proposalId, "proposalId");
+
+      const proposal = await getProposalById(proposalId);
+      if (!proposal || proposal.contract_id !== contractId) {
+        throw new BadRequestError(`no proposal ${proposalId} for contract ${contractId}`);
+      }
+      if (new Date(proposal.expires_at).getTime() <= Date.now()) {
+        throw new BadRequestError(`proposal ${proposalId} has expired -- propose a fresh one`);
+      }
+      if (proposal.status !== "ready") {
+        throw new BadRequestError(`proposal ${proposalId} is ${proposal.status}, not ready to finalize`);
+      }
+
+      const xdr = await finalizeMultiPartyProposal({
+        sourcePublicKey: proposal.proposer_address,
+        funcXdr: proposal.func_xdr,
+        sorobanDataXdr: proposal.soroban_data_xdr,
+        entries: proposal.auth_entries.map((e) => ({
+          address: e.address,
+          entryXdr: e.entryXdr,
+          signedEntryXdr: e.signedEntryXdr,
+        })),
+      });
+      return { xdr };
+    },
+  );
+
   // Every write flows through here: the frontend builds via one of the
   // /tx routes above, has the right party's wallet sign, and submits the
   // signed envelope back to this single endpoint. On success, optionally

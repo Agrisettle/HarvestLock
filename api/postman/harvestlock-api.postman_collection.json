@@ -1,1781 +1,1817 @@
 {
-  "info": {
-    "name": "HarvestLock API",
-    "description": "Every route registered in `api/src/server.ts`, grouped by flow. See `api/postman/README.md` for how to use it and `api/README.md` for full request/response details. Postman never signs anything: build an XDR here, sign it with the party's own key (Freighter or `stellar tx sign`), then paste it into Submit.",
-    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
-  },
-  "item": [
-    {
-      "name": "Health",
-      "description": "Liveness.",
-      "item": [
-        {
-          "name": "Health check",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/health",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "health"
-              ]
-            },
-            "description": "Returns `{\"ok\":true,\"checks\":{\"api\":\"ok\",\"database\":\"ok\"}}`, or 503 if the database is down."
-          }
-        }
-      ]
+    "info": {
+        "name": "HarvestLock API",
+        "description": "Every route registered in `api/src/server.ts`, grouped by flow. See `api/postman/README.md` for how to use it and `api/README.md` for full request/response details. Postman never signs anything: build an XDR here, sign it with the party's own key (Freighter or `stellar tx sign`), then paste it into Submit.",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
     },
-    {
-      "name": "Version",
-      "description": "Build metadata for the deployed API.",
-      "item": [
+    "item": [
         {
-          "name": "Get build version",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/version",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "version"
-              ]
-            },
-            "description": "Returns the commit SHA and UTC build timestamp recorded during the API build."
-          }
-        }
-      ]
-    },
-    {
-      "name": "Deploy and initialize",
-      "description": "Create a fresh escrow instance and initialize it.",
-      "item": [
-        {
-          "name": "Deploy escrow instance",
-          "request": {
-            "method": "POST",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/commitments/deploy",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "commitments",
-                "deploy"
-              ]
-            },
-            "description": "Deploys a fresh, uninitialized escrow contract instance. Deployer-paid, no party auth. Needs `ESCROW_WASM_HASH` and `DEPLOYER_SECRET_KEY` on the server. Saves `contractId`."
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const body = pm.response.json();",
-                  "const value = body.contractId;",
-                  "if (value) pm.collectionVariables.set(\"contractId\", value);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Build initialize XDR",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/initialize",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "commitments",
-                "{{contractId}}",
-                "tx",
-                "initialize"
-              ]
-            },
-            "description": "Builds unsigned `initialize` XDR; the buyer signs it. Window bounds: `claimWindowSecs` 1 h–90 d, `remainderWindowSecs` 1 h–30 d, `deliveryWindowSecs` 1 d–365 d. `oracleConfig` is optional: omit it or pass `null` for a plain deal. Saves `unsignedXdr`.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"buyer\": \"{{buyer}}\",\n  \"cooperative\": \"{{cooperative}}\",\n  \"warehouseOperator\": \"{{warehouse}}\",\n  \"token\": \"{{token}}\",\n  \"totalAmount\": \"1000000000\",\n  \"advance1Bps\": 1500,\n  \"advance2Bps\": 2000,\n  \"claimWindowSecs\": \"86400\",\n  \"remainderWindowSecs\": \"604800\",\n  \"deliveryWindowSecs\": \"10368000\",\n  \"contractedQuantity\": 1000,\n  \"gradePriceBps\": [\n    10000\n  ],\n  \"oracleConfig\": null,\n  \"sourcePublicKey\": \"{{buyer}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const body = pm.response.json();",
-                  "const value = body.xdr;",
-                  "if (value) pm.collectionVariables.set(\"unsignedXdr\", value);"
-                ]
-              }
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "name": "Lifecycle (no-argument methods)",
-      "description": "`POST /commitments/:contractId/tx/:method` builds unsigned XDR for every no-argument lifecycle method. Set `sourcePublicKey` to the account that will sign. Unknown methods return 400.",
-      "item": [
-        {
-          "name": "Build lock XDR",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/lock",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "commitments",
-                "{{contractId}}",
-                "tx",
-                "lock"
-              ]
-            },
-            "description": "Buyer locks the deposit. Buyer signs.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"sourcePublicKey\": \"{{buyer}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const body = pm.response.json();",
-                  "const value = body.xdr;",
-                  "if (value) pm.collectionVariables.set(\"unsignedXdr\", value);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Build release_advance_1 XDR",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/release_advance_1",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "commitments",
-                "{{contractId}}",
-                "tx",
-                "release_advance_1"
-              ]
-            },
-            "description": "Buyer releases advance 1. Buyer signs.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"sourcePublicKey\": \"{{buyer}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const body = pm.response.json();",
-                  "const value = body.xdr;",
-                  "if (value) pm.collectionVariables.set(\"unsignedXdr\", value);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Build claim_advance_1 XDR",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/claim_advance_1",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "commitments",
-                "{{contractId}}",
-                "tx",
-                "claim_advance_1"
-              ]
-            },
-            "description": "Cooperative claims advance 1 inside the claim window. Cooperative signs.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"sourcePublicKey\": \"{{buyer}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const body = pm.response.json();",
-                  "const value = body.xdr;",
-                  "if (value) pm.collectionVariables.set(\"unsignedXdr\", value);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Build reclaim_advance_1 XDR",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/reclaim_advance_1",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "commitments",
-                "{{contractId}}",
-                "tx",
-                "reclaim_advance_1"
-              ]
-            },
-            "description": "Buyer reclaims an unclaimed advance 1 after its window. Buyer signs.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"sourcePublicKey\": \"{{buyer}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const body = pm.response.json();",
-                  "const value = body.xdr;",
-                  "if (value) pm.collectionVariables.set(\"unsignedXdr\", value);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Build mark_checkpoint XDR",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/mark_checkpoint",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "commitments",
-                "{{contractId}}",
-                "tx",
-                "mark_checkpoint"
-              ]
-            },
-            "description": "Warehouse operator marks the checkpoint. Warehouse operator signs.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"sourcePublicKey\": \"{{buyer}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const body = pm.response.json();",
-                  "const value = body.xdr;",
-                  "if (value) pm.collectionVariables.set(\"unsignedXdr\", value);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Build release_advance_2 XDR",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/release_advance_2",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "commitments",
-                "{{contractId}}",
-                "tx",
-                "release_advance_2"
-              ]
-            },
-            "description": "Buyer releases advance 2. Buyer signs.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"sourcePublicKey\": \"{{buyer}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const body = pm.response.json();",
-                  "const value = body.xdr;",
-                  "if (value) pm.collectionVariables.set(\"unsignedXdr\", value);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Build claim_advance_2 XDR",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/claim_advance_2",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "commitments",
-                "{{contractId}}",
-                "tx",
-                "claim_advance_2"
-              ]
-            },
-            "description": "Cooperative claims advance 2. Cooperative signs.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"sourcePublicKey\": \"{{buyer}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const body = pm.response.json();",
-                  "const value = body.xdr;",
-                  "if (value) pm.collectionVariables.set(\"unsignedXdr\", value);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Build reclaim_advance_2 XDR",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/reclaim_advance_2",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "commitments",
-                "{{contractId}}",
-                "tx",
-                "reclaim_advance_2"
-              ]
-            },
-            "description": "Buyer reclaims an unclaimed advance 2. Buyer signs.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"sourcePublicKey\": \"{{buyer}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const body = pm.response.json();",
-                  "const value = body.xdr;",
-                  "if (value) pm.collectionVariables.set(\"unsignedXdr\", value);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Build ready_for_delivery XDR",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/ready_for_delivery",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "commitments",
-                "{{contractId}}",
-                "tx",
-                "ready_for_delivery"
-              ]
-            },
-            "description": "Cooperative marks the goods ready for delivery. Cooperative signs.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"sourcePublicKey\": \"{{buyer}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const body = pm.response.json();",
-                  "const value = body.xdr;",
-                  "if (value) pm.collectionVariables.set(\"unsignedXdr\", value);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Build fund_remainder XDR",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/fund_remainder",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "commitments",
-                "{{contractId}}",
-                "tx",
-                "fund_remainder"
-              ]
-            },
-            "description": "Buyer funds the remainder. Buyer signs.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"sourcePublicKey\": \"{{buyer}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const body = pm.response.json();",
-                  "const value = body.xdr;",
-                  "if (value) pm.collectionVariables.set(\"unsignedXdr\", value);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Build settle XDR",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/settle",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "commitments",
-                "{{contractId}}",
-                "tx",
-                "settle"
-              ]
-            },
-            "description": "Settles a delivered commitment.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"sourcePublicKey\": \"{{buyer}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const body = pm.response.json();",
-                  "const value = body.xdr;",
-                  "if (value) pm.collectionVariables.set(\"unsignedXdr\", value);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Build expire_remainder_window XDR",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/expire_remainder_window",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "commitments",
-                "{{contractId}}",
-                "tx",
-                "expire_remainder_window"
-              ]
-            },
-            "description": "Permissionless buyer-default sweep after the remainder window.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"sourcePublicKey\": \"{{buyer}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const body = pm.response.json();",
-                  "const value = body.xdr;",
-                  "if (value) pm.collectionVariables.set(\"unsignedXdr\", value);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Build reclaim_on_nondelivery XDR",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/reclaim_on_nondelivery",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "commitments",
-                "{{contractId}}",
-                "tx",
-                "reclaim_on_nondelivery"
-              ]
-            },
-            "description": "Buyer reclaims after seller non-delivery. Buyer signs.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"sourcePublicKey\": \"{{buyer}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const body = pm.response.json();",
-                  "const value = body.xdr;",
-                  "if (value) pm.collectionVariables.set(\"unsignedXdr\", value);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Build expire_dispute_window XDR",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/expire_dispute_window",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "commitments",
-                "{{contractId}}",
-                "tx",
-                "expire_dispute_window"
-              ]
-            },
-            "description": "Permissionless expiry of the dispute window.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"sourcePublicKey\": \"{{buyer}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const body = pm.response.json();",
-                  "const value = body.xdr;",
-                  "if (value) pm.collectionVariables.set(\"unsignedXdr\", value);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Build cancel XDR",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/cancel",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "commitments",
-                "{{contractId}}",
-                "tx",
-                "cancel"
-              ]
-            },
-            "description": "Builds the unsigned XDR only. Needs buyer AND cooperative auth, so use the staged Cancel propose/sign flow instead of signing this envelope twice.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"sourcePublicKey\": \"{{buyer}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const body = pm.response.json();",
-                  "const value = body.xdr;",
-                  "if (value) pm.collectionVariables.set(\"unsignedXdr\", value);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Build resolve_dispute XDR",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/resolve_dispute",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "commitments",
-                "{{contractId}}",
-                "tx",
-                "resolve_dispute"
-              ]
-            },
-            "description": "Builds the unsigned XDR only. Needs all three parties' auth, so use the staged Resolve-dispute propose/sign flow instead.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"sourcePublicKey\": \"{{buyer}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const body = pm.response.json();",
-                  "const value = body.xdr;",
-                  "if (value) pm.collectionVariables.set(\"unsignedXdr\", value);"
-                ]
-              }
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "name": "Lifecycle (methods with arguments)",
-      "description": "Single-signer calls that take their own arguments.",
-      "item": [
-        {
-          "name": "Build confirm-delivery XDR",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/confirm-delivery",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "commitments",
-                "{{contractId}}",
-                "tx",
-                "confirm-delivery"
-              ]
-            },
-            "description": "Builds unsigned `confirm_delivery` XDR (PRD §7 shortfall/grade adjustment). Warehouse operator signs.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"deliveredQuantity\": 1000,\n  \"gradeIndex\": 0,\n  \"sourcePublicKey\": \"{{warehouse}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const body = pm.response.json();",
-                  "const value = body.xdr;",
-                  "if (value) pm.collectionVariables.set(\"unsignedXdr\", value);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Build flag-dispute XDR",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/flag-dispute",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "commitments",
-                "{{contractId}}",
-                "tx",
-                "flag-dispute"
-              ]
-            },
-            "description": "Builds unsigned `flag_dispute` XDR. `flagger` must be the buyer, cooperative or warehouse operator (enforced on-chain).",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"flagger\": \"{{buyer}}\",\n  \"sourcePublicKey\": \"{{buyer}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const body = pm.response.json();",
-                  "const value = body.xdr;",
-                  "if (value) pm.collectionVariables.set(\"unsignedXdr\", value);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Build reassign-buyer XDR",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/reassign-buyer",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "commitments",
-                "{{contractId}}",
-                "tx",
-                "reassign-buyer"
-              ]
-            },
-            "description": "Builds unsigned `reassign_buyer` XDR. Needs three-party auth, so the separate-wallets path is the staged Reassign-buyer propose flow.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"newBuyer\": \"{{newBuyer}}\",\n  \"sourcePublicKey\": \"{{buyer}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const body = pm.response.json();",
-                  "const value = body.xdr;",
-                  "if (value) pm.collectionVariables.set(\"unsignedXdr\", value);"
-                ]
-              }
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "name": "Staged multi-party signing",
-      "description": "Propose → each pending party signs its own auth entry (`signAuthEntry`, not `signTransaction`) → the proposer signs `ready_xdr` and submits it through `/transactions/submit` with `completeProposalId`. Poll the GET routes about every 10 seconds while waiting.",
-      "item": [
-        {
-          "name": "Propose cancel",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/cancel/propose",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "commitments",
-                "{{contractId}}",
-                "tx",
-                "cancel",
-                "propose"
-              ]
-            },
-            "description": "Buyer or cooperative may propose. Idempotent: returns the already-active proposal if there is one. Saves `proposalId`.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"proposerPublicKey\": \"{{cooperative}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const body = pm.response.json();",
-                  "const value = body.id;",
-                  "if (value) pm.collectionVariables.set(\"proposalId\", value);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Get active cancel proposal",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/cancel/propose",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "commitments",
-                "{{contractId}}",
-                "tx",
-                "cancel",
-                "propose"
-              ]
-            },
-            "description": "`{\"proposal\": ...}` or `{\"proposal\": null}`."
-          }
-        },
-        {
-          "name": "Propose reassign buyer",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/reassign-buyer/propose",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "commitments",
-                "{{contractId}}",
-                "tx",
-                "reassign-buyer",
-                "propose"
-              ]
-            },
-            "description": "Only the current buyer may propose. Saves `proposalId`.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"proposerPublicKey\": \"{{buyer}}\",\n  \"newBuyer\": \"{{newBuyer}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const body = pm.response.json();",
-                  "const value = body.id;",
-                  "if (value) pm.collectionVariables.set(\"proposalId\", value);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Get active reassign-buyer proposal",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/reassign-buyer/propose",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "commitments",
-                "{{contractId}}",
-                "tx",
-                "reassign-buyer",
-                "propose"
-              ]
-            },
-            "description": "`{\"proposal\": ...}` or `{\"proposal\": null}`."
-          }
-        },
-        {
-          "name": "Propose resolve dispute",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/resolve-dispute/propose",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "commitments",
-                "{{contractId}}",
-                "tx",
-                "resolve-dispute",
-                "propose"
-              ]
-            },
-            "description": "Buyer, cooperative or warehouse operator may propose; needs the other two parties' signatures. Saves `proposalId`.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"proposerPublicKey\": \"{{buyer}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const body = pm.response.json();",
-                  "const value = body.id;",
-                  "if (value) pm.collectionVariables.set(\"proposalId\", value);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Get active resolve-dispute proposal",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/resolve-dispute/propose",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "commitments",
-                "{{contractId}}",
-                "tx",
-                "resolve-dispute",
-                "propose"
-              ]
-            },
-            "description": "`{\"proposal\": ...}` or `{\"proposal\": null}`."
-          }
-        },
-        {
-          "name": "Sign proposal entry",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/propose/{{proposalId}}/sign",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "commitments",
-                "{{contractId}}",
-                "tx",
-                "propose",
-                "{{proposalId}}",
-                "sign"
-              ]
-            },
-            "description": "Records one party's signed auth entry against any proposal. The proposal flips to `ready` (with `ready_xdr`) once every pending entry is signed.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"signerPublicKey\": \"{{buyer}}\",\n  \"signedEntryXdr\": \"{{signedEntryXdr}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "Allocation ledger",
-      "description": "Per-member salted hashes on-chain; phone numbers only ever in Postgres.",
-      "item": [
-        {
-          "name": "Build set-allocation XDR",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/set-allocation",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "commitments",
-                "{{contractId}}",
-                "tx",
-                "set-allocation"
-              ]
-            },
-            "description": "Cooperative-gated, pre-`lock` only. Returns the unsigned XDR plus the staged members (salt and hash, not yet persisted). Pass those members back to Submit with `allocationContractId`/`allocationMembers` once signed.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"members\": [\n    {\n      \"phoneNumber\": \"+2348000000001\",\n      \"shareBps\": 6000\n    },\n    {\n      \"phoneNumber\": \"+2348000000002\",\n      \"shareBps\": 4000\n    }\n  ],\n  \"sourcePublicKey\": \"{{cooperative}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "const body = pm.response.json();",
-                  "if (body.xdr) pm.collectionVariables.set(\"unsignedXdr\", body.xdr);",
-                  "if (body.members) pm.collectionVariables.set(\"stagedMembers\", JSON.stringify(body.members));",
-                  "if (body.members && body.members[0]) pm.collectionVariables.set(\"memberHash\", body.members[0].memberHash);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Get allocation",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/commitments/{{contractId}}/allocation",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "commitments",
-                "{{contractId}}",
-                "allocation"
-              ]
-            },
-            "description": "Live on-chain read of member hashes and shares. Never returns a phone number."
-          }
-        },
-        {
-          "name": "Erase allocation member (NDPA s.34)",
-          "request": {
-            "method": "DELETE",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/allocation-members/{{memberHash}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "allocation-members",
-                "{{memberHash}}"
-              ]
-            },
-            "description": "Nulls the phone number behind an on-chain hash. Idempotent."
-          }
-        }
-      ]
-    },
-    {
-      "name": "Oracle",
-      "description": "PRD §16.3 oracle staleness bound.",
-      "item": [
-        {
-          "name": "Get oracle config",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/commitments/{{contractId}}/oracle-config",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "commitments",
-                "{{contractId}}",
-                "oracle-config"
-              ]
-            },
-            "description": "`{\"config\": null}` if `initialize` never set one, which is a valid state."
-          }
-        },
-        {
-          "name": "Get live oracle rate",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/commitments/{{contractId}}/oracle-rate",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "commitments",
-                "{{contractId}}",
-                "oracle-rate"
-              ]
-            },
-            "description": "Live cross-contract call to the configured oracle, never cached. 409 with contractError if no oracle is configured, the asset isn't quoted, or the quote is too old (404 if the contract itself was never initialized)."
-          }
-        }
-      ]
-    },
-    {
-      "name": "Notifications",
-      "description": "Member SMS delivery (issue #7). Events are recorded and sent as a side effect of live commitment reads; this folder only reads the record.",
-      "item": [
-        {
-          "name": "Get SMS notification summary",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/commitments/{{contractId}}/notifications",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "commitments",
-                "{{contractId}}",
-                "notifications"
-              ]
-            },
-            "description": "Per-event delivery counts (pending/sending/sent/failed/skipped) for one commitment. Counts only, never a recipient, phone number or member hash. `suppressed: true` marks an event recorded as a backfill and deliberately not sent."
-          }
-        }
-      ]
-    },
-    {
-      "name": "Buyer KYB",
-      "description": "Buyer onboarding via anchor verification (issue #11, src/kyb.ts). Challenge → sign in the buyer's own wallet → verify. Requires KYB_TRUSTED_ANCHORS; gating only applies with KYB_ENFORCEMENT=enforce.",
-      "item": [
-        {
-          "name": "Get KYB config",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/kyb/config",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "kyb",
-                "config"
-              ]
-            },
-            "description": "Whether verification is enforced, which anchors are trusted, and how long a verification counts."
-          }
-        },
-        {
-          "name": "Build SEP-10 challenge",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/kyb/challenge",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "kyb",
-                "challenge"
-              ]
-            },
-            "description": "Fetches and validates the anchor's SEP-10 challenge for the buyer. Sign the returned `transaction` in the buyer's wallet (outside Postman), paste it into `signedKybChallengeXdr`, then run Verify.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"account\": \"{{buyer}}\",\n  \"anchorDomain\": \"{{anchorDomain}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "if (pm.response.code === 200) {",
-                  "  pm.collectionVariables.set('kybChallengeXdr', pm.response.json().transaction);",
-                  "}"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Verify buyer with anchor",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/kyb/verify",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "kyb",
-                "verify"
-              ]
-            },
-            "description": "Submits the signed challenge to the anchor, reads the anchor's SEP-12 customer status with the resulting token (never stored), and records the result. `verified` is true only for ACCEPTED.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"account\": \"{{buyer}}\",\n  \"anchorDomain\": \"{{anchorDomain}}\",\n  \"transaction\": \"{{signedKybChallengeXdr}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "Get buyer verification",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/kyb/buyers/{{buyer}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "kyb",
-                "buyers",
-                "{{buyer}}"
-              ]
-            },
-            "description": "`verified`, the verification currently in force (`current`) and the most recent check of any outcome (`latest`)."
-          }
-        }
-      ]
-    },
-    {
-      "name": "Submit",
-      "description": "Every write: build XDR → sign it with the party's own key → submit.",
-      "item": [
-        {
-          "name": "Submit signed transaction",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/transactions/submit",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "transactions",
-                "submit"
-              ]
-            },
-            "description": "Submits a signed envelope and polls for confirmation. Optional fields: `refreshContractId` (refresh the Postgres cache), `completeProposalId` (finalize a staged proposal), `allocationContractId` + `allocationMembers` (persist a staged allocation). Remove the ones you don't need. Built transactions are time-bounded (60 s; 300 s for a finalized proposal), so sign and submit promptly. Returns **202** `{status: \"PENDING\", hash}` if confirmation is slower than the poll window; poll `GET /transactions/{hash}` with that hash.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"xdr\": \"{{signedXdr}}\",\n  \"refreshContractId\": \"{{contractId}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "Get transaction status",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/transactions/{{txHash}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "transactions",
-                "{{txHash}}"
-              ]
-            },
-            "description": "Follow-up for a 202 from `/transactions/submit`. Returns `{status, hash}` where status is `PENDING`, `SUCCESS`, or `FAILED`. The first SUCCESS observation applies the pending submission's stored side effects exactly once. `:hash` must be 64 hex characters."
-          }
-        }
-      ]
-    },
-    {
-      "name": "Reads",
-      "description": "Commitment state and party standing.",
-      "item": [
-        {
-          "name": "Get commitment (live)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/commitments/{{contractId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "commitments",
-                "{{contractId}}"
-              ]
-            },
-            "description": "Live read from chain (source of truth); refreshes the Postgres cache as a side effect."
-          }
-        },
-        {
-          "name": "List commitments (cached)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/commitments?limit=20&offset=0",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "commitments"
-              ],
-              "query": [
+            "name": "Health",
+            "description": "Liveness.",
+            "item": [
                 {
-                  "key": "limit",
-                  "value": "20"
+                    "name": "Health check",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/health",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "health"
+                            ]
+                        },
+                        "description": "Returns `{\"ok\":true,\"checks\":{\"api\":\"ok\",\"database\":\"ok\"}}`, or 503 if the database is down."
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Version",
+            "description": "Build metadata for the deployed API.",
+            "item": [
+                {
+                    "name": "Get build version",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/version",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "version"
+                            ]
+                        },
+                        "description": "Returns the commit SHA and UTC build timestamp recorded during the API build."
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Deploy and initialize",
+            "description": "Create a fresh escrow instance and initialize it.",
+            "item": [
+                {
+                    "name": "Deploy escrow instance",
+                    "request": {
+                        "method": "POST",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/commitments/deploy",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "commitments",
+                                "deploy"
+                            ]
+                        },
+                        "description": "Deploys a fresh, uninitialized escrow contract instance. Deployer-paid, no party auth. Needs `ESCROW_WASM_HASH` and `DEPLOYER_SECRET_KEY` on the server. Saves `contractId`."
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const body = pm.response.json();",
+                                    "const value = body.contractId;",
+                                    "if (value) pm.collectionVariables.set(\"contractId\", value);"
+                                ]
+                            }
+                        }
+                    ]
                 },
                 {
-                  "key": "offset",
-                  "value": "0"
+                    "name": "Build initialize XDR",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/initialize",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "commitments",
+                                "{{contractId}}",
+                                "tx",
+                                "initialize"
+                            ]
+                        },
+                        "description": "Builds unsigned `initialize` XDR; the buyer signs it. Window bounds: `claimWindowSecs` 1 h\u201390 d, `remainderWindowSecs` 1 h\u201330 d, `deliveryWindowSecs` 1 d\u2013365 d. `oracleConfig` is optional: omit it or pass `null` for a plain deal. Saves `unsignedXdr`.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"buyer\": \"{{buyer}}\",\n  \"cooperative\": \"{{cooperative}}\",\n  \"warehouseOperator\": \"{{warehouse}}\",\n  \"token\": \"{{token}}\",\n  \"totalAmount\": \"1000000000\",\n  \"advance1Bps\": 1500,\n  \"advance2Bps\": 2000,\n  \"claimWindowSecs\": \"86400\",\n  \"remainderWindowSecs\": \"604800\",\n  \"deliveryWindowSecs\": \"10368000\",\n  \"contractedQuantity\": 1000,\n  \"gradePriceBps\": [\n    10000\n  ],\n  \"oracleConfig\": null,\n  \"sourcePublicKey\": \"{{buyer}}\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const body = pm.response.json();",
+                                    "const value = body.xdr;",
+                                    "if (value) pm.collectionVariables.set(\"unsignedXdr\", value);"
+                                ]
+                            }
+                        }
+                    ]
                 }
-              ]
-            },
-            "description": "Postgres-cached list, newest first. Default page size 20, `limit` clamped to 100; unusable values fall back to the defaults."
-          }
+            ]
         },
         {
-          "name": "Get party standing",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/parties/{{buyer}}/standing",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "parties",
-                "{{buyer}}",
-                "standing"
-              ]
-            },
-            "description": "Strike count, barred flag and reason. Returns a clean default, not 404, for an address with no history."
-          }
+            "name": "Lifecycle (no-argument methods)",
+            "description": "`POST /commitments/:contractId/tx/:method` builds unsigned XDR for every no-argument lifecycle method. Set `sourcePublicKey` to the account that will sign. Unknown methods return 400.",
+            "item": [
+                {
+                    "name": "Build lock XDR",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/lock",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "commitments",
+                                "{{contractId}}",
+                                "tx",
+                                "lock"
+                            ]
+                        },
+                        "description": "Buyer locks the deposit. Buyer signs.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"sourcePublicKey\": \"{{buyer}}\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const body = pm.response.json();",
+                                    "const value = body.xdr;",
+                                    "if (value) pm.collectionVariables.set(\"unsignedXdr\", value);"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Build release_advance_1 XDR",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/release_advance_1",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "commitments",
+                                "{{contractId}}",
+                                "tx",
+                                "release_advance_1"
+                            ]
+                        },
+                        "description": "Buyer releases advance 1. Buyer signs.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"sourcePublicKey\": \"{{buyer}}\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const body = pm.response.json();",
+                                    "const value = body.xdr;",
+                                    "if (value) pm.collectionVariables.set(\"unsignedXdr\", value);"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Build claim_advance_1 XDR",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/claim_advance_1",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "commitments",
+                                "{{contractId}}",
+                                "tx",
+                                "claim_advance_1"
+                            ]
+                        },
+                        "description": "Cooperative claims advance 1 inside the claim window. Cooperative signs.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"sourcePublicKey\": \"{{buyer}}\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const body = pm.response.json();",
+                                    "const value = body.xdr;",
+                                    "if (value) pm.collectionVariables.set(\"unsignedXdr\", value);"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Build reclaim_advance_1 XDR",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/reclaim_advance_1",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "commitments",
+                                "{{contractId}}",
+                                "tx",
+                                "reclaim_advance_1"
+                            ]
+                        },
+                        "description": "Buyer reclaims an unclaimed advance 1 after its window. Buyer signs.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"sourcePublicKey\": \"{{buyer}}\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const body = pm.response.json();",
+                                    "const value = body.xdr;",
+                                    "if (value) pm.collectionVariables.set(\"unsignedXdr\", value);"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Build mark_checkpoint XDR",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/mark_checkpoint",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "commitments",
+                                "{{contractId}}",
+                                "tx",
+                                "mark_checkpoint"
+                            ]
+                        },
+                        "description": "Warehouse operator marks the checkpoint. Warehouse operator signs.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"sourcePublicKey\": \"{{buyer}}\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const body = pm.response.json();",
+                                    "const value = body.xdr;",
+                                    "if (value) pm.collectionVariables.set(\"unsignedXdr\", value);"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Build release_advance_2 XDR",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/release_advance_2",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "commitments",
+                                "{{contractId}}",
+                                "tx",
+                                "release_advance_2"
+                            ]
+                        },
+                        "description": "Buyer releases advance 2. Buyer signs.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"sourcePublicKey\": \"{{buyer}}\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const body = pm.response.json();",
+                                    "const value = body.xdr;",
+                                    "if (value) pm.collectionVariables.set(\"unsignedXdr\", value);"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Build claim_advance_2 XDR",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/claim_advance_2",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "commitments",
+                                "{{contractId}}",
+                                "tx",
+                                "claim_advance_2"
+                            ]
+                        },
+                        "description": "Cooperative claims advance 2. Cooperative signs.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"sourcePublicKey\": \"{{buyer}}\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const body = pm.response.json();",
+                                    "const value = body.xdr;",
+                                    "if (value) pm.collectionVariables.set(\"unsignedXdr\", value);"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Build reclaim_advance_2 XDR",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/reclaim_advance_2",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "commitments",
+                                "{{contractId}}",
+                                "tx",
+                                "reclaim_advance_2"
+                            ]
+                        },
+                        "description": "Buyer reclaims an unclaimed advance 2. Buyer signs.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"sourcePublicKey\": \"{{buyer}}\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const body = pm.response.json();",
+                                    "const value = body.xdr;",
+                                    "if (value) pm.collectionVariables.set(\"unsignedXdr\", value);"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Build ready_for_delivery XDR",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/ready_for_delivery",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "commitments",
+                                "{{contractId}}",
+                                "tx",
+                                "ready_for_delivery"
+                            ]
+                        },
+                        "description": "Cooperative marks the goods ready for delivery. Cooperative signs.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"sourcePublicKey\": \"{{buyer}}\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const body = pm.response.json();",
+                                    "const value = body.xdr;",
+                                    "if (value) pm.collectionVariables.set(\"unsignedXdr\", value);"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Build fund_remainder XDR",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/fund_remainder",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "commitments",
+                                "{{contractId}}",
+                                "tx",
+                                "fund_remainder"
+                            ]
+                        },
+                        "description": "Buyer funds the remainder. Buyer signs.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"sourcePublicKey\": \"{{buyer}}\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const body = pm.response.json();",
+                                    "const value = body.xdr;",
+                                    "if (value) pm.collectionVariables.set(\"unsignedXdr\", value);"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Build settle XDR",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/settle",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "commitments",
+                                "{{contractId}}",
+                                "tx",
+                                "settle"
+                            ]
+                        },
+                        "description": "Settles a delivered commitment.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"sourcePublicKey\": \"{{buyer}}\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const body = pm.response.json();",
+                                    "const value = body.xdr;",
+                                    "if (value) pm.collectionVariables.set(\"unsignedXdr\", value);"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Build expire_remainder_window XDR",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/expire_remainder_window",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "commitments",
+                                "{{contractId}}",
+                                "tx",
+                                "expire_remainder_window"
+                            ]
+                        },
+                        "description": "Permissionless buyer-default sweep after the remainder window.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"sourcePublicKey\": \"{{buyer}}\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const body = pm.response.json();",
+                                    "const value = body.xdr;",
+                                    "if (value) pm.collectionVariables.set(\"unsignedXdr\", value);"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Build reclaim_on_nondelivery XDR",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/reclaim_on_nondelivery",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "commitments",
+                                "{{contractId}}",
+                                "tx",
+                                "reclaim_on_nondelivery"
+                            ]
+                        },
+                        "description": "Buyer reclaims after seller non-delivery. Buyer signs.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"sourcePublicKey\": \"{{buyer}}\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const body = pm.response.json();",
+                                    "const value = body.xdr;",
+                                    "if (value) pm.collectionVariables.set(\"unsignedXdr\", value);"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Build expire_dispute_window XDR",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/expire_dispute_window",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "commitments",
+                                "{{contractId}}",
+                                "tx",
+                                "expire_dispute_window"
+                            ]
+                        },
+                        "description": "Permissionless expiry of the dispute window.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"sourcePublicKey\": \"{{buyer}}\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const body = pm.response.json();",
+                                    "const value = body.xdr;",
+                                    "if (value) pm.collectionVariables.set(\"unsignedXdr\", value);"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Build cancel XDR",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/cancel",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "commitments",
+                                "{{contractId}}",
+                                "tx",
+                                "cancel"
+                            ]
+                        },
+                        "description": "Builds the unsigned XDR only. Needs buyer AND cooperative auth, so use the staged Cancel propose/sign flow instead of signing this envelope twice.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"sourcePublicKey\": \"{{buyer}}\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const body = pm.response.json();",
+                                    "const value = body.xdr;",
+                                    "if (value) pm.collectionVariables.set(\"unsignedXdr\", value);"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Build resolve_dispute XDR",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/resolve_dispute",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "commitments",
+                                "{{contractId}}",
+                                "tx",
+                                "resolve_dispute"
+                            ]
+                        },
+                        "description": "Builds the unsigned XDR only. Needs all three parties' auth, so use the staged Resolve-dispute propose/sign flow instead.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"sourcePublicKey\": \"{{buyer}}\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const body = pm.response.json();",
+                                    "const value = body.xdr;",
+                                    "if (value) pm.collectionVariables.set(\"unsignedXdr\", value);"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "Lifecycle (methods with arguments)",
+            "description": "Single-signer calls that take their own arguments.",
+            "item": [
+                {
+                    "name": "Build confirm-delivery XDR",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/confirm-delivery",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "commitments",
+                                "{{contractId}}",
+                                "tx",
+                                "confirm-delivery"
+                            ]
+                        },
+                        "description": "Builds unsigned `confirm_delivery` XDR (PRD \u00a77 shortfall/grade adjustment). Warehouse operator signs.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"deliveredQuantity\": 1000,\n  \"gradeIndex\": 0,\n  \"sourcePublicKey\": \"{{warehouse}}\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const body = pm.response.json();",
+                                    "const value = body.xdr;",
+                                    "if (value) pm.collectionVariables.set(\"unsignedXdr\", value);"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Build flag-dispute XDR",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/flag-dispute",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "commitments",
+                                "{{contractId}}",
+                                "tx",
+                                "flag-dispute"
+                            ]
+                        },
+                        "description": "Builds unsigned `flag_dispute` XDR. `flagger` must be the buyer, cooperative or warehouse operator (enforced on-chain).",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"flagger\": \"{{buyer}}\",\n  \"sourcePublicKey\": \"{{buyer}}\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const body = pm.response.json();",
+                                    "const value = body.xdr;",
+                                    "if (value) pm.collectionVariables.set(\"unsignedXdr\", value);"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Build reassign-buyer XDR",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/reassign-buyer",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "commitments",
+                                "{{contractId}}",
+                                "tx",
+                                "reassign-buyer"
+                            ]
+                        },
+                        "description": "Builds unsigned `reassign_buyer` XDR. Needs three-party auth, so the separate-wallets path is the staged Reassign-buyer propose flow.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"newBuyer\": \"{{newBuyer}}\",\n  \"sourcePublicKey\": \"{{buyer}}\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const body = pm.response.json();",
+                                    "const value = body.xdr;",
+                                    "if (value) pm.collectionVariables.set(\"unsignedXdr\", value);"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "Staged multi-party signing",
+            "description": "Propose \u2192 each pending party signs its own auth entry (`signAuthEntry`, not `signTransaction`) \u2192 the proposer signs `ready_xdr` and submits it through `/transactions/submit` with `completeProposalId`. Poll the GET routes about every 10 seconds while waiting.",
+            "item": [
+                {
+                    "name": "Propose cancel",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/cancel/propose",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "commitments",
+                                "{{contractId}}",
+                                "tx",
+                                "cancel",
+                                "propose"
+                            ]
+                        },
+                        "description": "Buyer or cooperative may propose. Idempotent: returns the already-active proposal if there is one. Saves `proposalId`.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"proposerPublicKey\": \"{{cooperative}}\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const body = pm.response.json();",
+                                    "const value = body.id;",
+                                    "if (value) pm.collectionVariables.set(\"proposalId\", value);"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Get active cancel proposal",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/cancel/propose",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "commitments",
+                                "{{contractId}}",
+                                "tx",
+                                "cancel",
+                                "propose"
+                            ]
+                        },
+                        "description": "`{\"proposal\": ...}` or `{\"proposal\": null}`."
+                    }
+                },
+                {
+                    "name": "Propose reassign buyer",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/reassign-buyer/propose",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "commitments",
+                                "{{contractId}}",
+                                "tx",
+                                "reassign-buyer",
+                                "propose"
+                            ]
+                        },
+                        "description": "Only the current buyer may propose. Saves `proposalId`.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"proposerPublicKey\": \"{{buyer}}\",\n  \"newBuyer\": \"{{newBuyer}}\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const body = pm.response.json();",
+                                    "const value = body.id;",
+                                    "if (value) pm.collectionVariables.set(\"proposalId\", value);"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Get active reassign-buyer proposal",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/reassign-buyer/propose",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "commitments",
+                                "{{contractId}}",
+                                "tx",
+                                "reassign-buyer",
+                                "propose"
+                            ]
+                        },
+                        "description": "`{\"proposal\": ...}` or `{\"proposal\": null}`."
+                    }
+                },
+                {
+                    "name": "Propose resolve dispute",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/resolve-dispute/propose",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "commitments",
+                                "{{contractId}}",
+                                "tx",
+                                "resolve-dispute",
+                                "propose"
+                            ]
+                        },
+                        "description": "Buyer, cooperative or warehouse operator may propose; needs the other two parties' signatures. Saves `proposalId`.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"proposerPublicKey\": \"{{buyer}}\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const body = pm.response.json();",
+                                    "const value = body.id;",
+                                    "if (value) pm.collectionVariables.set(\"proposalId\", value);"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Get active resolve-dispute proposal",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/resolve-dispute/propose",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "commitments",
+                                "{{contractId}}",
+                                "tx",
+                                "resolve-dispute",
+                                "propose"
+                            ]
+                        },
+                        "description": "`{\"proposal\": ...}` or `{\"proposal\": null}`."
+                    }
+                },
+                {
+                    "name": "Sign proposal entry",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/propose/{{proposalId}}/sign",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "commitments",
+                                "{{contractId}}",
+                                "tx",
+                                "propose",
+                                "{{proposalId}}",
+                                "sign"
+                            ]
+                        },
+                        "description": "Records one party's signed auth entry against any proposal. The proposal flips to `ready` (with `ready_xdr`) once every pending entry is signed.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"signerPublicKey\": \"{{buyer}}\",\n  \"signedEntryXdr\": \"{{signedEntryXdr}}\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "Refresh ready proposal XDR",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/propose/{{proposalId}}/refresh-ready",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "commitments",
+                                "{{contractId}}",
+                                "tx",
+                                "propose",
+                                "{{proposalId}}",
+                                "refresh-ready"
+                            ]
+                        },
+                        "description": "Rebuilds a ready proposal's final unsigned XDR at finalize time (fresh account sequence + 300 s time bound) reusing the stored signed auth entries. Use this instead of a stale `ready_xdr` if finalizing may be delayed. Only meaningful once the proposal is `ready`.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Allocation ledger",
+            "description": "Per-member salted hashes on-chain; phone numbers only ever in Postgres.",
+            "item": [
+                {
+                    "name": "Build set-allocation XDR",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/commitments/{{contractId}}/tx/set-allocation",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "commitments",
+                                "{{contractId}}",
+                                "tx",
+                                "set-allocation"
+                            ]
+                        },
+                        "description": "Cooperative-gated, pre-`lock` only. Returns the unsigned XDR plus the staged members (salt and hash, not yet persisted). Pass those members back to Submit with `allocationContractId`/`allocationMembers` once signed.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"members\": [\n    {\n      \"phoneNumber\": \"+2348000000001\",\n      \"shareBps\": 6000\n    },\n    {\n      \"phoneNumber\": \"+2348000000002\",\n      \"shareBps\": 4000\n    }\n  ],\n  \"sourcePublicKey\": \"{{cooperative}}\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const body = pm.response.json();",
+                                    "if (body.xdr) pm.collectionVariables.set(\"unsignedXdr\", body.xdr);",
+                                    "if (body.members) pm.collectionVariables.set(\"stagedMembers\", JSON.stringify(body.members));",
+                                    "if (body.members && body.members[0]) pm.collectionVariables.set(\"memberHash\", body.members[0].memberHash);"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Get allocation",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/commitments/{{contractId}}/allocation",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "commitments",
+                                "{{contractId}}",
+                                "allocation"
+                            ]
+                        },
+                        "description": "Live on-chain read of member hashes and shares. Never returns a phone number."
+                    }
+                },
+                {
+                    "name": "Erase allocation member (NDPA s.34)",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/allocation-members/{{memberHash}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "allocation-members",
+                                "{{memberHash}}"
+                            ]
+                        },
+                        "description": "Nulls the phone number behind an on-chain hash. Idempotent."
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Oracle",
+            "description": "PRD \u00a716.3 oracle staleness bound.",
+            "item": [
+                {
+                    "name": "Get oracle config",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/commitments/{{contractId}}/oracle-config",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "commitments",
+                                "{{contractId}}",
+                                "oracle-config"
+                            ]
+                        },
+                        "description": "`{\"config\": null}` if `initialize` never set one, which is a valid state."
+                    }
+                },
+                {
+                    "name": "Get live oracle rate",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/commitments/{{contractId}}/oracle-rate",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "commitments",
+                                "{{contractId}}",
+                                "oracle-rate"
+                            ]
+                        },
+                        "description": "Live cross-contract call to the configured oracle, never cached. 409 with contractError if no oracle is configured, the asset isn't quoted, or the quote is too old (404 if the contract itself was never initialized)."
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Notifications",
+            "description": "Member SMS delivery (issue #7). Events are recorded and sent as a side effect of live commitment reads; this folder only reads the record.",
+            "item": [
+                {
+                    "name": "Get SMS notification summary",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/commitments/{{contractId}}/notifications",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "commitments",
+                                "{{contractId}}",
+                                "notifications"
+                            ]
+                        },
+                        "description": "Per-event delivery counts (pending/sending/sent/failed/skipped) for one commitment. Counts only, never a recipient, phone number or member hash. `suppressed: true` marks an event recorded as a backfill and deliberately not sent."
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Buyer KYB",
+            "description": "Buyer onboarding via anchor verification (issue #11, src/kyb.ts). Challenge \u2192 sign in the buyer's own wallet \u2192 verify. Requires KYB_TRUSTED_ANCHORS; gating only applies with KYB_ENFORCEMENT=enforce.",
+            "item": [
+                {
+                    "name": "Get KYB config",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/kyb/config",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "kyb",
+                                "config"
+                            ]
+                        },
+                        "description": "Whether verification is enforced, which anchors are trusted, and how long a verification counts."
+                    }
+                },
+                {
+                    "name": "Build SEP-10 challenge",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/kyb/challenge",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "kyb",
+                                "challenge"
+                            ]
+                        },
+                        "description": "Fetches and validates the anchor's SEP-10 challenge for the buyer. Sign the returned `transaction` in the buyer's wallet (outside Postman), paste it into `signedKybChallengeXdr`, then run Verify.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"account\": \"{{buyer}}\",\n  \"anchorDomain\": \"{{anchorDomain}}\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "if (pm.response.code === 200) {",
+                                    "  pm.collectionVariables.set('kybChallengeXdr', pm.response.json().transaction);",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "Verify buyer with anchor",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/kyb/verify",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "kyb",
+                                "verify"
+                            ]
+                        },
+                        "description": "Submits the signed challenge to the anchor, reads the anchor's SEP-12 customer status with the resulting token (never stored), and records the result. `verified` is true only for ACCEPTED.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"account\": \"{{buyer}}\",\n  \"anchorDomain\": \"{{anchorDomain}}\",\n  \"transaction\": \"{{signedKybChallengeXdr}}\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "Get buyer verification",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/kyb/buyers/{{buyer}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "kyb",
+                                "buyers",
+                                "{{buyer}}"
+                            ]
+                        },
+                        "description": "`verified`, the verification currently in force (`current`) and the most recent check of any outcome (`latest`)."
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Submit",
+            "description": "Every write: build XDR \u2192 sign it with the party's own key \u2192 submit.",
+            "item": [
+                {
+                    "name": "Submit signed transaction",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{baseUrl}}/transactions/submit",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "transactions",
+                                "submit"
+                            ]
+                        },
+                        "description": "Submits a signed envelope and polls for confirmation. Optional fields: `refreshContractId` (refresh the Postgres cache), `completeProposalId` (finalize a staged proposal), `allocationContractId` + `allocationMembers` (persist a staged allocation). Remove the ones you don't need. Built transactions are time-bounded (60 s; 300 s for a finalized proposal), so sign and submit promptly. Returns **202** `{status: \"PENDING\", hash}` if confirmation is slower than the poll window; poll `GET /transactions/{hash}` with that hash.",
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"xdr\": \"{{signedXdr}}\",\n  \"refreshContractId\": \"{{contractId}}\"\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "Get transaction status",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/transactions/{{txHash}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "transactions",
+                                "{{txHash}}"
+                            ]
+                        },
+                        "description": "Follow-up for a 202 from `/transactions/submit`. Returns `{status, hash}` where status is `PENDING`, `SUCCESS`, or `FAILED`. The first SUCCESS observation applies the pending submission's stored side effects exactly once. `:hash` must be 64 hex characters."
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Reads",
+            "description": "Commitment state and party standing.",
+            "item": [
+                {
+                    "name": "Get commitment (live)",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/commitments/{{contractId}}",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "commitments",
+                                "{{contractId}}"
+                            ]
+                        },
+                        "description": "Live read from chain (source of truth); refreshes the Postgres cache as a side effect."
+                    }
+                },
+                {
+                    "name": "List commitments (cached)",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/commitments?limit=20&offset=0",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "commitments"
+                            ],
+                            "query": [
+                                {
+                                    "key": "limit",
+                                    "value": "20"
+                                },
+                                {
+                                    "key": "offset",
+                                    "value": "0"
+                                }
+                            ]
+                        },
+                        "description": "Postgres-cached list, newest first. Default page size 20, `limit` clamped to 100; unusable values fall back to the defaults."
+                    }
+                },
+                {
+                    "name": "Get party standing",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{baseUrl}}/parties/{{buyer}}/standing",
+                            "host": [
+                                "{{baseUrl}}"
+                            ],
+                            "path": [
+                                "parties",
+                                "{{buyer}}",
+                                "standing"
+                            ]
+                        },
+                        "description": "Strike count, barred flag and reason. Returns a clean default, not 404, for an address with no history."
+                    }
+                }
+            ]
         }
-      ]
-    }
-  ],
-  "variable": [
-    {
-      "key": "baseUrl",
-      "value": "http://localhost:3000",
-      "description": "API root. Use the deployed URL to test a hosted environment."
-    },
-    {
-      "key": "contractId",
-      "value": "",
-      "description": "Set automatically by Deploy escrow instance."
-    },
-    {
-      "key": "buyer",
-      "value": "",
-      "description": "Buyer G... address."
-    },
-    {
-      "key": "cooperative",
-      "value": "",
-      "description": "Cooperative G... address."
-    },
-    {
-      "key": "warehouse",
-      "value": "",
-      "description": "Warehouse operator G... address."
-    },
-    {
-      "key": "newBuyer",
-      "value": "",
-      "description": "Incoming buyer G... address for reassignment."
-    },
-    {
-      "key": "token",
-      "value": "",
-      "description": "Token (USDC) contract C... address."
-    },
-    {
-      "key": "unsignedXdr",
-      "value": "",
-      "description": "Set automatically by every Build ... XDR request. Sign it outside Postman."
-    },
-    {
-      "key": "signedXdr",
-      "value": "",
-      "description": "Paste the signed envelope here before Submit."
-    },
-    {
-      "key": "proposalId",
-      "value": "",
-      "description": "Set automatically by the Propose requests."
-    },
-    {
-      "key": "signedEntryXdr",
-      "value": "",
-      "description": "Paste the wallet-signed auth entry here before Sign proposal entry."
-    },
-    {
-      "key": "memberHash",
-      "value": "",
-      "description": "Set automatically by Build set-allocation XDR (first member)."
-    },
-    {
-      "key": "stagedMembers",
-      "value": "",
-      "description": "Set automatically by Build set-allocation XDR; paste into Submit's allocationMembers."
-    },
-    {
-      "key": "anchorDomain",
-      "value": "testanchor.stellar.org",
-      "description": "A domain listed in the API's KYB_TRUSTED_ANCHORS."
-    },
-    {
-      "key": "kybChallengeXdr",
-      "value": "",
-      "description": "Set automatically by Build SEP-10 challenge. Sign it outside Postman."
-    },
-    {
-      "key": "signedKybChallengeXdr",
-      "value": "",
-      "description": "Paste the wallet-signed SEP-10 challenge here before Verify buyer with anchor."
-    }
-  ]
+    ],
+    "variable": [
+        {
+            "key": "baseUrl",
+            "value": "http://localhost:3000",
+            "description": "API root. Use the deployed URL to test a hosted environment."
+        },
+        {
+            "key": "contractId",
+            "value": "",
+            "description": "Set automatically by Deploy escrow instance."
+        },
+        {
+            "key": "buyer",
+            "value": "",
+            "description": "Buyer G... address."
+        },
+        {
+            "key": "cooperative",
+            "value": "",
+            "description": "Cooperative G... address."
+        },
+        {
+            "key": "warehouse",
+            "value": "",
+            "description": "Warehouse operator G... address."
+        },
+        {
+            "key": "newBuyer",
+            "value": "",
+            "description": "Incoming buyer G... address for reassignment."
+        },
+        {
+            "key": "token",
+            "value": "",
+            "description": "Token (USDC) contract C... address."
+        },
+        {
+            "key": "unsignedXdr",
+            "value": "",
+            "description": "Set automatically by every Build ... XDR request. Sign it outside Postman."
+        },
+        {
+            "key": "signedXdr",
+            "value": "",
+            "description": "Paste the signed envelope here before Submit."
+        },
+        {
+            "key": "proposalId",
+            "value": "",
+            "description": "Set automatically by the Propose requests."
+        },
+        {
+            "key": "signedEntryXdr",
+            "value": "",
+            "description": "Paste the wallet-signed auth entry here before Sign proposal entry."
+        },
+        {
+            "key": "memberHash",
+            "value": "",
+            "description": "Set automatically by Build set-allocation XDR (first member)."
+        },
+        {
+            "key": "stagedMembers",
+            "value": "",
+            "description": "Set automatically by Build set-allocation XDR; paste into Submit's allocationMembers."
+        },
+        {
+            "key": "anchorDomain",
+            "value": "testanchor.stellar.org",
+            "description": "A domain listed in the API's KYB_TRUSTED_ANCHORS."
+        },
+        {
+            "key": "kybChallengeXdr",
+            "value": "",
+            "description": "Set automatically by Build SEP-10 challenge. Sign it outside Postman."
+        },
+        {
+            "key": "signedKybChallengeXdr",
+            "value": "",
+            "description": "Paste the wallet-signed SEP-10 challenge here before Verify buyer with anchor."
+        }
+    ]
 }

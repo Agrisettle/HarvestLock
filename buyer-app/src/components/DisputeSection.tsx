@@ -4,6 +4,7 @@ import {
   buildFlagDisputeTx,
   getResolveDisputeProposal,
   proposeResolveDispute,
+  refreshReadyProposalXdr,
   signMultisigProposal,
   submitTx,
 } from "../api";
@@ -134,7 +135,8 @@ export function DisputeSection({
     if (!proposal?.ready_xdr) return;
     setBusy(true);
     setError(null);
-    signTransactionXdr(proposal.ready_xdr, walletAddress!)
+    refreshReadyProposalXdr(contractId, proposal.id)
+      .then(({ xdr }) => signTransactionXdr(xdr, walletAddress!))
       .then((signedXdr) => submitTx(signedXdr, contractId, proposal.id))
       .then(() => {
         setProposal(null);

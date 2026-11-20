@@ -230,3 +230,17 @@ export function signMultisigProposal(
     signedEntryXdr,
   });
 }
+
+/**
+ * Rebuilds a ready proposal's final XDR at finalize time. The stored `ready_xdr`
+ * was built when the last signer posted, with a 300 s time bound and a snapshot
+ * of the proposer's sequence number, so it can be stale by the time the
+ * proposer clicks Finalize. The freshly built envelope reuses the signed auth
+ * entries and simulation footprint, so no signature is invalidated.
+ */
+export function refreshReadyProposalXdr(contractId: string, proposalId: string): Promise<{ xdr: string }> {
+  return post<{ xdr: string }>(
+    `/commitments/${encodeURIComponent(contractId)}/tx/propose/${encodeURIComponent(proposalId)}/refresh-ready`,
+    {},
+  );
+}

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { MultisigProposal, CommitmentDetail as CommitmentDetailType } from "../api";
-import { getCancelProposal, proposeCancel, signMultisigProposal, submitTx } from "../api";
+import { getCancelProposal, proposeCancel, refreshReadyProposalXdr, signMultisigProposal, submitTx } from "../api";
 import { useI18n } from "../i18n";
 import { signAuthEntry, signTransactionXdr } from "../wallet";
 
@@ -98,7 +98,8 @@ export function CancelSection({
     if (!proposal?.ready_xdr) return;
     setBusy(true);
     setError(null);
-    signTransactionXdr(proposal.ready_xdr, walletAddress!)
+    refreshReadyProposalXdr(contractId, proposal.id)
+      .then(({ xdr }) => signTransactionXdr(xdr, walletAddress!))
       .then((signedXdr) => submitTx(signedXdr, contractId, proposal.id))
       .then(() => {
         setProposal(null);
