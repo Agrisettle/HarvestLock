@@ -94,10 +94,16 @@ export function CommitmentDetail({
 
       <p className="pending-summary">{pendingSummary(commitment)}</p>
 
-      {actionError && <div className="error-banner">{actionError}</div>}
+      {actionError && <div className="error-banner" role="alert">{actionError}</div>}
 
       {action && (
-        <button className="action-button" onClick={() => onAction(action)} disabled={actionInFlight}>
+        <button
+          type="button"
+          className="action-button"
+          onClick={() => onAction(action)}
+          disabled={actionInFlight}
+          aria-busy={actionInFlight}
+        >
           {actionInFlight
             ? action === "lock"
               ? "Locking…"
@@ -161,21 +167,21 @@ export function CommitmentDetail({
         <table className="tranches">
           <thead>
             <tr>
-              <th>Tranche</th>
-              <th>Share</th>
-              <th>Claim deadline</th>
-              <th>State</th>
+              <th scope="col">Tranche</th>
+              <th scope="col">Share</th>
+              <th scope="col">Claim deadline</th>
+              <th scope="col">State</th>
             </tr>
           </thead>
           <tbody>
             <tr>
-              <td>Advance 1</td>
+              <th scope="row">Advance 1</th>
               <td>{formatBps(commitment.advance1_bps)}</td>
               <td>{formatDeadline(commitment.advance1_deadline)}</td>
               <td>{claimState(commitment.advance1_claimed, commitment.advance1_expired)}</td>
             </tr>
             <tr>
-              <td>Advance 2</td>
+              <th scope="row">Advance 2</th>
               <td>{formatBps(commitment.advance2_bps)}</td>
               <td>{formatDeadline(commitment.advance2_deadline)}</td>
               <td>{claimState(commitment.advance2_claimed, commitment.advance2_expired)}</td>
