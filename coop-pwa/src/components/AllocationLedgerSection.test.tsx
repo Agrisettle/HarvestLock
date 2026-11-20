@@ -169,9 +169,19 @@ describe("AllocationLedgerSection", () => {
     expect(screen.getAllByLabelText(/phone number/i)).toHaveLength(1);
     await user.click(screen.getByRole("button", { name: "Add member" }));
     expect(screen.getAllByLabelText(/phone number/i)).toHaveLength(2);
+    expect(screen.getByLabelText("Member 2 phone number")).toHaveFocus();
+    await user.tab();
+    expect(screen.getByLabelText("Member 2 share (basis points)")).toHaveFocus();
+    await user.tab();
+    expect(screen.getAllByRole("button", { name: "Remove" })[1]).toHaveFocus();
+    await user.tab();
+    expect(screen.getByRole("button", { name: "Add member" })).toHaveFocus();
+    await user.tab();
+    expect(screen.getByRole("button", { name: "Record allocation" })).toHaveFocus();
 
     await user.click(screen.getAllByRole("button", { name: "Remove" })[0]);
     expect(screen.getAllByLabelText(/phone number/i)).toHaveLength(1);
+    expect(screen.getByLabelText("Member 1 phone number")).toHaveFocus();
 
     // The last remaining row can't be removed -- set_allocation needs at
     // least one member, same reasoning as CreateCommitmentForm's grade

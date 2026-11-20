@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AllocationMember, CommitmentDetail as CommitmentDetailType } from "../api";
 import { buildSetAllocationTx, getAllocationLedger, submitTx } from "../api";
 import { useI18n } from "../i18n";
@@ -51,6 +51,9 @@ export function AllocationLedgerSection({
   const [rows, setRows] = useState<MemberRow[]>([emptyRow()]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const phoneInputRefs = useRef<Array<HTMLInputElement | null>>([]);
+  const removeButtonRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const focusAfterRowsChange = useRef<{ kind: "phone" | "remove"; index: number } | null>(null);
 
   const settable = SETTABLE_STATUSES.has(commitment.status);
   const isCooperative = walletAddress !== null && walletAddress === commitment.cooperative;
@@ -84,6 +87,17 @@ export function AllocationLedgerSection({
     refresh();
   }, [refresh]);
 
+  useEffect(() => {
+    const target = focusAfterRowsChange.current;
+    if (!target) return;
+    focusAfterRowsChange.current = null;
+    if (target.kind === "phone") {
+      phoneInputRefs.current[target.index]?.focus();
+    } else {
+      removeButtonRefs.current[target.index]?.focus();
+    }
+  }, [rows]);
+
   if (loading) {
     return (
       <div className="allocation-section">
@@ -106,11 +120,17 @@ export function AllocationLedgerSection({
   }
 
   function addRow() {
+    focusAfterRowsChange.current = { kind: "phone", index: rows.length };
     setRows((prev) => [...prev, emptyRow()]);
   }
 
   function removeRow(i: number) {
-    setRows((prev) => (prev.length === 1 ? prev : prev.filter((_, idx) => idx !== i)));
+    if (rows.length === 1) return;
+    const remainingRows = rows.length - 1;
+    const nextIndex = Math.min(i, remainingRows - 1);
+    focusAfterRowsChange.current =
+      remainingRows === 1 ? { kind: "phone", index: 0 } : { kind: "remove", index: nextIndex };
+    setRows((prev) => prev.filter((_, idx) => idx !== i));
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -150,7 +170,7 @@ export function AllocationLedgerSection({
 
   return (
     <div className="allocation-section">
-      {error && <div className="error-banner">{error}</div>}
+      {error && <div className="error-banner" role="alert">{error}</div>}
 
       {!hasLedger && <p className="empty-state">{t("allocation.empty")}</p>}
 
@@ -180,6 +200,9 @@ export function AllocationLedgerSection({
           {rows.map((row, i) => (
             <div className="allocation-row" key={i}>
               <input
+                ref={(element) => {
+                  phoneInputRefs.current[i] = element;
+                }}
                 aria-label={t("allocation.memberPhoneLabel", { number: i + 1 })}
                 value={row.phoneNumber}
                 onChange={(e) => updateRow(i, { phoneNumber: e.target.value })}
@@ -193,6 +216,9 @@ export function AllocationLedgerSection({
                 inputMode="numeric"
               />
               <button
+                ref={(element) => {
+                  removeButtonRefs.current[i] = element;
+                }}
                 type="button"
                 className="action-button secondary"
                 onClick={() => removeRow(i)}

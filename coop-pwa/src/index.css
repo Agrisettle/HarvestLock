@@ -35,6 +35,11 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+:focus-visible {
+  outline: 3px solid var(--gold-bright);
+  outline-offset: 3px;
+}
+
 /* Visually hidden but present for screen readers — the input's
    placeholder alone isn't a reliable label (it disappears on input, and
    isn't consistently announced as a persistent label by every reader). */

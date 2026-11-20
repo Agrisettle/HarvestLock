@@ -113,7 +113,7 @@ export function CancelSection({
 
   return (
     <div className="cancel-section">
-      {error && <div className="error-banner">{error}</div>}
+      {error && <div className="error-banner" role="alert">{error}</div>}
 
       {!proposal && (
         <button className="action-button secondary" onClick={handlePropose} disabled={busy}>
@@ -122,12 +122,12 @@ export function CancelSection({
       )}
 
       {proposal?.status === "pending" && iAmProposer && (
-        <p className="cancel-status">{t("cancel.proposed")}</p>
+        <p className="cancel-status" role="status">{t("cancel.proposed")}</p>
       )}
 
       {proposal?.status === "pending" && iMustApprove && (
         <>
-          <p className="cancel-status">{t("cancel.otherWants")}</p>
+          <p className="cancel-status" role="status">{t("cancel.otherWants")}</p>
           <button className="action-button secondary" onClick={handleApprove} disabled={busy}>
             {busy ? t("cancel.approving") : t("cancel.approve")}
           </button>
@@ -141,7 +141,7 @@ export function CancelSection({
       )}
 
       {proposal?.status === "ready" && !iAmProposer && (
-        <p className="cancel-status">{t("cancel.approvedWaiting")}</p>
+        <p className="cancel-status" role="status">{t("cancel.approvedWaiting")}</p>
       )}
     </div>
   );
