@@ -190,3 +190,66 @@ describe("CommitmentDetail's action button", () => {
     expect(screen.getByText(/something went wrong/)).toBeInTheDocument();
   });
 });
+
+describe("CommitmentDetail keyboard navigation & accessibility (Issue #69)", () => {
+  it("renders action button with type='button' and aria-busy when in flight", () => {
+    const draft = { ...baseCommitment, status: "Draft" };
+    const { rerender } = render(
+      <CommitmentDetail
+        commitment={draft}
+        contractId="CXXX"
+        {...noopProps}
+        walletAddress={baseCommitment.buyer}
+        actionInFlight={false}
+      />,
+    );
+    const button = screen.getByRole("button", { name: "Lock deposit" });
+    expect(button).toHaveAttribute("type", "button");
+    expect(button).toHaveAttribute("aria-busy", "false");
+
+    rerender(
+      <CommitmentDetail
+        commitment={draft}
+        contractId="CXXX"
+        {...noopProps}
+        walletAddress={baseCommitment.buyer}
+        actionInFlight={true}
+      />,
+    );
+    const busyButton = screen.getByRole("button", { name: "Locking…" });
+    expect(busyButton).toHaveAttribute("aria-busy", "true");
+  });
+
+  it("renders error banner with role='alert' for immediate screen reader announcement", () => {
+    render(
+      <CommitmentDetail
+        commitment={baseCommitment}
+        contractId="CXXX"
+        {...noopProps}
+        actionError="lock -> 500: network timeout"
+      />,
+    );
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent("network timeout");
+  });
+
+  it("provides accessible tranche table structure with scope attributes and keyboard-accessible scroll region", () => {
+    render(<CommitmentDetail commitment={baseCommitment} contractId="CXXX" {...noopProps} />);
+    const region = screen.getByRole("region", { name: "Tranche schedule" });
+    expect(region).toHaveAttribute("tabIndex", "0");
+
+    const columnHeaders = screen.getAllByRole("columnheader");
+    expect(columnHeaders).toHaveLength(4);
+    expect(columnHeaders.map((h) => h.textContent)).toEqual(["Tranche", "Share", "Claim deadline", "State"]);
+    for (const h of columnHeaders) {
+      expect(h).toHaveAttribute("scope", "col");
+    }
+
+    const rowHeaders = screen.getAllByRole("rowheader");
+    expect(rowHeaders).toHaveLength(2);
+    expect(rowHeaders.map((h) => h.textContent)).toEqual(["Advance 1", "Advance 2"]);
+    for (const h of rowHeaders) {
+      expect(h).toHaveAttribute("scope", "row");
+    }
+  });
+});

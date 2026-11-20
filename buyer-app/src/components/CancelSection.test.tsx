@@ -214,4 +214,101 @@ describe("CancelSection", () => {
 
     expect(await screen.findByText("User declined to sign")).toBeInTheDocument();
   });
+
+  describe("CancelSection color contrast & ARIA labeling (Issue #76)", () => {
+    it("marks cancellation status updates as polite live regions", async () => {
+      const pendingProposal = {
+        id: "prop-1",
+        contract_id: "CXXX",
+        proposer_address: baseCommitment.buyer,
+        status: "pending",
+        pending_entries: [{ address: baseCommitment.cooperative, entry_xdr: "ENTRY_XDR" }],
+        ready_xdr: null,
+      };
+      fetchMock.mockResolvedValueOnce(jsonResponse({ proposal: pendingProposal }));
+
+      render(
+        <CancelSection
+          commitment={baseCommitment}
+          contractId="CXXX"
+          walletAddress={baseCommitment.buyer}
+          onCancelled={vi.fn()}
+        />,
+      );
+
+      const statusEl = await screen.findByRole("status");
+      expect(statusEl).toHaveAttribute("aria-live", "polite");
+      expect(statusEl).toHaveTextContent(/waiting for the other party to approve/i);
+    });
+
+    it("marks error banners with role='alert' for immediate announcement", async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse({ proposal: null }));
+      fetchMock.mockRejectedValueOnce(new Error("API network failure"));
+
+      const user = userEvent.setup();
+      render(
+        <CancelSection
+          commitment={baseCommitment}
+          contractId="CXXX"
+          walletAddress={baseCommitment.buyer}
+          onCancelled={vi.fn()}
+        />,
+      );
+
+      const button = await screen.findByRole("button", { name: "Cancel this commitment" });
+      await user.click(button);
+
+      const alert = await screen.findByRole("alert");
+      expect(alert).toHaveTextContent("API network failure");
+    });
+
+    it("renders action buttons with type='button' and sets aria-busy while in flight", async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse({ proposal: null }));
+      render(
+        <CancelSection
+          commitment={baseCommitment}
+          contractId="CXXX"
+          walletAddress={baseCommitment.buyer}
+          onCancelled={vi.fn()}
+        />,
+      );
+
+      const button = await screen.findByRole("button", { name: "Cancel this commitment" });
+      expect(button).toHaveAttribute("type", "button");
+      expect(button).toHaveAttribute("aria-busy", "false");
+    });
+
+    it("verifies contrast ratios meet WCAG AA requirements for CancelSection styling tokens", () => {
+      const lum = (hex: string) => {
+        const rgb = [hex.slice(1, 3), hex.slice(3, 5), hex.slice(5, 7)].map((c) => parseInt(c, 16) / 255);
+        const [r, g, b] = rgb.map((c) => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)));
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      };
+      const contrastRatio = (hex1: string, hex2: string) => {
+        const [l1, l2] = [lum(hex1), lum(hex2)].sort((a, b) => b - a);
+        return (l1 + 0.05) / (l2 + 0.05);
+      };
+
+      const voidBg = "#0b120f";
+      const voidRaised = "#121a16";
+      const bone = "#f3f1e9";
+      const boneDim = "#c9c6ba";
+      const boneFaint = "#8a897f";
+      const gold = "#d4a937";
+      const goldBright = "#eec765";
+      const signal = "#c1432e";
+
+      // Text contrast (WCAG AA: >= 4.5:1)
+      expect(contrastRatio(bone, voidRaised)).toBeGreaterThanOrEqual(4.5); // Secondary button text
+      expect(contrastRatio(bone, voidBg)).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio(boneDim, voidRaised)).toBeGreaterThanOrEqual(4.5); // cancel-status text
+      expect(contrastRatio(boneFaint, voidRaised)).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio(goldBright, voidRaised)).toBeGreaterThanOrEqual(4.5); // Hover text
+
+      // Non-text UI boundary contrast (WCAG AA SC 1.4.11: >= 3.0:1)
+      expect(contrastRatio(boneDim, voidRaised)).toBeGreaterThanOrEqual(3.0); // Secondary button border
+      expect(contrastRatio(gold, voidRaised)).toBeGreaterThanOrEqual(3.0); // Focus ring / hover border
+      expect(contrastRatio(signal, voidRaised)).toBeGreaterThanOrEqual(3.0); // Error banner border
+    });
+  });
 });

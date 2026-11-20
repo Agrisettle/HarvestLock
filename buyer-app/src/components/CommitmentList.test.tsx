@@ -118,3 +118,73 @@ describe("CommitmentList", () => {
     expect(button).toBeDisabled();
   });
 });
+
+describe("CommitmentList keyboard navigation & accessibility (Issue #71)", () => {
+  it("renders all buttons with explicit type='button' and proper aria-busy attributes", () => {
+    const { rerender } = render(
+      <CommitmentList commitments={[summary]} onSelect={vi.fn()} hasMore loadingMore={false} onLoadMore={vi.fn()} />,
+    );
+    const csvButton = screen.getByRole("button", { name: "Download CSV" });
+    expect(csvButton).toHaveAttribute("type", "button");
+
+    const rowButton = screen.getByRole("button", {
+      name: `Commitment ${summary.contract_id}, status: ${summary.status}`,
+    });
+    expect(rowButton).toHaveAttribute("type", "button");
+
+    const loadMoreButton = screen.getByRole("button", { name: "Load more" });
+    expect(loadMoreButton).toHaveAttribute("type", "button");
+    expect(loadMoreButton).toHaveAttribute("aria-busy", "false");
+
+    rerender(
+      <CommitmentList commitments={[summary]} onSelect={vi.fn()} hasMore loadingMore={true} onLoadMore={vi.fn()} />,
+    );
+    const busyLoadMore = screen.getByRole("button", { name: "Loading more…" });
+    expect(busyLoadMore).toHaveAttribute("aria-busy", "true");
+  });
+});
+
+describe("CommitmentList color contrast & ARIA labeling (Issue #72)", () => {
+  it("provides live region announcements on loading and error states", () => {
+    const { rerender } = render(<CommitmentList commitments={[]} loading onSelect={vi.fn()} />);
+    const loadingState = screen.getByRole("status");
+    expect(loadingState).toHaveAttribute("aria-live", "polite");
+    expect(loadingState).toHaveTextContent("Loading commitments…");
+
+    rerender(<CommitmentList commitments={[]} error="Failed to fetch commitments" onSelect={vi.fn()} />);
+    const errorState = screen.getByRole("alert");
+    expect(errorState).toHaveTextContent("Failed to fetch commitments");
+  });
+
+  it("verifies contrast ratios meet WCAG AA requirements for CommitmentList styling tokens", () => {
+    const lum = (hex: string) => {
+      const rgb = [hex.slice(1, 3), hex.slice(3, 5), hex.slice(5, 7)].map((c) => parseInt(c, 16) / 255);
+      const [r, g, b] = rgb.map((c) => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)));
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const contrastRatio = (hex1: string, hex2: string) => {
+      const [l1, l2] = [lum(hex1), lum(hex2)].sort((a, b) => b - a);
+      return (l1 + 0.05) / (l2 + 0.05);
+    };
+
+    const voidBg = "#0b120f";
+    const voidRaised = "#121a16";
+    const bone = "#f3f1e9";
+    const boneDim = "#c9c6ba";
+    const pine = "#1e6b4e";
+    const gold = "#d4a937";
+    const goldBright = "#eec765";
+
+    // Text contrast (WCAG AA: >= 4.5:1)
+    expect(contrastRatio(bone, voidBg)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(bone, voidRaised)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(boneDim, voidBg)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(boneDim, voidRaised)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(bone, pine)).toBeGreaterThanOrEqual(4.5); // "Download CSV" / "Load more" text on pine button
+    expect(contrastRatio(goldBright, voidRaised)).toBeGreaterThanOrEqual(4.5); // Locked badge text
+
+    // Non-text UI boundary / focus ring contrast (WCAG AA SC 1.4.11: >= 3.0:1)
+    expect(contrastRatio(gold, voidBg)).toBeGreaterThanOrEqual(3.0); // commitment-row hover/focus ring
+    expect(contrastRatio(gold, voidRaised)).toBeGreaterThanOrEqual(3.0);
+  });
+});

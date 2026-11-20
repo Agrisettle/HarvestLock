@@ -108,35 +108,41 @@ export function CancelSection({
 
   return (
     <div className="cancel-section">
-      {error && <div className="error-banner">{error}</div>}
+      {error && <div className="error-banner" role="alert">{error}</div>}
 
       {!proposal && (
-        <button className="action-button secondary" onClick={handlePropose} disabled={busy}>
+        <button type="button" className="action-button secondary" onClick={handlePropose} disabled={busy} aria-busy={busy}>
           {busy ? "Proposing…" : "Cancel this commitment"}
         </button>
       )}
 
       {proposal?.status === "pending" && iAmProposer && (
-        <p className="cancel-status">Cancellation proposed — waiting for the other party to approve.</p>
+        <p className="cancel-status" role="status" aria-live="polite">
+          Cancellation proposed — waiting for the other party to approve.
+        </p>
       )}
 
       {proposal?.status === "pending" && iMustApprove && (
         <>
-          <p className="cancel-status">The other party wants to cancel this commitment.</p>
-          <button className="action-button secondary" onClick={handleApprove} disabled={busy}>
+          <p className="cancel-status" role="status" aria-live="polite">
+            The other party wants to cancel this commitment.
+          </p>
+          <button type="button" className="action-button secondary" onClick={handleApprove} disabled={busy} aria-busy={busy}>
             {busy ? "Approving…" : "Approve cancellation"}
           </button>
         </>
       )}
 
       {proposal?.status === "ready" && iAmProposer && (
-        <button className="action-button secondary" onClick={handleFinalize} disabled={busy}>
+        <button type="button" className="action-button secondary" onClick={handleFinalize} disabled={busy} aria-busy={busy}>
           {busy ? "Finalizing…" : "Finalize cancellation"}
         </button>
       )}
 
       {proposal?.status === "ready" && !iAmProposer && (
-        <p className="cancel-status">Approved — waiting for the proposer to finalize.</p>
+        <p className="cancel-status" role="status" aria-live="polite">
+          Approved — waiting for the proposer to finalize.
+        </p>
       )}
     </div>
   );

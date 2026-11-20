@@ -27,6 +27,11 @@
   box-sizing: border-box;
 }
 
+:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
 body {
   margin: 0;
   background: var(--void);
@@ -139,6 +144,13 @@ main {
   cursor: not-allowed;
 }
 
+.lookup button:focus-visible,
+.refresh-button:focus-visible,
+.load-more-button:focus-visible {
+  outline: 2px solid var(--gold-bright);
+  outline-offset: 2px;
+}
+
 .load-more-button {
   display: block;
   margin: 12px auto 0;
@@ -180,10 +192,27 @@ main {
   cursor: not-allowed;
 }
 
+.action-button:focus-visible {
+  outline: 2px solid var(--gold-bright);
+  outline-offset: 2px;
+}
+
 .action-button.secondary {
   background: transparent;
   color: var(--bone);
-  border: 1px solid var(--void-line);
+  border: 1px solid var(--bone-dim);
+  transition: border-color 0.2s ease, color 0.2s ease;
+}
+
+.action-button.secondary:hover,
+.action-button.secondary:focus-visible {
+  border-color: var(--gold);
+  color: var(--gold-bright);
+}
+
+.action-button.secondary:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
 }
 
 .cancel-section {
@@ -337,10 +366,17 @@ main {
   color: inherit;
   font: inherit;
   width: 100%;
+  transition: border-color 0.2s ease;
 }
 
-.commitment-row:hover {
-  border-color: var(--pine);
+.commitment-row:hover,
+.commitment-row:focus-visible {
+  border-color: var(--gold);
+}
+
+.commitment-row:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
 }
 
 .commitment-row .contract-id {
@@ -362,7 +398,7 @@ main {
 
 .address-chip-copy {
   background: transparent;
-  border: 1px solid var(--void-line);
+  border: 1px solid var(--bone-faint);
   color: var(--bone-faint);
   border-radius: 4px;
   padding: 1px 6px;
@@ -370,11 +406,18 @@ main {
   font-size: 0.68rem;
   cursor: pointer;
   flex-shrink: 0;
+  transition: border-color 0.2s ease, color 0.2s ease;
 }
 
-.address-chip-copy:hover {
-  border-color: var(--pine);
+.address-chip-copy:hover,
+.address-chip-copy:focus-visible {
+  border-color: var(--gold);
   color: var(--bone);
+}
+
+.address-chip-copy:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
 }
 
 .badge {
@@ -469,6 +512,12 @@ main {
   -webkit-overflow-scrolling: touch;
 }
 
+.tranches-scroll:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
 table.tranches {
   width: 100%;
   border-collapse: collapse;
@@ -482,12 +531,17 @@ table.tranches td {
   border-bottom: 1px solid var(--void-line);
 }
 
-table.tranches th {
+table.tranches thead th {
   color: var(--bone-faint);
   font-weight: 500;
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.03em;
+}
+
+table.tranches tbody th {
+  font-weight: normal;
+  color: inherit;
 }
 
 .empty-state,

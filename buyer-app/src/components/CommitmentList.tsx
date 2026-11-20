@@ -72,13 +72,13 @@ export function CommitmentList({
   onLoadMore?: () => void;
 }) {
   if (loading) {
-    return <div className="loading-state">Loading commitments…</div>;
+    return <div className="loading-state" role="status" aria-live="polite">Loading commitments…</div>;
   }
 
   if (error) {
     // `api.ts` throws `${path} -> ${status}: ${body}` — specific, not a
     // generic "something went wrong" (see api.ts's get/post).
-    return <div className="error-banner">{error}</div>;
+    return <div className="error-banner" role="alert">{error}</div>;
   }
 
   if (commitments.length === 0) {
@@ -91,12 +91,18 @@ export function CommitmentList({
 
   return (
     <div>
-      <button className="refresh-button" onClick={() => downloadCsv(commitments)}>
+      <button type="button" className="refresh-button" onClick={() => downloadCsv(commitments)}>
         Download CSV
       </button>
-      <div className="commitment-list">
+      <div className="commitment-list" role="list" aria-label="Commitments">
         {commitments.map((c) => (
-          <button key={c.id} className="commitment-row" onClick={() => onSelect(c.contract_id)}>
+          <button
+            key={c.id}
+            type="button"
+            className="commitment-row"
+            onClick={() => onSelect(c.contract_id)}
+            aria-label={`Commitment ${c.contract_id}, status: ${c.status}`}
+          >
             {/* copyable=false: this row is itself a <button> -- a nested
                 <button> for the copy control would be invalid HTML. */}
             <AddressChip address={c.contract_id} copyable={false} className="contract-id" />
@@ -105,7 +111,13 @@ export function CommitmentList({
         ))}
       </div>
       {hasMore && onLoadMore && (
-        <button className="load-more-button" onClick={onLoadMore} disabled={loadingMore}>
+        <button
+          type="button"
+          className="load-more-button"
+          onClick={onLoadMore}
+          disabled={loadingMore}
+          aria-busy={loadingMore}
+        >
           {loadingMore ? "Loading more…" : "Load more"}
         </button>
       )}
