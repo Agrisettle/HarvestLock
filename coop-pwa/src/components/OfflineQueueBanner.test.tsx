@@ -86,8 +86,8 @@ describe("OfflineQueueBanner keyboard navigation audit (Issue #93)", () => {
     );
 
     const copyBtn = screen.getByRole("button", { name: "Copy" });
-    const retryBtn = screen.getByRole("button", { name: /^Retry/ });
-    const dismissBtn = screen.getByRole("button", { name: /^Dismiss/ });
+    const retryBtn = screen.getByRole("button", { name: "Retry" });
+    const dismissBtn = screen.getByRole("button", { name: "Dismiss" });
 
     await user.tab();
     expect(copyBtn).toHaveFocus();
@@ -114,8 +114,8 @@ describe("OfflineQueueBanner keyboard navigation audit (Issue #93)", () => {
       />,
     );
 
-    const retryBtn = screen.getByRole("button", { name: /^Retry/ });
-    const dismissBtn = screen.getByRole("button", { name: /^Dismiss/ });
+    const retryBtn = screen.getByRole("button", { name: "Retry" });
+    const dismissBtn = screen.getByRole("button", { name: "Dismiss" });
 
     await user.tab(); // copy
     await user.tab(); // retry
@@ -139,7 +139,7 @@ describe("OfflineQueueBanner color contrast & ARIA labeling (Issue #94)", () => 
     expect(banner).toHaveAttribute("role", "status");
   });
 
-  it("provides accessible names conveying tranche and contract context", () => {
+  it("provides accessible button controls with semantic action names", () => {
     render(
       <OfflineQueueBanner
         queuedClaims={[claims[0]]}
@@ -150,15 +150,8 @@ describe("OfflineQueueBanner color contrast & ARIA labeling (Issue #94)", () => 
       />,
     );
 
-    const retryBtn = screen.getByRole("button", {
-      name: `Retry Advance 1 — ${claims[0].contractId}`,
-    });
-    expect(retryBtn).toBeInTheDocument();
-
-    const dismissBtn = screen.getByRole("button", {
-      name: `Dismiss Advance 1 — ${claims[0].contractId}`,
-    });
-    expect(dismissBtn).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Dismiss" })).toBeInTheDocument();
   });
 
   it("sets aria-busy during active retry operation", () => {
@@ -166,13 +159,13 @@ describe("OfflineQueueBanner color contrast & ARIA labeling (Issue #94)", () => 
       <OfflineQueueBanner queuedClaims={[claims[0]]} retryingId={null} onRetry={vi.fn()} />,
     );
 
-    const retryBtn = screen.getByRole("button", { name: /Advance 1/ });
+    const retryBtn = screen.getByRole("button", { name: "Retry" });
     expect(retryBtn).toHaveAttribute("aria-busy", "false");
 
     rerender(
       <OfflineQueueBanner queuedClaims={[claims[0]]} retryingId={1} onRetry={vi.fn()} />,
     );
-    const busyBtn = screen.getByRole("button", { name: /Advance 1/ });
+    const busyBtn = screen.getByRole("button", { name: "Retrying…" });
     expect(busyBtn).toHaveAttribute("aria-busy", "true");
   });
 

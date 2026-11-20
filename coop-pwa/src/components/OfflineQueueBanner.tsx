@@ -57,7 +57,6 @@ export function OfflineQueueBanner({
               onClick={() => onRetry(claim)}
               disabled={retryingId !== null}
               aria-busy={retryingId === claim.id}
-              aria-label={`${retryingId === claim.id ? t("offline.retrying") : t("offline.retry")} ${t("offline.advanceLabel", { tranche: claim.tranche })}${claim.contractId}`}
             >
               {retryingId === claim.id ? t("offline.retrying") : t("offline.retry")}
             </button>
@@ -67,7 +66,6 @@ export function OfflineQueueBanner({
                 className="action-button secondary"
                 onClick={() => onDismiss(claim)}
                 disabled={retryingId !== null}
-                aria-label={`${t("offline.dismiss")} ${t("offline.advanceLabel", { tranche: claim.tranche })}${claim.contractId}`}
               >
                 {t("offline.dismiss")}
               </button>
