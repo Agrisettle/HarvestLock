@@ -87,13 +87,19 @@ export function CommitmentDetail({
       />
 
       {action === "checkpoint" && (
-        <button className="action-button" onClick={onMarkCheckpoint} disabled={actionInFlight}>
+        <button
+          type="button"
+          className="action-button"
+          onClick={onMarkCheckpoint}
+          disabled={actionInFlight}
+          aria-busy={actionInFlight}
+        >
           {actionInFlight ? "Marking checkpoint…" : "Mark mid-season checkpoint"}
         </button>
       )}
 
       {commitment.status === "ReadyForDelivery" && !commitment.remainder_funded && (
-        <p className="pending-summary">
+        <p className="pending-summary" role="status">
           The cooperative has signaled they're setting out for delivery, but the buyer hasn't funded the remainder
           yet. Delivery can't be confirmed until they do.
         </p>
@@ -131,7 +137,7 @@ export function CommitmentDetail({
               <dd>{formatBps(commitment.settlement_bps)} of contract value</dd>
             </div>
           </dl>
-          <button className="print-receipt-button" onClick={() => window.print()}>
+          <button type="button" className="print-receipt-button" onClick={() => window.print()}>
             Print receipt
           </button>
         </div>
@@ -164,14 +170,14 @@ export function CommitmentDetail({
         <table className="tranches">
           <thead>
             <tr>
-              <th>Grade</th>
-              <th>Price multiplier</th>
+              <th scope="col">Grade</th>
+              <th scope="col">Price multiplier</th>
             </tr>
           </thead>
           <tbody>
             {commitment.grade_price_bps.map((bps, i) => (
               <tr key={i}>
-                <td>Grade {i}</td>
+                <th scope="row">Grade {i}</th>
                 <td>{formatBps(bps)}</td>
               </tr>
             ))}

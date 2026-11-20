@@ -212,12 +212,29 @@ main {
   cursor: not-allowed;
 }
 
+.action-button:focus-visible {
+  outline: 2px solid var(--gold-bright);
+  outline-offset: 2px;
+}
+
 .action-button.secondary {
   background: transparent;
   color: var(--bone);
   /* Outlines the control itself, so it needs non-text contrast (1.4.11),
      not just the decorative --void-line used for separators. */
   border: 1px solid var(--void-line-strong);
+  transition: border-color 0.2s ease, color 0.2s ease;
+}
+
+.action-button.secondary:hover,
+.action-button.secondary:focus-visible {
+  border-color: var(--gold);
+  color: var(--gold-bright);
+}
+
+.action-button.secondary:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
 }
 
 .cancel-section {
@@ -235,6 +252,19 @@ main {
   border: 1px solid var(--gold);
   border-radius: 8px;
   padding: 14px 16px;
+}
+
+.offline-queue-banner .action-button.secondary {
+  /* On the warm 10% gold background, --bone-faint (#8a897f) measures 4.64:1,
+     meeting both non-text (>= 3:1) and text (>= 4.5:1) WCAG AA contrast. */
+  border-color: var(--bone-faint);
+  margin-bottom: 0;
+}
+
+.offline-queue-banner .action-button.secondary:hover,
+.offline-queue-banner .action-button.secondary:focus-visible {
+  border-color: var(--gold);
+  color: var(--gold-bright);
 }
 
 .offline-queue-summary {

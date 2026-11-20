@@ -33,7 +33,7 @@ export function OfflineQueueBanner({
   if (queuedClaims.length === 0) return null;
 
   return (
-    <div className="offline-queue-banner">
+    <div className="offline-queue-banner" role="status">
       <p className="offline-queue-summary">
         {tPlural("offline.claimsSummary", queuedClaims.length)}
       </p>
@@ -52,14 +52,23 @@ export function OfflineQueueBanner({
               {t("offline.advanceLabel", { tranche: claim.tranche })}<AddressChip address={claim.contractId} />
             </span>
             <button
+              type="button"
               className="action-button secondary"
               onClick={() => onRetry(claim)}
               disabled={retryingId !== null}
+              aria-busy={retryingId === claim.id}
+              aria-label={`${retryingId === claim.id ? t("offline.retrying") : t("offline.retry")} ${t("offline.advanceLabel", { tranche: claim.tranche })}${claim.contractId}`}
             >
               {retryingId === claim.id ? t("offline.retrying") : t("offline.retry")}
             </button>
             {retryErrors[claim.id] && onDismiss && (
-              <button className="action-button secondary" onClick={() => onDismiss(claim)} disabled={retryingId !== null}>
+              <button
+                type="button"
+                className="action-button secondary"
+                onClick={() => onDismiss(claim)}
+                disabled={retryingId !== null}
+                aria-label={`${t("offline.dismiss")} ${t("offline.advanceLabel", { tranche: claim.tranche })}${claim.contractId}`}
+              >
                 {t("offline.dismiss")}
               </button>
             )}

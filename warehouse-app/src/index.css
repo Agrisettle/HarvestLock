@@ -198,6 +198,11 @@ main {
   margin-bottom: 20px;
 }
 
+.action-button:focus-visible {
+  outline: 2px solid var(--gold-bright);
+  outline-offset: 2px;
+}
+
 .action-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -220,6 +225,11 @@ main {
 .action-button.secondary:focus-visible {
   border-color: var(--gold);
   color: var(--gold-bright);
+}
+
+.action-button.secondary:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
 }
 
 .cancel-status {
@@ -411,6 +421,12 @@ main {
   -webkit-overflow-scrolling: touch;
 }
 
+.tranches-scroll:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
 table.tranches {
   width: 100%;
   border-collapse: collapse;
@@ -425,12 +441,20 @@ table.tranches td {
   border-bottom: 1px solid var(--void-line);
 }
 
-table.tranches th {
+table.tranches thead th {
   color: var(--bone-faint);
   font-weight: 500;
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.03em;
+}
+
+table.tranches tbody th {
+  font-weight: normal;
+  color: inherit;
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--void-line);
 }
 
 .empty-state,
@@ -536,17 +560,25 @@ table.tranches th {
 
 .print-receipt-button {
   background: transparent;
-  border: 1px solid var(--void-line);
+  border: 1px solid var(--void-line-strong);
   border-radius: 6px;
   color: var(--bone);
   cursor: pointer;
   font: inherit;
   font-size: 0.82rem;
   padding: 8px 12px;
+  transition: border-color 0.2s ease, color 0.2s ease;
 }
 
-.print-receipt-button:hover {
-  border-color: var(--pine);
+.print-receipt-button:hover,
+.print-receipt-button:focus-visible {
+  border-color: var(--gold);
+  color: var(--gold-bright);
+}
+
+.print-receipt-button:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
 }
 
 @media print {
