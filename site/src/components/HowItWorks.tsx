@@ -41,11 +41,13 @@ const steps = [
 
 export function HowItWorks() {
   return (
-    <section id="how-it-works">
+    <section id="how-it-works" aria-labelledby="how-it-works-heading">
       <div className="wrap">
         <Reveal as="div" className="section-head">
           <div className="eyebrow">How it works</div>
-          <h2>Seven states. One contract per commitment. No step skippable.</h2>
+          <h2 id="how-it-works-heading">
+            Seven states. One contract per commitment. No step skippable.
+          </h2>
           <p className="lede">
             This is not a diagram of a plan — it&rsquo;s the actual state machine
             deployed and exercised on Stellar testnet, function names
@@ -53,10 +55,16 @@ export function HowItWorks() {
           </p>
         </Reveal>
 
-        <ol className="steps">
+        <ol className="steps" role="list">
           {steps.map((s, i) => (
-            <Reveal as="li" key={s.state} delay={i * 70} className="step">
-              <div className="step-marker">
+            <Reveal
+              as="li"
+              key={s.state}
+              delay={i * 70}
+              className="step"
+              tabIndex={0}
+            >
+              <div className="step-marker" aria-hidden="true">
                 <span className="mono">{String(i + 1).padStart(2, "0")}</span>
               </div>
               <div className="step-body">

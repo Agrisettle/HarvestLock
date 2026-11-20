@@ -303,7 +303,8 @@ section {
 }
 
 .reveal.in-view,
-.reveal:focus-within {
+.reveal:focus-within,
+.reveal:focus-visible {
   opacity: 1;
   transform: translateY(0);
 }

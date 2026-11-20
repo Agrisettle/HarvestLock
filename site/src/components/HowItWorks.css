@@ -21,10 +21,23 @@
   gap: 24px;
   padding-bottom: clamp(30px, 4vw, 44px);
   position: relative;
+  outline: none;
+  border-radius: 6px;
+  transition: background 0.2s var(--ease);
 }
 
 .step:last-child {
   padding-bottom: 0;
+}
+
+.step:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 4px;
+}
+
+.step:focus-visible .step-marker {
+  border-color: var(--gold);
+  color: var(--gold-bright);
 }
 
 .step-marker {
