@@ -2,6 +2,7 @@
 
 **Status:** design investigation for #185. Nothing here is built. This document exists so the first person to implement vouchers starts from a checked analysis instead of a guess.
 **Date:** 2026-10-18
+**Follow-up:** [`voucher-proposal.md`](./voucher-proposal.md) (#6) turns the recommendation below into a concrete proposal — issuance trigger, redemption confirmer, allocation-ledger fit, and pilot-metric definitions.
 **Scope:** how a voucher — a claimable, transferable entitlement distinct from the direct-payout model this contract uses today — can layer onto the existing escrow **without changing `lib.rs`'s core state machine**. Approaches, trade-offs, and a recommendation. No implementation, no schema, no routes committed here.
 
 ## 1. Why vouchers were in scope at all
@@ -45,7 +46,7 @@ The smallest thing that satisfies the literal PRD must-have ("tracking"). Vouche
 
 **Mechanics**
 
-- On observing a fresh transition into `Advance1Released`/`Advance2Released` — the same exactly-once orchestration point `applyReputationConsequences` already uses (`previousStatus` read inside the `upsertCommitment` transaction) — the API issues one voucher record per allocation member, sized by the member's on-chain share (`allocation_members` / `get_allocation`), or one tranche-sized voucher for the cooperative when no allocation exists. Issuance must be idempotent: cache refreshes can re-observe a status many times.
+- On observing a fresh transition into `Advance1Released`/`Advance2Released` — the same observation-triggered point `applyReputationConsequences` already uses (idempotency via a UNIQUE constraint, as `standing_events` does — **not** a `previousStatus` comparison, which `api/src/reputation.ts` documents as wrong in both directions) — the API issues one voucher record per allocation member, sized by the member's on-chain share (`allocation_members` / `get_allocation`), or one tranche-sized voucher for the cooperative when no allocation exists. Issuance must be idempotent: cache refreshes can re-observe a status many times.
 - New tables, mirroring the `party_standing` / `standing_events` audit-log pattern: `vouchers` (contract, tranche, member hash where applicable, amount, status `issued|redeemed|expired|void`, issued at, expires at, redemption code hash, supplier, redeemed at, tx reference) and `voucher_events` (append-only). A small `input_suppliers` registry (name, payout address/bank details, KYC state) is the allow-list.
 - Redemption: the supplier (or a coop officer on the supplier's behalf) presents a one-time code; the API checks status/expiry, marks the row redeemed in one transaction (`UPDATE … WHERE status='issued'` — the same `SELECT … FOR UPDATE` shape that makes reputation idempotent), records the event, and **records or initiates payment**. With no auth/session model yet (`api/HANDOFF.md`), the code *is* the authentication, so codes are long, single-use, hashed at rest, and rate-limited like any other route.
 - Payment itself has two sub-modes, and the difference matters:
@@ -154,4 +155,4 @@ Add a voucher destination to the advance release in `lib.rs`, so `claim_advance_
 - `api/HANDOFF.md` — "What's deliberately deferred" (voucher item, line 33), "Design decisions and why" (build-unsigned/client-signs/submit; no custodial signing).
 - `api/README.md` — API architecture (never holds a party's key), allocation ledger (per-member salted hashes, NDPA erasure), "What's not built yet" (voucher/SDP).
 - `ROADMAP.md` Week 3–4 — the implemented claim/reclaim window that a voucher's expiry must mirror.
-- `api/HANDOFF.md` — `applyReputationConsequences` / `UpsertResult.previousStatus`, the existing exactly-once "observed transition" hook any issuance trigger should reuse.
+- `api/src/reputation.ts` — `applyReputationConsequences`, the existing observation-triggered hook any issuance trigger should sit beside (idempotent via UNIQUE constraint, not `previousStatus`).

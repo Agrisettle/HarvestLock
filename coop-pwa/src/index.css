@@ -7,6 +7,12 @@
   --void-raised: #121a16;
   --void-line: #23302a;
   --void-line-soft: #1a2420;
+  /* Stronger divider for the *boundary* of an interactive control. WCAG
+     1.4.11 wants 3:1 for that edge, which --void-line doesn't meet against
+     --void-raised (1.29:1) -- a ghost button's outline was effectively
+     invisible. #5c6b62 measures 3.15:1 on --void-raised and 3.37:1 on
+     --void. */
+  --void-line-strong: #5c6b62;
 
   --bone: #f3f1e9;
   --bone-dim: #c9c6ba;
@@ -209,7 +215,9 @@ main {
 .action-button.secondary {
   background: transparent;
   color: var(--bone);
-  border: 1px solid var(--void-line);
+  /* Outlines the control itself, so it needs non-text contrast (1.4.11),
+     not just the decorative --void-line used for separators. */
+  border: 1px solid var(--void-line-strong);
 }
 
 .cancel-section {

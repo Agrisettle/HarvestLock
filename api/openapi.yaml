@@ -519,6 +519,162 @@ paths:
               schema: { $ref: '#/components/schemas/PartyStanding' }
         '400': { $ref: '#/components/responses/Error' }
         default: { $ref: '#/components/responses/Error' }
+  /commitments/{contractId}/notifications:
+    get:
+      operationId: getCommitmentNotifications
+      summary: Member SMS delivery counts for one commitment
+      description: >-
+        Events recorded by the member SMS pipeline (issue #7) with per-status
+        message counts. Counts only, never a recipient, phone number, or member
+        hash. `suppressed` marks an event recorded as a backfill and
+        deliberately not sent.
+      parameters:
+        - $ref: '#/components/parameters/contractId'
+      responses:
+        '200':
+          description: Notification events, oldest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [events]
+                properties:
+                  events:
+                    type: array
+                    items:
+                      type: object
+                      required: [event_key, occurrence, suppressed, created_at, messages]
+                      properties:
+                        event_key:
+                          type: string
+                          enum: [advance_released, checkpoint_marked, delivery_confirmed, dispute_flagged, dispute_resolved, settlement_complete]
+                        occurrence: { type: integer, minimum: 1 }
+                        suppressed: { type: boolean }
+                        created_at: { type: string, format: date-time }
+                        messages:
+                          type: object
+                          properties:
+                            pending: { type: integer }
+                            sending: { type: integer }
+                            sent: { type: integer }
+                            failed: { type: integer }
+                            skipped: { type: integer }
+        '400': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+  /kyb/config:
+    get:
+      operationId: getKybConfig
+      summary: Buyer KYB settings
+      responses:
+        '200':
+          description: Whether anchor verification is enforced, and by which anchors.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [enforcement, trustedAnchors, validityDays]
+                properties:
+                  enforcement: { type: string, enum: ['off', enforce] }
+                  trustedAnchors: { type: array, items: { type: string } }
+                  validityDays: { type: integer }
+  /kyb/challenge:
+    post:
+      operationId: createKybChallenge
+      summary: Get a validated SEP-10 challenge for the buyer to sign
+      description: >-
+        Fetches the trusted anchor's SEP-10 challenge for `account` and checks it
+        (anchor signature, home domain, web auth domain, unsubmittable) before
+        returning it. The buyer signs it with their own wallet.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [account, anchorDomain]
+              properties:
+                account: { type: string, description: Buyer G-address. }
+                anchorDomain: { type: string, description: One of the trusted anchors. }
+      responses:
+        '200':
+          description: Unsigned challenge.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [transaction, networkPassphrase, anchorDomain]
+                properties:
+                  transaction: { type: string }
+                  networkPassphrase: { type: string }
+                  anchorDomain: { type: string }
+        '400': { $ref: '#/components/responses/Error' }
+        '502': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+  /kyb/verify:
+    post:
+      operationId: verifyBuyerWithAnchor
+      summary: Exchange the signed challenge and record the anchor's SEP-12 status
+      description: >-
+        Submits the signed challenge to the anchor, reads SEP-12 `GET /customer`
+        with the resulting token (never stored), and records the status.
+        `verified` is true only for ACCEPTED.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [account, anchorDomain, transaction]
+              properties:
+                account: { type: string }
+                anchorDomain: { type: string }
+                transaction: { type: string, description: Wallet-signed SEP-10 challenge XDR. }
+      responses:
+        '200':
+          description: The recorded check.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/BuyerVerification'
+                  - type: object
+                    required: [verified]
+                    properties:
+                      verified: { type: boolean }
+        '400': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '502': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+  /kyb/buyers/{address}:
+    get:
+      operationId: getBuyerVerification
+      summary: A buyer's anchor KYB status
+      parameters:
+        - name: address
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Current and latest verification.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [account, verified, current, latest]
+                properties:
+                  account: { type: string }
+                  verified: { type: boolean }
+                  current:
+                    oneOf:
+                      - $ref: '#/components/schemas/BuyerVerification'
+                      - type: 'null'
+                  latest:
+                    oneOf:
+                      - $ref: '#/components/schemas/BuyerVerification'
+                      - type: 'null'
+        '400': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
 components:
   parameters:
     contractId:
@@ -570,6 +726,16 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
   schemas:
+    BuyerVerification:
+      type: object
+      required: [account, anchor_domain, sep12_status, sep12_customer_id, checked_at, expires_at]
+      properties:
+        account: { type: string }
+        anchor_domain: { type: string }
+        sep12_status: { type: string, enum: [ACCEPTED, PROCESSING, NEEDS_INFO, REJECTED] }
+        sep12_customer_id: { type: ['string', 'null'] }
+        checked_at: { type: string, format: date-time }
+        expires_at: { type: ['string', 'null'], format: date-time }
     Error:
       type: object
       required: [statusCode, error, message]

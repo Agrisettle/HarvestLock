@@ -241,3 +241,56 @@ export function refreshReadyProposalXdr(contractId: string, proposalId: string):
     {},
   );
 }
+
+// ---- Buyer KYB via anchor verification (issue #11, api/src/kyb.ts) ----
+
+export interface KybConfig {
+  /** "enforce" means the API refuses to put an unverified buyer on a new commitment. */
+  enforcement: "off" | "enforce";
+  trustedAnchors: string[];
+  validityDays: number;
+}
+
+export interface BuyerVerification {
+  account: string;
+  anchor_domain: string;
+  sep12_status: "ACCEPTED" | "PROCESSING" | "NEEDS_INFO" | "REJECTED";
+  sep12_customer_id: string | null;
+  checked_at: string;
+  expires_at: string | null;
+}
+
+export interface BuyerVerificationStatus {
+  account: string;
+  verified: boolean;
+  current: BuyerVerification | null;
+  latest: BuyerVerification | null;
+}
+
+export function getKybConfig(): Promise<KybConfig> {
+  return get<KybConfig>("/kyb/config");
+}
+
+export function getBuyerVerification(address: string): Promise<BuyerVerificationStatus> {
+  return get<BuyerVerificationStatus>(`/kyb/buyers/${encodeURIComponent(address)}`);
+}
+
+/**
+ * The anchor's SEP-10 challenge for `account`, already validated by the
+ * API (genuine anchor signature, can never be submitted to the network).
+ * The buyer's wallet signs it next. Retry-safe: fetching a challenge has
+ * no side effects.
+ */
+export function createKybChallenge(account: string, anchorDomain: string): Promise<{ transaction: string; networkPassphrase: string }> {
+  return post("/kyb/challenge", { account, anchorDomain }, { retry: true });
+}
+
+/** Exchanges the signed challenge with the anchor and records its SEP-12 verdict. Not retried. */
+export function verifyKyb(
+  account: string,
+  anchorDomain: string,
+  transaction: string,
+): Promise<BuyerVerification & { verified: boolean }> {
+  return post("/kyb/verify", { account, anchorDomain, transaction });
+}
+}

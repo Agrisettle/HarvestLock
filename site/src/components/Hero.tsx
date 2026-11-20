@@ -2,9 +2,9 @@ import "./Hero.css";
 
 export function Hero() {
   return (
-    <section id="top" className="hero">
+    <section id="top" className="hero" aria-labelledby="hero-heading">
       <div className="hero-mark" aria-hidden="true">
-        <svg viewBox="0 0 1024 1024" width="100%" height="100%">
+        <svg viewBox="0 0 1024 1024" width="100%" height="100%" focusable="false" aria-hidden="true">
           <polygon points="512,200 222,824 802,824" fill="var(--gold)" />
           <polygon points="512,200 435,520 589,520" fill="var(--void)" />
           <polygon points="426,560 598,560 662,824 362,824" fill="var(--void)" />
@@ -13,7 +13,7 @@ export function Hero() {
 
       <div className="wrap hero-inner">
         <div className="eyebrow">Stellar testnet — live</div>
-        <h1>
+        <h1 id="hero-heading">
           Commit before harvest.
           <br />
           Settle on delivery —<em> never on anyone&rsquo;s word.</em>
@@ -30,7 +30,8 @@ export function Hero() {
             className="btn btn-primary"
             href="https://stellar.expert/explorer/testnet/contract/CDVF6UVJOLF3OHCFSYSJ72RMG2T6DUQ42VRJ6IHL6MVEFDYEBZ3KTFK4"
             target="_blank"
-            rel="noreferrer"
+            rel="noreferrer noopener"
+            aria-label="View the live contract CDVF6UVJOLF3OHCFSYSJ72RMG2T6DUQ42VRJ6IHL6MVEFDYEBZ3KTFK4 on Stellar Expert (opens in a new tab)"
           >
             View the live contract →
           </a>
@@ -38,24 +39,25 @@ export function Hero() {
             className="btn btn-ghost"
             href="https://github.com/Agrisettle/HarvestLock/blob/main/docs/PRD.md"
             target="_blank"
-            rel="noreferrer"
+            rel="noreferrer noopener"
+            aria-label="Read the architecture in the Product Requirements Document (PRD) on GitHub (opens in a new tab)"
           >
             Read the architecture
           </a>
         </div>
 
-        <div className="hero-stats">
-          <div className="hero-stat">
+        <div className="hero-stats" role="list" aria-label="Key protocol metrics">
+          <div className="hero-stat" role="listitem">
             <span className="hero-stat-num mono">24/24</span>
             <span className="hero-stat-label">contract tests passing</span>
           </div>
-          <div className="hero-stat-rule" />
-          <div className="hero-stat">
+          <div className="hero-stat-rule" aria-hidden="true" />
+          <div className="hero-stat" role="listitem">
             <span className="hero-stat-num mono">7</span>
             <span className="hero-stat-label">on-chain states, lock to settlement</span>
           </div>
-          <div className="hero-stat-rule" />
-          <div className="hero-stat">
+          <div className="hero-stat-rule" aria-hidden="true" />
+          <div className="hero-stat" role="listitem">
             <span className="hero-stat-num mono">0</span>
             <span className="hero-stat-label">stroops ever stuck in escrow</span>
           </div>

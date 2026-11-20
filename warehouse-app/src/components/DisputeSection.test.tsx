@@ -149,6 +149,8 @@ describe("DisputeSection", () => {
 
     await user.click(await screen.findByRole("button", { name: "Flag a dispute" }));
     expect(await screen.findByText("User declined to sign")).toBeInTheDocument();
+    // Announced via role="alert", not just painted above the button the user just activated.
+    expect(screen.getByRole("alert")).toHaveTextContent("User declined to sign");
   });
 
   it("once Disputed, shows the frozen message and a propose-resolution button, and proposing shows the waiting state", async () => {
@@ -183,6 +185,9 @@ describe("DisputeSection", () => {
     await user.click(screen.getByRole("button", { name: "Propose resolving this dispute" }));
 
     expect(await screen.findByText(/waiting for the other two parties to approve/i)).toBeInTheDocument();
+    // The propose button unmounts, so this live region is what tells a
+    // screen-reader user the proposal went through.
+    expect(screen.getByRole("status")).toHaveTextContent(/waiting for the other two parties to approve/i);
     const proposeCall = fetchMock.mock.calls.find(
       ([url, init]) =>
         String(url).endsWith("/tx/resolve-dispute/propose") && (init as RequestInit | undefined)?.method === "POST",
@@ -270,5 +275,193 @@ describe("DisputeSection", () => {
     expect(submitCall).toBeDefined();
     expect(String(submitCall?.[1]?.body)).toContain("prop-1"); // completeProposalId included
     await expectNoA11yViolations(container);
+  });
+
+  describe("DisputeSection keyboard navigation (Issue #101)", () => {
+    it("is fully keyboard operable: tab reaches the flag button directly, and the disputed-state propose button next", async () => {
+      const user = userEvent.setup();
+      const { container, rerender } = render(
+        <DisputeSection
+          commitment={baseCommitment}
+          contractId="CXXX"
+          walletAddress={baseCommitment.buyer}
+          onDisputeChanged={vi.fn()}
+        />,
+      );
+
+      // Flag state: exactly one control, and it's the first tab stop.
+      const flag = await screen.findByRole("button", { name: "Flag a dispute" });
+      await user.tab();
+      expect(flag).toHaveFocus();
+      await expectNoA11yViolations(container);
+
+      // Disputed state: the frozen-status paragraph is not focusable, so the
+      // propose button is the first (and only) tab stop -- no skipped stop
+      // that silently swallows focus.
+      fetchMock.mockResolvedValue(jsonResponse({ proposal: null }));
+      rerender(
+        <DisputeSection
+          commitment={{ ...baseCommitment, status: "Disputed", dispute_pre_status: "Locked" }}
+          contractId="CXXX"
+          walletAddress={baseCommitment.buyer}
+          onDisputeChanged={vi.fn()}
+        />,
+      );
+
+      const propose = await screen.findByRole("button", { name: "Propose resolving this dispute" });
+      flag.blur();
+      await user.tab();
+      expect(propose).toHaveFocus();
+      await expectNoA11yViolations(container);
+    });
+
+    it("allows shift-tab backwards navigation without focus traps in pending approval state", async () => {
+      const user = userEvent.setup();
+      const disputed = { ...baseCommitment, status: "Disputed", dispute_pre_status: "Locked" };
+      const pendingProposal = {
+        id: "prop-1",
+        contract_id: "CXXX",
+        method: "resolve_dispute",
+        proposer_address: baseCommitment.warehouse_operator,
+        status: "pending",
+        pending_entries: [
+          { address: baseCommitment.buyer, entry_xdr: "BUYER_ENTRY_XDR" },
+          { address: baseCommitment.cooperative, entry_xdr: "COOP_ENTRY_XDR" },
+        ],
+        ready_xdr: null,
+      };
+      fetchMock.mockResolvedValue(jsonResponse({ proposal: pendingProposal }));
+
+      const { container } = render(
+        <DisputeSection
+          commitment={disputed}
+          contractId="CXXX"
+          walletAddress={baseCommitment.buyer}
+          onDisputeChanged={vi.fn()}
+        />,
+      );
+
+      const approve = await screen.findByRole("button", { name: "Approve resolution" });
+      await user.tab();
+      expect(approve).toHaveFocus();
+
+      await user.tab({ shift: true });
+      expect(approve).not.toHaveFocus();
+      await expectNoA11yViolations(container);
+    });
+  });
+
+  describe("DisputeSection color contrast & ARIA labeling (Issue #102)", () => {
+    it("announces error banners with role='alert' when actions fail", async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse({ xdr: "UNSIGNED_FLAG_XDR" }));
+      vi.mocked(wallet.signTransactionXdr).mockRejectedValueOnce(new Error("Transaction rejected by wallet"));
+
+      const user = userEvent.setup();
+      render(
+        <DisputeSection
+          commitment={baseCommitment}
+          contractId="CXXX"
+          walletAddress={baseCommitment.buyer}
+          onDisputeChanged={vi.fn()}
+        />,
+      );
+
+      const flag = await screen.findByRole("button", { name: "Flag a dispute" });
+      await user.click(flag);
+
+      const alert = await screen.findByRole("alert");
+      expect(alert).toBeInTheDocument();
+      expect(alert).toHaveTextContent("Transaction rejected by wallet");
+    });
+
+    it("announces status updates via role='status' live regions across proposal lifecycle", async () => {
+      const disputed = { ...baseCommitment, status: "Disputed", dispute_pre_status: "Locked" };
+
+      // 1. Proposer waiting for others
+      const pendingProposal = {
+        id: "prop-1",
+        contract_id: "CXXX",
+        method: "resolve_dispute",
+        proposer_address: baseCommitment.warehouse_operator,
+        status: "pending",
+        pending_entries: [
+          { address: baseCommitment.buyer, entry_xdr: "BUYER_ENTRY_XDR" },
+          { address: baseCommitment.cooperative, entry_xdr: "COOP_ENTRY_XDR" },
+        ],
+        ready_xdr: null,
+      };
+      fetchMock.mockResolvedValueOnce(jsonResponse({ proposal: pendingProposal }));
+
+      const { unmount } = render(
+        <DisputeSection
+          commitment={disputed}
+          contractId="CXXX1"
+          walletAddress={baseCommitment.warehouse_operator}
+          onDisputeChanged={vi.fn()}
+        />,
+      );
+
+      const proposerStatus = await screen.findByRole("status");
+      expect(proposerStatus).toHaveTextContent(/waiting for the other two parties to approve/i);
+      unmount();
+
+      // 2. Pending signer viewing prompt
+      fetchMock.mockResolvedValueOnce(jsonResponse({ proposal: pendingProposal }));
+      const { unmount: unmount2 } = render(
+        <DisputeSection
+          commitment={disputed}
+          contractId="CXXX2"
+          walletAddress={baseCommitment.buyer}
+          onDisputeChanged={vi.fn()}
+        />,
+      );
+      expect(await screen.findByRole("status")).toHaveTextContent(/party wants to resolve this dispute/i);
+      unmount2();
+
+      // 3. Ready proposal waiting for proposer
+      const readyProposal = {
+        ...pendingProposal,
+        status: "ready",
+        pending_entries: [],
+      };
+      fetchMock.mockResolvedValueOnce(jsonResponse({ proposal: readyProposal }));
+
+      render(
+        <DisputeSection
+          commitment={disputed}
+          contractId="CXXX3"
+          walletAddress={baseCommitment.buyer}
+          onDisputeChanged={vi.fn()}
+        />,
+      );
+      expect(await screen.findByRole("status")).toHaveTextContent(/waiting for the proposer to finalize/i);
+    });
+
+    it("verifies contrast ratios meet WCAG AA requirements", () => {
+      const lum = (hex: string) => {
+        const rgb = [hex.slice(1, 3), hex.slice(3, 5), hex.slice(5, 7)].map((c) => parseInt(c, 16) / 255);
+        const [r, g, b] = rgb.map((c) => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)));
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      };
+      const contrastRatio = (hex1: string, hex2: string) => {
+        const [l1, l2] = [lum(hex1), lum(hex2)].sort((a, b) => b - a);
+        return (l1 + 0.05) / (l2 + 0.05);
+      };
+
+      const voidBg = "#0b120f";
+      const voidRaised = "#121a16";
+      const bone = "#f3f1e9";
+      const boneDim = "#c9c6ba";
+      const voidLineStrong = "#5c6b62";
+
+      // Text contrast on cards (WCAG AA: >= 4.5:1)
+      expect(contrastRatio(bone, voidRaised)).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio(boneDim, voidRaised)).toBeGreaterThanOrEqual(4.5);
+      expect(contrastRatio(bone, voidBg)).toBeGreaterThanOrEqual(4.5);
+
+      // Secondary action button visual edge contrast (WCAG AA SC 1.4.11: >= 3.0:1)
+      expect(contrastRatio(voidLineStrong, voidRaised)).toBeGreaterThanOrEqual(3.0);
+      expect(contrastRatio(voidLineStrong, voidBg)).toBeGreaterThanOrEqual(3.0);
+    });
   });
 });

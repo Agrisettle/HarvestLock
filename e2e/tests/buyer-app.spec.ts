@@ -1,8 +1,16 @@
 import { test, expect } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import { Keypair } from "@stellar/stellar-sdk";
-import { API_URL, LIVE, NATIVE_TOKEN_CONTRACT, SKIP_REASON, buyerKeypair } from "./helpers/env";
-import { connectInjectedWallet } from "./helpers/freighter";
-import { ensureFunded, getCommitment } from "./helpers/api";
+import {
+  API_URL,
+  LIVE,
+  NATIVE_TOKEN_CONTRACT,
+  SKIP_REASON,
+  buyerKeypair,
+  cooperativeKeypair,
+} from "./helpers/env";
+import { connectInjectedWallet, setInjectedSigningRejected } from "./helpers/freighter";
+import { deployAndInitialize, ensureFunded, getCommitment, getReassignBuyerProposal } from "./helpers/api";
 
 /**
  * Issue #198: one real end-to-end smoke test for buyer-app. Unlike this
@@ -76,4 +84,103 @@ test("creates a commitment end to end through the real API and testnet", async (
   expect(commitment.total_amount).toBe("1000000000");
   expect(commitment.contracted_quantity).toBe(1000);
   expect(commitment.grade_price_bps).toEqual([10_000, 9_000, 7_500]);
+});
+
+/** Connects the injected wallet and opens `contractId` — the shared first UI steps of the QA flow below. */
+async function connectAndLookUp(page: Page, publicKey: string, contractId: string): Promise<void> {
+  await page.getByRole("button", { name: "Connect wallet" }).click();
+  await expect(page.locator(".wallet-address")).toContainText(publicKey.slice(0, 4));
+  await page.locator("#contract-lookup").fill(contractId);
+  await page.getByRole("button", { name: "Look up" }).click();
+}
+
+/**
+ * Manual Freighter QA coverage for #45 — see
+ * docs/qa/manual-freighter-qa-45-54-59-60.md for the write-up this test
+ * backs. Real browser, real API, real testnet; only the extension is
+ * stubbed (helpers/freighter.ts, speaking Freighter's real postMessage
+ * protocol).
+ *
+ * Note what "propose reassigning" actually does: it POSTs a staged
+ * multi-party proposal and invokes no wallet call at all. The Freighter
+ * popup belongs to the next step — the cooperative and incoming buyer
+ * each approve by signing their own auth entry (`signAuthEntry`), and
+ * the outgoing buyer finalizes with a classic signature. This test
+ * asserts the propose made zero signing requests, then drives the
+ * incoming buyer's approve through the same UI, rejected once and then
+ * accepted, so the signing layer is exercised too.
+ */
+test("#45 proposes reassigning the buyer position end to end", async ({ page }) => {
+  const buyer = buyerKeypair();
+  const cooperative = cooperativeKeypair();
+  const warehouse = Keypair.random();
+  const incomingBuyer = Keypair.random();
+
+  // The cooperative and incoming buyer will both sign auth entries later,
+  // and an address-credentials check reads a real account — fund both.
+  // The warehouse operator is only a stored address in this flow.
+  await Promise.all([
+    ensureFunded(buyer.publicKey()),
+    ensureFunded(cooperative.publicKey()),
+    ensureFunded(incomingBuyer.publicKey()),
+  ]);
+  const contractId = await deployAndInitialize({ buyer, cooperative, warehouse });
+
+  const wallet = await connectInjectedWallet(page, buyer);
+  await page.goto("/");
+  await connectAndLookUp(page, buyer.publicKey(), contractId);
+  await expect(page.locator(".detail-header .badge")).toHaveText("Draft", { timeout: 120_000 });
+
+  await page.locator("#new-buyer-address").fill(incomingBuyer.publicKey());
+  await page.getByRole("button", { name: "Propose reassignment" }).click();
+
+  await expect(page.locator(".reassign-section")).toContainText(
+    "Reassignment proposed — waiting for the cooperative and the new buyer to approve.",
+  );
+  const proposed = await getReassignBuyerProposal(contractId);
+  expect(proposed.proposal).not.toBeNull();
+  expect(proposed.proposal!.status).toBe("pending");
+  expect(proposed.proposal!.proposer_address).toBe(buyer.publicKey());
+  expect(proposed.proposal!.pending_entries.map((e) => e.address).sort()).toEqual(
+    [cooperative.publicKey(), incomingBuyer.publicKey()].sort(),
+  );
+  // Proposing opened no Freighter popup — nothing was signed here.
+  expect(wallet.signRequests).toEqual([]);
+  // The outgoing buyer still owns the position until finalization.
+  expect((await getCommitment(contractId)).buyer).toBe(buyer.publicKey());
+
+  // The signing half is the approvals. Drive the incoming buyer's through
+  // the same app UI, rejecting once first.
+  const incomingPage = await page.context().newPage();
+  const incomingWallet = await connectInjectedWallet(incomingPage, incomingBuyer);
+  await incomingPage.goto("/");
+  await connectAndLookUp(incomingPage, incomingBuyer.publicKey(), contractId);
+  await expect(incomingPage.getByRole("button", { name: "Approve reassignment" })).toBeVisible({
+    timeout: 120_000,
+  });
+
+  await setInjectedSigningRejected(incomingPage, true);
+  await incomingPage.getByRole("button", { name: "Approve reassignment" }).click();
+  await expect(incomingPage.locator(".reassign-section .error-banner")).toContainText(
+    "The user rejected this request.",
+  );
+  expect((await getReassignBuyerProposal(contractId)).proposal!.pending_entries).toHaveLength(2);
+
+  await setInjectedSigningRejected(incomingPage, false);
+  await incomingPage.getByRole("button", { name: "Approve reassignment" }).click();
+  await expect(incomingPage.locator(".reassign-section")).toContainText(
+    "Approved — waiting for the other party to approve too.",
+  );
+  await expect
+    .poll(async () => (await getReassignBuyerProposal(contractId)).proposal!.pending_entries.length, {
+      timeout: 120_000,
+    })
+    .toBe(1);
+  expect((await getReassignBuyerProposal(contractId)).proposal!.pending_entries[0].address).toBe(
+    cooperative.publicKey(),
+  );
+  expect(incomingWallet.signRequests).toContain("SUBMIT_AUTH_ENTRY");
+  // Still the old buyer until the cooperative approves and the current
+  // buyer finalizes.
+  expect((await getCommitment(contractId)).buyer).toBe(buyer.publicKey());
 });

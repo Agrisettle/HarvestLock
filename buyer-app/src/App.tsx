@@ -13,6 +13,7 @@ import { connectWallet, signTransactionXdr } from "./wallet";
 import { CommitmentDetail } from "./components/CommitmentDetail";
 import { CommitmentList } from "./components/CommitmentList";
 import { CreateCommitmentForm, type CreateCommitmentFields, parseGradePriceBps } from "./components/CreateCommitmentForm";
+import { KybSection } from "./components/KybSection";
 
 /** One page of the commitments list. Mirrors the API's default page size
  * (api/src/db/commitments.ts's DEFAULT_PAGE_SIZE) — the API clamps above
@@ -40,6 +41,11 @@ export default function App() {
   const [actionError, setActionError] = useState<string | null>(null);
 
   const [showCreateForm, setShowCreateForm] = useState(false);
+  // Buyer KYB (issue #11): `required` mirrors the API's KYB_ENFORCEMENT.
+  // Starts permissive so an API without the KYB routes, or one that is
+  // slow to answer, never hides the existing create flow.
+  const [kyb, setKyb] = useState<{ required: boolean; verified: boolean }>({ required: false, verified: false });
+  const kybBlocksCreate = kyb.required && !kyb.verified;
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
@@ -220,9 +226,20 @@ export default function App() {
           </button>
         </form>
 
+        {walletAddress && <KybSection walletAddress={walletAddress} onStatusChange={setKyb} />}
+
         {walletAddress && (
           <section>
-            {!showCreateForm ? (
+            {kybBlocksCreate ? (
+              <>
+                <button className="wallet-button" disabled aria-describedby="kyb-create-note">
+                  Create commitment
+                </button>
+                <p id="kyb-create-note" className="kyb-status">
+                  Complete business verification above to create a commitment.
+                </p>
+              </>
+            ) : !showCreateForm ? (
               <button className="wallet-button" onClick={() => setShowCreateForm(true)}>
                 Create commitment
               </button>
