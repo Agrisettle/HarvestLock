@@ -160,6 +160,13 @@ main {
   cursor: not-allowed;
 }
 
+.lookup button:focus-visible,
+.refresh-button:focus-visible,
+.load-more-button:focus-visible {
+  outline: 2px solid var(--gold-bright);
+  outline-offset: 2px;
+}
+
 .wallet-button {
   background: var(--gold);
   color: var(--void);
@@ -247,6 +254,7 @@ main {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  margin-top: 12px;
 }
 
 .commitment-row {
@@ -256,17 +264,25 @@ main {
   gap: 12px;
   padding: 12px 14px;
   background: var(--void-raised);
-  border: 1px solid var(--void-line);
+  /* Outlines the interactive control itself, needing >= 3:1 non-text contrast (1.4.11) */
+  border: 1px solid var(--void-line-strong);
   border-radius: 8px;
   cursor: pointer;
   text-align: left;
   color: inherit;
   font: inherit;
   width: 100%;
+  transition: border-color 0.2s ease;
 }
 
-.commitment-row:hover {
-  border-color: var(--pine);
+.commitment-row:hover,
+.commitment-row:focus-visible {
+  border-color: var(--gold);
+}
+
+.commitment-row:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
 }
 
 .commitment-row .contract-id {
@@ -288,7 +304,7 @@ main {
 
 .address-chip-copy {
   background: transparent;
-  border: 1px solid var(--void-line);
+  border: 1px solid var(--void-line-strong);
   color: var(--bone-faint);
   border-radius: 4px;
   padding: 1px 6px;
@@ -296,11 +312,18 @@ main {
   font-size: 0.68rem;
   cursor: pointer;
   flex-shrink: 0;
+  transition: border-color 0.2s ease, color 0.2s ease;
 }
 
-.address-chip-copy:hover {
-  border-color: var(--pine);
+.address-chip-copy:hover,
+.address-chip-copy:focus-visible {
+  border-color: var(--gold);
   color: var(--bone);
+}
+
+.address-chip-copy:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
 }
 
 .badge {
@@ -451,12 +474,20 @@ table.tranches th {
 .confirm-delivery-form input,
 .confirm-delivery-form select {
   background: var(--void-raised);
-  border: 1px solid var(--void-line);
+  border: 1px solid var(--void-line-strong);
   color: var(--bone);
   font-family: var(--mono);
   font-size: 0.85rem;
   padding: 8px 10px;
   border-radius: 6px;
+  transition: border-color 0.2s ease;
+}
+
+.confirm-delivery-form input:focus-visible,
+.confirm-delivery-form select:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+  border-color: var(--gold);
 }
 
 .confirm-delivery-form button {
@@ -471,6 +502,11 @@ table.tranches th {
   font-weight: 600;
   font-size: 0.85rem;
   cursor: pointer;
+}
+
+.confirm-delivery-form button:focus-visible {
+  outline: 2px solid var(--gold-bright);
+  outline-offset: 2px;
 }
 
 .confirm-delivery-form button:disabled {

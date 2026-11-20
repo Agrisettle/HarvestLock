@@ -49,12 +49,13 @@ export function ConfirmDeliveryForm({
   return (
     <form
       className="confirm-delivery-form"
+      aria-labelledby="confirm-delivery-heading"
       onSubmit={(e) => {
         e.preventDefault();
         if (quantityValid) onSubmit(parsedQuantity, gradeIndex);
       }}
     >
-      <h2>Confirm delivery</h2>
+      <h2 id="confirm-delivery-heading">Confirm delivery</h2>
       <p>
         Attest what actually arrived, against the {contractedQuantity}-unit contracted quantity. This can't be
         corrected afterward — a grade or quantity dispute is your own appeals process, not HarvestLock's.
@@ -66,6 +67,7 @@ export function ConfirmDeliveryForm({
         type="number"
         min={0}
         value={deliveredQuantity}
+        aria-invalid={!quantityValid}
         onChange={(e) => setDeliveredQuantity(e.target.value)}
       />
 
@@ -80,7 +82,7 @@ export function ConfirmDeliveryForm({
 
       {submitError && <div className="error-banner" role="alert">{submitError}</div>}
 
-      <button type="submit" disabled={submitting || !quantityValid}>
+      <button type="submit" disabled={submitting || !quantityValid} aria-busy={submitting}>
         {submitting ? "Confirming…" : "Confirm delivery"}
       </button>
     </form>
