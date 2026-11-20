@@ -60,25 +60,42 @@ export function CommitmentList({
 }) {
   if (commitments.length === 0) {
     return (
-      <div className="empty-state">
+      <div className="empty-state" role="status">
         Nothing to attest yet. Look up a commitment by contract ID above, or check back once one's been created.
       </div>
     );
   }
 
   return (
-    <div className="commitment-list">
-      <button className="refresh-button" onClick={() => downloadCsv(commitments)}>
+    <div>
+      <button type="button" className="refresh-button" onClick={() => downloadCsv(commitments)}>
         Download CSV
       </button>
-      {commitments.map((c) => (
-        <button key={c.id} className="commitment-row" onClick={() => onSelect(c.contract_id)}>
-          {/* copyable=false: this row is itself a <button> -- a nested
-              <button> for the copy control would be invalid HTML. */}
-          <AddressChip address={c.contract_id} copyable={false} className="contract-id" />
-          <StatusBadge status={c.status} />
-        </button>
-      ))}
+      <div className="commitment-list" role="list" aria-label="Commitments">
+        {/* role="listitem" wrappers: a role="list" may only own listitems,
+            not the buttons directly (axe aria-required-children). Sighted users
+            see the truncated address and status badge, while screen readers
+            hear the status and complete contract ID announced clearly. */}
+        {commitments.map((c) => (
+          <div role="listitem" key={c.id}>
+            <button
+              type="button"
+              className="commitment-row"
+              onClick={() => onSelect(c.contract_id)}
+            >
+              {/* copyable=false: this row is itself a <button> -- a nested
+                  <button> for the copy control would be invalid HTML. */}
+              <AddressChip address={c.contract_id} copyable={false} className="contract-id" />
+              <span aria-hidden="true">
+                <StatusBadge status={c.status} />
+              </span>
+              <span className="sr-only">
+                , status {c.status}, contract ID {c.contract_id}
+              </span>
+            </button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
