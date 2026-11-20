@@ -11,6 +11,24 @@ import { upsertCommitment, listCommitments, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } f
 import { pool } from "./db/pool.js";
 import { HttpError, BadRequestError, NotFoundError, ForbiddenError, ConfigurationError, ContractError } from "./errors.js";
 import { applyReputationConsequences, getStanding } from "./reputation.js";
+import {
+  notifyCommitmentObserved,
+  getNotificationSummary,
+  smsLocaleFromEnv,
+  type NotificationConfig,
+} from "./notifications.js";
+import { smsProviderFromEnv, type SmsProvider } from "./sms/provider.js";
+import {
+  kybConfigFromEnv,
+  createKybChallenge,
+  verifyBuyerWithAnchor,
+  getBuyerVerification,
+  requireKybVerified,
+  defaultKybDeps,
+  type KybConfig,
+  type KybDeps,
+} from "./kyb.js";
+import { networkPassphrase } from "./stellar/rpc.js";
 import { buildMultiPartyProposal, finalizeMultiPartyProposal } from "./stellar/multiParty.js";
 import {
   createProposal,
@@ -112,15 +130,37 @@ interface SubmitSideEffects {
  * most once per submission (the atomic claim in
  * db/pendingSubmissions.ts covers the GET path).
  */
-async function applySubmitSideEffects(log: FastifyBaseLogger, effects: SubmitSideEffects): Promise<void> {
+/**
+ * Everything the API does after a fresh chain read of a commitment: the
+ * cache refresh, then the two observation-triggered consequences,
+ * reputation (src/reputation.ts) and member SMS (src/notifications.ts).
+ * The two consequences are independent: an SMS failure must not skip a
+ * reputation strike, and neither may fail the caller's request. Both
+ * call sites (GET /commitments/:id and submit's refreshContractId) go
+ * through here so they can never drift apart.
+ */
+async function observeCommitment(
+  log: FastifyBaseLogger,
+  contractId: string,
+  commitment: Commitment,
+  notifications: NotificationConfig,
+): Promise<void> {
+  const { previousStatus } = await upsertCommitment(contractId, commitment);
+  await applyReputationConsequences(contractId, previousStatus, commitment);
+  await notifyCommitmentObserved(contractId, previousStatus, commitment, notifications, log).catch((err: unknown) => {
+    log.warn({ err }, "failed to record SMS notification events");
+  });
+}
+
+async function applySubmitSideEffects(
+  log: FastifyBaseLogger,
+  effects: SubmitSideEffects,
+  notifications: NotificationConfig,
+): Promise<void> {
   if (effects.refreshContractId) {
     const refreshContractId = effects.refreshContractId;
     await getCommitment(refreshContractId)
-      .then((commitment) =>
-        upsertCommitment(refreshContractId, commitment).then(({ previousStatus }) =>
-          applyReputationConsequences(refreshContractId, previousStatus, commitment),
-        ),
-      )
+      .then((commitment) => observeCommitment(log, refreshContractId, commitment, notifications))
       .catch((err: unknown) => {
         log.warn({ err }, "failed to refresh commitments cache after submit");
       });
@@ -342,8 +382,32 @@ interface InitializeBody {
   sourcePublicKey: string;
 }
 
-export async function buildServer() {
+export interface BuildServerOptions {
+  /**
+   * Overrides the SMS gateway chosen from SMS_PROVIDER. Tests use it to
+   * capture messages; production leaves it unset.
+   */
+  smsProvider?: SmsProvider;
+  /** Overrides KYB env config and the anchor network layer (tests). */
+  kybConfig?: KybConfig;
+  kybDeps?: KybDeps;
+}
+
+export async function buildServer(options: BuildServerOptions = {}) {
   const app = Fastify({ logger: true });
+
+  // Resolved once at boot so a misconfigured gateway (SMS_PROVIDER=termii
+  // without its key, an unknown SMS_LOCALE) fails the process at startup,
+  // not on the first farmer-facing event weeks later.
+  const notifications: NotificationConfig = {
+    provider: options.smsProvider ?? smsProviderFromEnv(),
+    locale: smsLocaleFromEnv(),
+  };
+  // Same boot-time resolution for buyer KYB (src/kyb.ts): enforcing
+  // with no trusted anchor configured is refused here rather than
+  // silently blocking every new commitment.
+  const kyb: KybConfig = options.kybConfig ?? kybConfigFromEnv(networkPassphrase);
+  const kybDeps: KybDeps = options.kybDeps ?? defaultKybDeps;
 
   // Never reflect arbitrary Origin headers. Set CORS_ORIGINS to a comma-
   // separated list of exact frontend origins once deployment domains are
@@ -501,6 +565,9 @@ export async function buildServer() {
       requireValidPublicKey(b.sourcePublicKey, "sourcePublicKey");
       await requireNotBarred(b.buyer, "buyer");
       await requireNotBarred(b.cooperative, "cooperative");
+      // PRD §4.5: buyers are anchor-KYB'd before they can lock money in.
+      // A no-op unless KYB_ENFORCEMENT=enforce (see src/kyb.ts).
+      await requireKybVerified(kyb, b.buyer, "buyer");
 
       // Audited for the #201 bad-input sweep. Every conversion below used
       // to trust its input type and let the failure happen inside
@@ -687,6 +754,8 @@ export async function buildServer() {
       requireValidContractId(contractId);
       requireValidPublicKey(req.body.newBuyer, "newBuyer");
       requireValidPublicKey(req.body.sourcePublicKey, "sourcePublicKey");
+      // PRD §4.8: the position is transferable "to another KYB-verified buyer".
+      await requireKybVerified(kyb, req.body.newBuyer, "newBuyer");
 
       const xdr = await buildInvokeTransaction({
         contractId,
@@ -973,6 +1042,7 @@ export async function buildServer() {
       requireValidContractId(contractId);
       requireValidPublicKey(req.body.proposerPublicKey, "proposerPublicKey");
       requireValidPublicKey(req.body.newBuyer, "newBuyer");
+      await requireKybVerified(kyb, req.body.newBuyer, "newBuyer");
 
       const existing = await findActiveProposal(contractId, "reassign_buyer");
       if (existing) {
@@ -1172,7 +1242,7 @@ export async function buildServer() {
       return reply.code(202).send({ status: "PENDING", hash: result.hash });
     }
 
-    await applySubmitSideEffects(req.log, req.body);
+    await applySubmitSideEffects(req.log, req.body, notifications);
     return result;
   });
 
@@ -1207,12 +1277,16 @@ export async function buildServer() {
 
     const claimed = await claimPendingSubmissionSuccess(hash);
     if (claimed) {
-      await applySubmitSideEffects(req.log, {
-        refreshContractId: claimed.refresh_contract_id ?? undefined,
-        completeProposalId: claimed.complete_proposal_id ?? undefined,
-        allocationContractId: claimed.allocation_contract_id ?? undefined,
-        allocationMembers: claimed.allocation_members ?? undefined,
-      });
+      await applySubmitSideEffects(
+        req.log,
+        {
+          refreshContractId: claimed.refresh_contract_id ?? undefined,
+          completeProposalId: claimed.complete_proposal_id ?? undefined,
+          allocationContractId: claimed.allocation_contract_id ?? undefined,
+          allocationMembers: claimed.allocation_members ?? undefined,
+        },
+        notifications,
+      );
     }
     return { status, hash };
   });
@@ -1223,12 +1297,19 @@ export async function buildServer() {
   app.get<{ Params: { contractId: string } }>("/commitments/:contractId", async (req) => {
     requireValidContractId(req.params.contractId);
     const commitment = await getCommitment(req.params.contractId);
-    await upsertCommitment(req.params.contractId, commitment)
-      .then(({ previousStatus }) => applyReputationConsequences(req.params.contractId, previousStatus, commitment))
-      .catch((err: unknown) => {
-        req.log.warn({ err }, "failed to refresh commitments cache");
-      });
+    await observeCommitment(req.log, req.params.contractId, commitment, notifications).catch((err: unknown) => {
+      req.log.warn({ err }, "failed to refresh commitments cache");
+    });
     return serializeCommitment(commitment);
+  });
+
+  // Per-event SMS delivery counts for one commitment (issue #7). Counts
+  // only: never a recipient, phone number, or member hash. Reads the
+  // local record, not the chain, so it reflects what this API has
+  // observed so far (see src/notifications.ts on observation-triggering).
+  app.get<{ Params: { contractId: string } }>("/commitments/:contractId/notifications", async (req) => {
+    requireValidContractId(req.params.contractId);
+    return { events: await getNotificationSummary(req.params.contractId) };
   });
 
   app.get<{ Querystring: { limit?: string; offset?: string } }>("/commitments", async (req, reply) => {
@@ -1257,6 +1338,37 @@ export async function buildServer() {
   // they're barred, and why). Returns a "clean" default rather than 404
   // when no row exists yet, so a frontend doesn't need a special case for
   // "never struck" vs. "explicitly not barred."
+  // ---- Buyer KYB via anchor verification (issue #11, src/kyb.ts) ----
+  //
+  // What a frontend needs to render the onboarding step: whether
+  // verification is currently required, and which anchors can do it.
+  app.get("/kyb/config", async () => ({
+    enforcement: kyb.enforcement,
+    trustedAnchors: kyb.trustedAnchors,
+    validityDays: kyb.validityDays,
+  }));
+
+  // Both anchor-calling routes are rate limited: each one makes outbound
+  // requests to a third party on the caller's behalf.
+  const kybRateLimit = { max: 20, timeWindow: 60_000 };
+
+  app.post<{ Body: { account?: string; anchorDomain?: string } }>(
+    "/kyb/challenge",
+    { config: { rateLimit: kybRateLimit } },
+    async (req) => createKybChallenge(kyb, req.body, kybDeps),
+  );
+
+  app.post<{ Body: { account?: string; anchorDomain?: string; transaction?: string } }>(
+    "/kyb/verify",
+    { config: { rateLimit: kybRateLimit } },
+    async (req) => verifyBuyerWithAnchor(kyb, req.body, kybDeps),
+  );
+
+  app.get<{ Params: { address: string } }>("/kyb/buyers/:address", async (req) => {
+    requireValidPublicKey(req.params.address, "address");
+    return getBuyerVerification(kyb, req.params.address);
+  });
+
   app.get<{ Params: { address: string } }>("/parties/:address/standing", async (req) => {
     requireValidPublicKey(req.params.address, "address");
     const standing = await getStanding(req.params.address);

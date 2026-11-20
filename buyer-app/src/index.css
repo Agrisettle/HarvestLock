@@ -603,3 +603,36 @@ table.tranches tbody th {
     height: 24px;
   }
 }
+
+/* Buyer KYB onboarding step (KybSection.tsx). */
+.kyb-section {
+  margin-bottom: 20px;
+}
+
+.kyb-status {
+  color: var(--bone-dim);
+  font-size: 0.85rem;
+  margin: 10px 0;
+}
+
+.kyb-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.kyb-form label {
+  font-size: 0.78rem;
+  color: var(--bone-faint);
+}
+
+.kyb-form select {
+  background: var(--void);
+  border: 1px solid var(--void-line);
+  color: var(--bone);
+  font-size: 0.85rem;
+  padding: 8px 10px;
+  border-radius: 6px;
+  max-width: 100%;
+}

@@ -14,6 +14,22 @@ vi.mock("./wallet", () => ({
   signTransactionXdr: vi.fn(),
 }));
 
+// KybSection makes its own two requests once a wallet connects, which
+// would shift every queued fetch response below. Its behaviour is covered
+// in KybSection.test.tsx. Here it is replaced by a stub that reports
+// whatever KYB state a test sets, so App's create-commitment gate can be
+// tested on its own terms.
+const kybState = vi.hoisted(() => ({ current: { required: false, verified: false } }));
+vi.mock("./components/KybSection", async () => {
+  const { useEffect } = await import("react");
+  return {
+    KybSection: ({ onStatusChange }: { onStatusChange: (s: { required: boolean; verified: boolean }) => void }) => {
+      useEffect(() => onStatusChange(kybState.current), [onStatusChange]);
+      return null;
+    },
+  };
+});
+
 /**
  * Component-level tests, fetch mocked at the network boundary -- see
  * coop-pwa's identical suite for why that's the right kind of mock here
@@ -88,6 +104,7 @@ beforeEach(() => {
   vi.stubGlobal("fetch", fetchMock);
   vi.mocked(wallet.connectWallet).mockReset();
   vi.mocked(wallet.signTransactionXdr).mockReset();
+  kybState.current = { required: false, verified: false };
 });
 
 afterEach(() => {
@@ -351,4 +368,24 @@ describe("App", () => {
     // The second request asked for the page after the 20 already loaded.
     expect(String(fetchMock.mock.calls[1]?.[0])).toContain("limit=20&offset=20");
   }, 15_000);
+  it("disables Create commitment until KYB is done when the API enforces it", async () => {
+    kybState.current = { required: true, verified: false };
+    fetchMock.mockResolvedValueOnce(jsonResponse([]));
+    vi.mocked(wallet.connectWallet).mockResolvedValueOnce("GNEWBUYER");
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Connect wallet" }));
+    expect(await screen.findByRole("button", { name: "Create commitment" })).toBeDisabled();
+    expect(screen.getByText(/Complete business verification above/)).toBeInTheDocument();
+  });
+
+  it("allows Create commitment for a verified buyer under enforcement", async () => {
+    kybState.current = { required: true, verified: true };
+    fetchMock.mockResolvedValueOnce(jsonResponse([]));
+    vi.mocked(wallet.connectWallet).mockResolvedValueOnce("GNEWBUYER");
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Connect wallet" }));
+    expect(await screen.findByRole("button", { name: "Create commitment" })).toBeEnabled();
+  });
 });
