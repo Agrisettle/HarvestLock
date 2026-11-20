@@ -63,7 +63,7 @@ The PRD says "voucher-preferred," not "voucher-only," and OQ 08 makes cash the f
 - **The default is 100% voucher** ("voucher-preferred").
 - **Cash is capped.** A per-commitment `max_cash_bps` limits how much of each tranche can be elected as cash. The cap value belongs to OQ 03 (advance cap), not to this document. The API enforces it on the election, not on chain.
 - The election can be recorded or changed any time **before the claim is observed**. Once vouchers have been issued, it is frozen. If the cooperative claims without having recorded an election, the default applies.
-- This happens in **`coop-pwa`**, next to the existing "claim advance" action. It is an API write and does not need a cooperative signature on chain. Until #5 settles phone-based auth, it is authenticated the same way the other `coop-pwa` writes are: a signed message from the cooperative's connected wallet. The API checks that the signer is the commitment's `cooperative`.
+- This happens in **`coop-pwa`**, next to the existing "claim advance" action. It is an API write and does not need a cooperative signature on chain. Until #5's implementation lands (the model is now decided on paper in [identity-session-model.md](./identity-session-model.md)), it is authenticated the same way the other `coop-pwa` writes are: a signed message from the cooperative's connected wallet. Note that today the API does **not** check that the signer is the commitment's `cooperative` on this route — the UI and the contract's `require_auth()` are the only checks; the design doc makes the API check an explicit implementation task.
 
 ### 3.2 The API issues on the observed claim
 
