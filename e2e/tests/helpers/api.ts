@@ -40,6 +40,8 @@ export interface CommitmentDetail {
   delivered_quantity: number;
   grade_index: number;
   settlement_bps: number;
+  dispute_pre_status: string;
+  dispute_deadline: string;
 }
 
 export interface Parties {
@@ -159,4 +161,93 @@ export function submitMethod(contractId: string, method: string, signer: Keypair
 /** Live chain read through the real API — the same source of truth the apps render. */
 export function getCommitment(contractId: string): Promise<CommitmentDetail> {
   return apiRequest<CommitmentDetail>(`/commitments/${encodeURIComponent(contractId)}`);
+}
+
+/**
+ * Flags a dispute as `flagger` — build `/tx/flag-dispute`, sign, submit,
+ * refresh. Single-signer (`flag_dispute` only requires the flagger's own
+ * auth), so unlike the propose routes below this is the same
+ * build → sign → submit shape as `submitMethod`, just with an argument.
+ */
+export function flagDispute(contractId: string, flagger: Keypair): Promise<void> {
+  return buildSignSubmit(
+    contractId,
+    "/tx/flag-dispute",
+    { flagger: flagger.publicKey(), sourcePublicKey: flagger.publicKey() },
+    flagger,
+  );
+}
+
+/** Mirrors api/src/server.ts's serializeProposal. */
+export interface MultisigProposal {
+  id: string;
+  contract_id: string;
+  method: "cancel" | "reassign_buyer" | "resolve_dispute";
+  proposer_address: string;
+  status: "pending" | "ready" | "completed";
+  pending_entries: { address: string; entry_xdr: string }[];
+  ready_xdr: string | null;
+}
+
+/**
+ * Proposes resolving a dispute as `proposer`. No signature is involved:
+ * the API simulates `resolve_dispute`, stages the OTHER two parties'
+ * auth entries, and stores the proposal — the proposer's own classic
+ * signature only happens later, at finalize.
+ */
+export function proposeResolveDispute(contractId: string, proposer: Keypair): Promise<MultisigProposal> {
+  return apiRequest<MultisigProposal>(`/commitments/${encodeURIComponent(contractId)}/tx/resolve-dispute/propose`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ proposerPublicKey: proposer.publicKey() }),
+  });
+}
+
+export function getResolveDisputeProposal(contractId: string): Promise<{ proposal: MultisigProposal | null }> {
+  return apiRequest<{ proposal: MultisigProposal | null }>(
+    `/commitments/${encodeURIComponent(contractId)}/tx/resolve-dispute/propose`,
+  );
+}
+
+/** Proposes reassigning the buyer position. Like resolve-dispute's propose, this stages auth entries and signs nothing. */
+export function proposeReassignBuyer(
+  contractId: string,
+  proposer: Keypair,
+  newBuyerPublicKey: string,
+): Promise<MultisigProposal> {
+  return apiRequest<MultisigProposal>(`/commitments/${encodeURIComponent(contractId)}/tx/reassign-buyer/propose`, {
+    method: "POST",
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ proposerPublicKey: proposer.publicKey(), newBuyer: newBuyerPublicKey }),
+  });
+}
+
+export function getReassignBuyerProposal(contractId: string): Promise<{ proposal: MultisigProposal | null }> {
+  return apiRequest<{ proposal: MultisigProposal | null }>(
+    `/commitments/${encodeURIComponent(contractId)}/tx/reassign-buyer/propose`,
+  );
+}
+
+export interface AllocationMemberDetail {
+  memberHash: string;
+  shareBps: number;
+}
+
+/**
+ * Live on-chain allocation ledger. `null` when nothing has been recorded
+ * yet — the contract's `AllocationNotSet` error, the same expected state
+ * coop-pwa's api.ts turns into `null` rather than a failure.
+ */
+export async function getAllocationLedger(contractId: string): Promise<AllocationMemberDetail[] | null> {
+  try {
+    const { members } = await apiRequest<{ members: AllocationMemberDetail[] }>(
+      `/commitments/${encodeURIComponent(contractId)}/allocation`,
+    );
+    return members;
+  } catch (err) {
+    if (err instanceof Error && /AllocationNotSet|Error\(Contract, #23\)/.test(err.message)) {
+      return null;
+    }
+    throw err;
+  }
 }

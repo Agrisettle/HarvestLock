@@ -1,13 +1,20 @@
 # HarvestLock end-to-end tests
 
-Real browser, real API, real Stellar testnet. Three Playwright smoke tests,
-one per frontend, each walking the app's defining user journey end to end:
+Real browser, real API, real Stellar testnet. Three Playwright specs, one
+per frontend, each walking the app's defining user journey end to end:
 
 | Spec | Journey | What it proves |
 | --- | --- | --- |
-| `tests/buyer-app.spec.ts` | Buyer creates a commitment | The create form's deploy → initialize → sign → submit → read-back loop works against the real API and chain |
-| `tests/coop-pwa.spec.ts` | Cooperative claims advance tranche 1 | The claim button's build → sign → submit → re-read loop works against a real Locked-and-released commitment |
+| `tests/buyer-app.spec.ts` | Buyer creates a commitment (#198); proposes reassigning the buyer position (#45) | The create form's deploy → initialize → sign → submit → read-back loop works against the real API and chain; the staged reassignment proposal reaches the API and the incoming buyer's `signAuthEntry` approval lands |
+| `tests/coop-pwa.spec.ts` | Cooperative claims advance tranche 1 (#199); records an allocation ledger (#54); flags a dispute (#59); proposes resolving one (#60) | The claim loop against a real Locked-and-released commitment; `set_allocation` persists hashes/shares with no phone number; `flag_dispute` flips the chain status; a resolution proposal stages the other two parties and their approval signs |
 | `tests/warehouse-app.spec.ts` | Warehouse operator confirms a delivery | The confirm form's submit lands a real partial delivery with the entered quantity and settlement maths |
+
+The QA issues (#45, #54, #59, #60) each exercise a rejection path before
+the happy path — the injected wallet answers with Freighter's own declined
+error, the UI must surface it and reset, and the chain must stay unchanged.
+`docs/qa/manual-freighter-qa-45-54-59-60.md` is the accompanying write-up,
+including what a real extension popup is expected to show and the manual
+checklist that remains.
 
 ## Why these exist when the apps already have test suites
 

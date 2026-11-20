@@ -27,12 +27,35 @@ import { NETWORK_PASSPHRASE } from "./env";
  * api/test/helpers.ts's `simulateFreighterSignAuthEntry`: it signs each
  * entry with whatever `signatureExpirationLedger` the entry already
  * embeds (Freighter's real call takes no expiration parameter either).
+ *
+ * Two QA hooks beyond the original happy-path stub:
+ * - `setInjectedSigningRejected(page, true)` answers signing requests
+ *   with the library's own declined error (`code: -4`), so a test can
+ *   drive the exact reject-then-retry sequence a human would.
+ * - `connectInjectedWallet` returns the live list of signing requests
+ *   the page made, which lets a test prove an action never opened a
+ *   wallet popup at all (e.g. the multi-party `propose` routes).
  */
 
 declare global {
   interface Window {
     __harvestlockE2eFreighter: (request: unknown) => Promise<Record<string, unknown>>;
+    /** Set by `setInjectedSigningRejected`; the message listener refuses signing requests while true. */
+    __harvestlockE2eRejectSigning?: boolean;
   }
+}
+
+/** What a real Freighter extension returns when the user clicks reject (see `FreighterApiDeclinedError` in @stellar/freighter-api). */
+const DECLINED_ERROR = { code: -4, message: "The user rejected this request." };
+
+export interface InjectedWalletHandle {
+  /**
+   * Every signing request the page has actually sent so far
+   * (`SUBMIT_TRANSACTION` / `SUBMIT_AUTH_ENTRY`). Lets a test prove an
+   * action never invoked the wallet at all — e.g. the multi-party
+   * `propose` routes stage auth entries server-side and show no popup.
+   */
+  signRequests: string[];
 }
 
 interface FreighterRequest {
@@ -43,8 +66,9 @@ interface FreighterRequest {
   networkPassphrase?: string;
 }
 
-export async function connectInjectedWallet(page: Page, signer: Keypair): Promise<void> {
+export async function connectInjectedWallet(page: Page, signer: Keypair): Promise<InjectedWalletHandle> {
   const publicKey = signer.publicKey();
+  const signRequests: string[] = [];
 
   await page.exposeFunction("__harvestlockE2eFreighter", async (raw: unknown) => {
     const request = (raw ?? {}) as FreighterRequest;
@@ -55,6 +79,10 @@ export async function connectInjectedWallet(page: Page, signer: Keypair): Promis
         return { publicKey };
       case "REQUEST_CONNECTION_STATUS":
         return { isConnected: true };
+      case "REQUEST_ALLOWED_STATUS":
+        // @stellar/freighter-api's signAuthEntry asks this first; a real
+        // extension answers true after requestAccess has been granted.
+        return { isAllowed: true };
       case "REQUEST_NETWORK":
       case "REQUEST_NETWORK_DETAILS":
         return {
@@ -62,12 +90,14 @@ export async function connectInjectedWallet(page: Page, signer: Keypair): Promis
           networkDetails: { network: "TESTNET", networkPassphrase: NETWORK_PASSPHRASE, networkUrl: "", sorobanRpcUrl: "" },
         };
       case "SUBMIT_TRANSACTION": {
+        signRequests.push("SUBMIT_TRANSACTION");
         if (!request.transactionXdr) throw new Error("SUBMIT_TRANSACTION without transactionXdr");
         const tx = TransactionBuilder.fromXDR(request.transactionXdr, request.networkPassphrase ?? NETWORK_PASSPHRASE);
         tx.sign(signer);
         return { signedTransaction: tx.toXDR(), signerAddress: publicKey };
       }
       case "SUBMIT_AUTH_ENTRY": {
+        signRequests.push("SUBMIT_AUTH_ENTRY");
         if (!request.entryXdr) throw new Error("SUBMIT_AUTH_ENTRY without entryXdr");
         const entry = xdr.SorobanAuthorizationEntry.fromXDR(request.entryXdr, "base64");
         const info = inspectAuthEntry(entry);
@@ -89,11 +119,30 @@ export async function connectInjectedWallet(page: Page, signer: Keypair): Promis
 
   // addInitScript runs before any page script on every navigation, so the
   // listener is in place before the app bundle can call postMessage.
-  await page.addInitScript(() => {
+  await page.addInitScript((declined: { code: number; message: string }) => {
     window.addEventListener("message", (event: MessageEvent) => {
       if (event.source !== window) return;
-      const request = event.data as { source?: string; messageId?: number } | null;
+      const request = event.data as { source?: string; messageId?: number; type?: string } | null;
       if (!request || request.source !== "FREIGHTER_EXTERNAL_MSG_REQUEST") return;
+
+      // The test-controlled "user clicked reject in the extension" path:
+      // answer exactly as the real extension's declined response would,
+      // without asking the Node-side signer for a signature.
+      if (
+        window.__harvestlockE2eRejectSigning &&
+        (request.type === "SUBMIT_TRANSACTION" || request.type === "SUBMIT_AUTH_ENTRY")
+      ) {
+        window.postMessage(
+          {
+            source: "FREIGHTER_EXTERNAL_MSG_RESPONSE",
+            messagedId: request.messageId,
+            apiError: declined,
+          },
+          window.location.origin,
+        );
+        return;
+      }
+
       void (async () => {
         let response: Record<string, unknown>;
         try {
@@ -108,5 +157,19 @@ export async function connectInjectedWallet(page: Page, signer: Keypair): Promis
         );
       })();
     });
-  });
+  }, DECLINED_ERROR);
+
+  return { signRequests };
+}
+
+/**
+ * Toggles the injected extension's "user rejects the next signing
+ * request" behavior. Off by default. Reset it to false to let a retry
+ * sign normally — the same reject-then-approve sequence a manual QA pass
+ * exercises against a real popup.
+ */
+export async function setInjectedSigningRejected(page: Page, rejected: boolean): Promise<void> {
+  await page.evaluate((flag) => {
+    window.__harvestlockE2eRejectSigning = flag;
+  }, rejected);
 }
