@@ -22,11 +22,11 @@ const reasons = [
 
 export function WhyStellar() {
   return (
-    <section id="why-stellar">
+    <section id="why-stellar" aria-labelledby="why-stellar-heading">
       <div className="wrap why-wrap">
         <Reveal as="div" className="why-head">
           <div className="eyebrow">Why Stellar</div>
-          <h2>Built on primitives that already exist</h2>
+          <h2 id="why-stellar-heading">Built on primitives that already exist</h2>
           <p className="lede">
             Every piece below is an integration, not a research problem —
             the hard part was never the blockchain.
@@ -36,7 +36,7 @@ export function WhyStellar() {
         <div className="why-list">
           {reasons.map((r, i) => (
             <Reveal as="div" key={r.title} delay={i * 80} className="why-item">
-              <div className="why-bar" />
+              <div className="why-bar" aria-hidden="true" />
               <div>
                 <h3>{r.title}</h3>
                 <p>{r.body}</p>

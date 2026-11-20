@@ -479,58 +479,6 @@ describe("server (HTTP layer)", () => {
     15_000,
   );
 
-  it(
-    "rejects deliveryWindowSecs below the minimum before touching the network",
-    async () => {
-      const res = await app.inject({
-        method: "POST",
-        url: `/commitments/${FAKE_CONTRACT_ID}/tx/initialize`,
-        payload: {
-          buyer: FAKE_PUBLIC_KEY,
-          cooperative: FAKE_PUBLIC_KEY,
-          warehouseOperator: FAKE_PUBLIC_KEY,
-          token: FAKE_CONTRACT_ID,
-          totalAmount: "1000000000",
-          advance1Bps: 1500,
-          advance2Bps: 2000,
-          claimWindowSecs: "3600",
-          remainderWindowSecs: String(60 * 60 * 24 * 7),
-          deliveryWindowSecs: "60",
-          sourcePublicKey: FAKE_PUBLIC_KEY,
-        },
-      });
-      expect(res.statusCode).toBe(400);
-      expect(res.json().message).toMatch(/deliveryWindowSecs must be between/);
-    },
-    15_000,
-  );
-
-  it(
-    "rejects deliveryWindowSecs above the maximum before touching the network",
-    async () => {
-      const res = await app.inject({
-        method: "POST",
-        url: `/commitments/${FAKE_CONTRACT_ID}/tx/initialize`,
-        payload: {
-          buyer: FAKE_PUBLIC_KEY,
-          cooperative: FAKE_PUBLIC_KEY,
-          warehouseOperator: FAKE_PUBLIC_KEY,
-          token: FAKE_CONTRACT_ID,
-          totalAmount: "1000000000",
-          advance1Bps: 1500,
-          advance2Bps: 2000,
-          claimWindowSecs: "3600",
-          remainderWindowSecs: String(60 * 60 * 24 * 7),
-          deliveryWindowSecs: String(60 * 60 * 24 * 1000),
-          sourcePublicKey: FAKE_PUBLIC_KEY,
-        },
-      });
-      expect(res.statusCode).toBe(400);
-      expect(res.json().message).toMatch(/deliveryWindowSecs must be between/);
-    },
-    15_000,
-  );
-
   // A payload that clears all three window checks, so these tests
   // actually exercise the quantity/grade-schedule validation below them,
   // not an earlier guard.
@@ -543,7 +491,7 @@ describe("server (HTTP layer)", () => {
   const minClaimWindowSecs = 3_600;
   const maxClaimWindowSecs = 90 * 24 * 60 * 60;
   const claimWindowArgIndex = 7;
-  const validClaimWindowPayload = {
+  const validWindowPayload = {
     buyer: FAKE_PUBLIC_KEY,
     cooperative: FAKE_PUBLIC_KEY,
     warehouseOperator: FAKE_PUBLIC_KEY,
@@ -565,7 +513,7 @@ describe("server (HTTP layer)", () => {
         const res = await app.inject({
           method: "POST",
           url: `/commitments/${FAKE_CONTRACT_ID}/tx/initialize`,
-          payload: { ...validClaimWindowPayload, claimWindowSecs: String(claimWindowSecs) },
+          payload: { ...validWindowPayload, claimWindowSecs: String(claimWindowSecs) },
         });
         expect(res.statusCode).toBe(200);
         expect(res.json()).toEqual({ xdr: "FAKE-UNSIGNED-XDR" });
@@ -590,10 +538,59 @@ describe("server (HTTP layer)", () => {
         const res = await app.inject({
           method: "POST",
           url: `/commitments/${FAKE_CONTRACT_ID}/tx/initialize`,
-          payload: { ...validClaimWindowPayload, claimWindowSecs: String(claimWindowSecs) },
+          payload: { ...validWindowPayload, claimWindowSecs: String(claimWindowSecs) },
         });
         expect(res.statusCode).toBe(400);
         expect(res.json().message).toMatch(/claimWindowSecs must be between/);
+        expect(buildInvoke).not.toHaveBeenCalled();
+      } finally {
+        buildInvoke.mockRestore();
+      }
+    },
+    15_000,
+  );
+
+  const minDeliveryWindowSecs = 86_400;
+  const maxDeliveryWindowSecs = 365 * 86_400;
+  const deliveryWindowArgIndex = 9;
+
+  it.each([minDeliveryWindowSecs, maxDeliveryWindowSecs])(
+    "accepts deliveryWindowSecs of %i seconds and encodes it for initialize",
+    async (deliveryWindowSecs) => {
+      const buildInvoke = vi.spyOn(txModule, "buildInvokeTransaction").mockResolvedValue("FAKE-UNSIGNED-XDR");
+      try {
+        const res = await app.inject({
+          method: "POST",
+          url: `/commitments/${FAKE_CONTRACT_ID}/tx/initialize`,
+          payload: { ...validWindowPayload, deliveryWindowSecs: String(deliveryWindowSecs) },
+        });
+        expect(res.statusCode).toBe(200);
+        expect(res.json()).toEqual({ xdr: "FAKE-UNSIGNED-XDR" });
+        expect(buildInvoke).toHaveBeenCalledTimes(1);
+        const invocation = buildInvoke.mock.calls[0]?.[0];
+        expect(invocation?.method).toBe("initialize");
+        expect(invocation?.args?.[deliveryWindowArgIndex]).toEqual(
+          nativeToScVal(BigInt(deliveryWindowSecs), { type: "u64" }),
+        );
+      } finally {
+        buildInvoke.mockRestore();
+      }
+    },
+    15_000,
+  );
+
+  it.each([minDeliveryWindowSecs - 1, maxDeliveryWindowSecs + 1])(
+    "rejects deliveryWindowSecs of %i seconds before building a transaction",
+    async (deliveryWindowSecs) => {
+      const buildInvoke = vi.spyOn(txModule, "buildInvokeTransaction").mockResolvedValue("FAKE-UNSIGNED-XDR");
+      try {
+        const res = await app.inject({
+          method: "POST",
+          url: `/commitments/${FAKE_CONTRACT_ID}/tx/initialize`,
+          payload: { ...validWindowPayload, deliveryWindowSecs: String(deliveryWindowSecs) },
+        });
+        expect(res.statusCode).toBe(400);
+        expect(res.json().message).toMatch(/deliveryWindowSecs must be between/);
         expect(buildInvoke).not.toHaveBeenCalled();
       } finally {
         buildInvoke.mockRestore();
