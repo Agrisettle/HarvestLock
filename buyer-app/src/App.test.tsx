@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App from "./App";
@@ -97,11 +97,18 @@ function jsonResponse(body: unknown, ok = true) {
   } as Response;
 }
 
-let fetchMock: ReturnType<typeof vi.fn>;
+let fetchMock: Mock<typeof fetch>;
 
 beforeEach(() => {
-  fetchMock = vi.fn();
-  vi.stubGlobal("fetch", fetchMock);
+  fetchMock = vi.fn<typeof fetch>();
+  // FxEstimateSection reads /oracle-config for every detail it shows.
+  // These tests are all plain deals (no oracle), so answer that one route
+  // here, outside the ordered mockResolvedValueOnce queue each test builds;
+  // otherwise it would steal a response meant for something else.
+  // FxEstimateSection.test.tsx covers the oracle-configured paths.
+  vi.stubGlobal("fetch", (url: RequestInfo | URL, init?: RequestInit) =>
+    String(url).endsWith("/oracle-config") ? Promise.resolve(jsonResponse({ config: null })) : fetchMock(url, init),
+  );
   vi.mocked(wallet.connectWallet).mockReset();
   vi.mocked(wallet.signTransactionXdr).mockReset();
   kybState.current = { required: false, verified: false };

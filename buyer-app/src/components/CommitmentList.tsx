@@ -95,19 +95,33 @@ export function CommitmentList({
         Download CSV
       </button>
       <div className="commitment-list" role="list" aria-label="Commitments">
+        {/* role="listitem" wrappers: a role="list" may only own listitems,
+            not the buttons directly (axe aria-required-children, found in a
+            real-browser pass for issue #9). No aria-label: the accessible
+            name comes from the row's own text, so it always contains what
+            a sighted user sees and voice-control users can say it (WCAG
+            2.5.3; an aria-label here tripped axe label-content-name-
+            mismatch). The full contract ID rides along visually hidden. */}
         {commitments.map((c) => (
-          <button
-            key={c.id}
-            type="button"
-            className="commitment-row"
-            onClick={() => onSelect(c.contract_id)}
-            aria-label={`Commitment ${c.contract_id}, status: ${c.status}`}
-          >
-            {/* copyable=false: this row is itself a <button> -- a nested
-                <button> for the copy control would be invalid HTML. */}
-            <AddressChip address={c.contract_id} copyable={false} className="contract-id" />
-            <StatusBadge status={c.status} />
-          </button>
+          <div role="listitem" key={c.id}>
+            <button
+              type="button"
+              className="commitment-row"
+              onClick={() => onSelect(c.contract_id)}
+            >
+              {/* copyable=false: this row is itself a <button> -- a nested
+                  <button> for the copy control would be invalid HTML. */}
+              <AddressChip address={c.contract_id} copyable={false} className="contract-id" />
+              {/* The badge is visual; its status is spoken via the sr-only
+                  text instead, so it can be separated cleanly from the ID. */}
+              <span aria-hidden="true">
+                <StatusBadge status={c.status} />
+              </span>
+              <span className="sr-only">
+                , status {c.status}, contract ID {c.contract_id}
+              </span>
+            </button>
+          </div>
         ))}
       </div>
       {hasMore && onLoadMore && (

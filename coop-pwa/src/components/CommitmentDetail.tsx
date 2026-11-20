@@ -160,7 +160,7 @@ export function CommitmentDetail({
         </div>
       </dl>
 
-      {claimError && <div className="error-banner">{claimError}</div>}
+      {claimError && <div className="error-banner" role="alert">{claimError}</div>}
 
       <div className="tranches-scroll" role="region" aria-label={t("detail.trancheSchedule")} tabIndex={0}>
         <table className="tranches">

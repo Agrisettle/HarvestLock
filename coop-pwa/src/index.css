@@ -313,7 +313,7 @@ main {
   max-width: 480px;
 }
 
-.allocation-form h4 {
+.allocation-form h2 {
   margin: 0;
   font-size: 0.85rem;
   color: var(--bone-dim);
@@ -630,4 +630,30 @@ table.tranches th {
     display: inline-flex;
     align-items: center;
   }
+}
+
+/* Skip-to-content link (issue #9), same behaviour as site/'s: off-screen
+   until it receives keyboard focus, then the first thing on the page. */
+.skip-link {
+  position: absolute;
+  top: -100%;
+  left: 16px;
+  z-index: 100;
+  background: var(--gold);
+  color: var(--void);
+  font-weight: 600;
+  padding: 10px 18px;
+  border-radius: 6px;
+  text-decoration: none;
+}
+
+.skip-link:focus-visible {
+  top: 16px;
+  outline-color: var(--bone);
+}
+
+/* <main> is only focusable so the skip link can move focus into it; a
+   ring around the whole page body would just be noise. */
+main:focus {
+  outline: none;
 }

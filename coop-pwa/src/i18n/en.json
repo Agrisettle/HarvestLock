@@ -1,6 +1,7 @@
 {
   "app.title": "HarvestLock — Cooperative Dashboard",
   "app.tag": "read-only reads · testnet",
+  "app.skipToContent": "Skip to content",
   "app.connectWallet": "Connect wallet",
   "app.contractIdLabel": "Contract ID",
   "app.contractIdPlaceholder": "Contract ID (C...)",

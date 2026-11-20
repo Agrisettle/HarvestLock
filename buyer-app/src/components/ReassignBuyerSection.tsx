@@ -126,7 +126,7 @@ export function ReassignBuyerSection({
 
   return (
     <div className="reassign-section">
-      {error && <div className="error-banner">{error}</div>}
+      {error && <div className="error-banner" role="alert">{error}</div>}
 
       {!proposal && isCurrentBuyer && (
         <form className="reassign-form" onSubmit={handlePropose}>
@@ -145,14 +145,14 @@ export function ReassignBuyerSection({
       )}
 
       {proposal?.status === "pending" && proposal.proposer_address === walletAddress && (
-        <p className="cancel-status">
+        <p className="cancel-status" role="status">
           Reassignment proposed — waiting for the cooperative and the new buyer to approve.
         </p>
       )}
 
       {proposal?.status === "pending" && isPendingSigner && (
         <>
-          <p className="cancel-status">The current buyer wants to reassign this commitment to a new buyer.</p>
+          <p className="cancel-status" role="status">The current buyer wants to reassign this commitment to a new buyer.</p>
           <button className="action-button secondary" onClick={handleApprove} disabled={busy}>
             {busy ? "Approving…" : "Approve reassignment"}
           </button>
@@ -160,7 +160,7 @@ export function ReassignBuyerSection({
       )}
 
       {proposal?.status === "pending" && justApproved && !isPendingSigner && (
-        <p className="cancel-status">Approved — waiting for the other party to approve too.</p>
+        <p className="cancel-status" role="status">Approved — waiting for the other party to approve too.</p>
       )}
 
       {proposal?.status === "ready" && proposal.proposer_address === walletAddress && (
@@ -170,7 +170,7 @@ export function ReassignBuyerSection({
       )}
 
       {proposal?.status === "ready" && proposal.proposer_address !== walletAddress && (
-        <p className="cancel-status">Approved — waiting for the current buyer to finalize.</p>
+        <p className="cancel-status" role="status">Approved — waiting for the current buyer to finalize.</p>
       )}
     </div>
   );

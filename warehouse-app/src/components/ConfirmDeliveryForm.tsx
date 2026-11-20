@@ -54,7 +54,7 @@ export function ConfirmDeliveryForm({
         if (quantityValid) onSubmit(parsedQuantity, gradeIndex);
       }}
     >
-      <h3>Confirm delivery</h3>
+      <h2>Confirm delivery</h2>
       <p>
         Attest what actually arrived, against the {contractedQuantity}-unit contracted quantity. This can't be
         corrected afterward — a grade or quantity dispute is your own appeals process, not HarvestLock's.
@@ -78,7 +78,7 @@ export function ConfirmDeliveryForm({
         ))}
       </select>
 
-      {submitError && <div className="error-banner">{submitError}</div>}
+      {submitError && <div className="error-banner" role="alert">{submitError}</div>}
 
       <button type="submit" disabled={submitting || !quantityValid}>
         {submitting ? "Confirming…" : "Confirm delivery"}
