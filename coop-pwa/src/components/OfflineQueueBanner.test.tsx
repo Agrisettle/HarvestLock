@@ -1,6 +1,7 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { useEffect, useState } from "react";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { IDBFactory } from "fake-indexeddb";
 import { OfflineQueueBanner } from "./OfflineQueueBanner";
 import { enqueueClaim, listQueuedClaims, type QueuedClaim } from "../offlineQueue";
@@ -12,19 +13,9 @@ const claims = [
 ] satisfies QueuedClaim[];
 
 beforeEach(() => {
-  // A fresh in-memory IndexedDB per test, same reasoning as
-  // offlineQueue.test.ts/App.test.tsx: fake-indexeddb/auto installs one
-  // shared instance globally, so without this a claim queued here could
-  // leak into another test.
   indexedDB = new IDBFactory();
 });
 
-/**
- * OfflineQueueBanner itself is presentational -- App.tsx is what reads the
- * persisted queue on mount. Mirror just that hydration step so this test
- * can prove a shown claim survives losing all React state, rather than
- * only passing back a prop that was already in memory.
- */
 function BannerHydratedFromStorage() {
   const [queuedClaims, setQueuedClaims] = useState<QueuedClaim[] | null>(null);
   useEffect(() => {
@@ -55,14 +46,169 @@ describe("OfflineQueueBanner", () => {
     expect(screen.getByText(/Advance 2/)).toBeInTheDocument();
     expect(screen.getByTitle(contractId)).toBeInTheDocument();
 
-    // Simulate a full page reload: tear down the whole tree, including the
-    // component state that held the queue read above, then mount a fresh
-    // one. Nothing survives except IndexedDB.
     beforeReload.unmount();
     render(<BannerHydratedFromStorage />);
 
     expect(await screen.findByText(/1 claim couldn't reach the network/)).toBeInTheDocument();
     expect(screen.getByText(/Advance 2/)).toBeInTheDocument();
     expect(screen.getByTitle(contractId)).toBeInTheDocument();
+  });
+});
+
+describe("OfflineQueueBanner keyboard navigation audit (Issue #93)", () => {
+  it("renders interactive elements with explicit type='button'", () => {
+    render(
+      <OfflineQueueBanner
+        queuedClaims={claims}
+        retryingId={null}
+        retryErrors={{ 1: "Network timed out" }}
+        onRetry={vi.fn()}
+        onDismiss={vi.fn()}
+      />,
+    );
+
+    const buttons = screen.getAllByRole("button");
+    buttons.forEach((btn) => {
+      expect(btn).toHaveAttribute("type", "button");
+    });
+  });
+
+  it("allows sequential tab navigation through interactive buttons without focus traps", async () => {
+    const user = userEvent.setup();
+    render(
+      <OfflineQueueBanner
+        queuedClaims={[claims[0]]}
+        retryingId={null}
+        retryErrors={{ 1: "Network timed out" }}
+        onRetry={vi.fn()}
+        onDismiss={vi.fn()}
+      />,
+    );
+
+    const copyBtn = screen.getByRole("button", { name: "Copy" });
+    const retryBtn = screen.getByRole("button", { name: "Retry" });
+    const dismissBtn = screen.getByRole("button", { name: "Dismiss" });
+
+    await user.tab();
+    expect(copyBtn).toHaveFocus();
+
+    await user.tab();
+    expect(retryBtn).toHaveFocus();
+
+    await user.tab();
+    expect(dismissBtn).toHaveFocus();
+  });
+
+  it("triggers onRetry and onDismiss via keyboard activation", async () => {
+    const onRetry = vi.fn();
+    const onDismiss = vi.fn();
+    const user = userEvent.setup();
+
+    render(
+      <OfflineQueueBanner
+        queuedClaims={[claims[0]]}
+        retryingId={null}
+        retryErrors={{ 1: "Network timed out" }}
+        onRetry={onRetry}
+        onDismiss={onDismiss}
+      />,
+    );
+
+    const retryBtn = screen.getByRole("button", { name: "Retry" });
+    const dismissBtn = screen.getByRole("button", { name: "Dismiss" });
+
+    await user.tab(); // copy
+    await user.tab(); // retry
+    expect(retryBtn).toHaveFocus();
+    await user.keyboard("{Enter}");
+    expect(onRetry).toHaveBeenCalledWith(claims[0]);
+
+    await user.tab(); // dismiss
+    expect(dismissBtn).toHaveFocus();
+    await user.keyboard("{Enter}");
+    expect(onDismiss).toHaveBeenCalledWith(claims[0]);
+  });
+});
+
+describe("OfflineQueueBanner color contrast & ARIA labeling (Issue #94)", () => {
+  it("provides live region role='status' on the queue banner", () => {
+    const { container } = render(
+      <OfflineQueueBanner queuedClaims={claims} retryingId={null} onRetry={vi.fn()} />,
+    );
+    const banner = container.querySelector(".offline-queue-banner");
+    expect(banner).toHaveAttribute("role", "status");
+  });
+
+  it("provides accessible button controls with semantic action names", () => {
+    render(
+      <OfflineQueueBanner
+        queuedClaims={[claims[0]]}
+        retryingId={null}
+        retryErrors={{ 1: "Network timed out" }}
+        onRetry={vi.fn()}
+        onDismiss={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Dismiss" })).toBeInTheDocument();
+  });
+
+  it("sets aria-busy during active retry operation", () => {
+    const { rerender } = render(
+      <OfflineQueueBanner queuedClaims={[claims[0]]} retryingId={null} onRetry={vi.fn()} />,
+    );
+
+    const retryBtn = screen.getByRole("button", { name: "Retry" });
+    expect(retryBtn).toHaveAttribute("aria-busy", "false");
+
+    rerender(
+      <OfflineQueueBanner queuedClaims={[claims[0]]} retryingId={1} onRetry={vi.fn()} />,
+    );
+    const busyBtn = screen.getByRole("button", { name: "Retrying…" });
+    expect(busyBtn).toHaveAttribute("aria-busy", "true");
+  });
+
+  it("announces retry failure errors with role='alert'", () => {
+    render(
+      <OfflineQueueBanner
+        queuedClaims={[claims[0]]}
+        retryingId={null}
+        retryErrors={{ 1: "Network request timed out" }}
+        onRetry={vi.fn()}
+      />,
+    );
+
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent("Network request timed out");
+  });
+
+  it("verifies contrast ratios meet WCAG AA requirements for OfflineQueueBanner styling tokens", () => {
+    const lum = (hex: string) => {
+      const rgb = [hex.slice(1, 3), hex.slice(3, 5), hex.slice(5, 7)].map((c) => parseInt(c, 16) / 255);
+      const [r, g, b] = rgb.map((c) => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)));
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const contrastRatio = (hex1: string, hex2: string) => {
+      const [l1, l2] = [lum(hex1), lum(hex2)].sort((a, b) => b - a);
+      return (l1 + 0.05) / (l2 + 0.05);
+    };
+
+    // Composite rgba(212, 169, 55, 0.1) on #0b120f
+    const bannerBg = "#1f2113";
+    const bone = "#f3f1e9";
+    const boneDim = "#c9c6ba";
+    const boneFaint = "#8a897f";
+    const gold = "#d4a937";
+    const goldBright = "#eec765";
+
+    // Text contrast on banner background (WCAG AA: >= 4.5:1)
+    expect(contrastRatio(bone, bannerBg)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(boneDim, bannerBg)).toBeGreaterThanOrEqual(4.5);
+
+    // UI boundary and focus indicator contrast on banner background (WCAG SC 1.4.11: >= 3.0:1)
+    expect(contrastRatio(boneFaint, bannerBg)).toBeGreaterThanOrEqual(3.0); // Secondary button border
+    expect(contrastRatio(gold, bannerBg)).toBeGreaterThanOrEqual(3.0); // Focused button border
+    expect(contrastRatio(goldBright, bannerBg)).toBeGreaterThanOrEqual(3.0);
   });
 });
