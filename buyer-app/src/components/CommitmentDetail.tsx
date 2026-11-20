@@ -3,6 +3,7 @@ import { StatusBadge } from "./StatusBadge";
 import { CancelSection } from "./CancelSection";
 import { ReassignBuyerSection } from "./ReassignBuyerSection";
 import { DisputeSection } from "./DisputeSection";
+import { FxEstimateSection } from "./FxEstimateSection";
 import { AddressChip } from "./AddressChip";
 import { formatDuration, formatTokenAmount } from "../amount";
 
@@ -162,6 +163,8 @@ export function CommitmentDetail({
           <dd>{formatDuration(commitment.claim_window_secs)}</dd>
         </div>
       </dl>
+
+      <FxEstimateSection commitment={commitment} contractId={contractId} />
 
       <div className="tranches-scroll" role="region" aria-label="Tranche schedule" tabIndex={0}>
         <table className="tranches">

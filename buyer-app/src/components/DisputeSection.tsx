@@ -151,7 +151,7 @@ export function DisputeSection({
 
   return (
     <div className="dispute-section">
-      {error && <div className="error-banner">{error}</div>}
+      {error && <div className="error-banner" role="alert">{error}</div>}
 
       {!disputed && (
         <button className="action-button secondary" onClick={handleFlag} disabled={busy}>
@@ -171,12 +171,12 @@ export function DisputeSection({
       )}
 
       {proposal?.status === "pending" && iAmProposer && (
-        <p className="cancel-status">Resolution proposed — waiting for the other two parties to approve.</p>
+        <p className="cancel-status" role="status">Resolution proposed — waiting for the other two parties to approve.</p>
       )}
 
       {proposal?.status === "pending" && isPendingSigner && (
         <>
-          <p className="cancel-status">A party wants to resolve this dispute and resume normal processing.</p>
+          <p className="cancel-status" role="status">A party wants to resolve this dispute and resume normal processing.</p>
           <button className="action-button secondary" onClick={handleApprove} disabled={busy}>
             {busy ? "Approving…" : "Approve resolution"}
           </button>
@@ -184,7 +184,7 @@ export function DisputeSection({
       )}
 
       {proposal?.status === "pending" && justApproved && !isPendingSigner && !iAmProposer && (
-        <p className="cancel-status">Approved — waiting for the remaining party to approve too.</p>
+        <p className="cancel-status" role="status">Approved — waiting for the remaining party to approve too.</p>
       )}
 
       {proposal?.status === "ready" && iAmProposer && (
@@ -194,7 +194,7 @@ export function DisputeSection({
       )}
 
       {proposal?.status === "ready" && !iAmProposer && (
-        <p className="cancel-status">Approved — waiting for the proposer to finalize.</p>
+        <p className="cancel-status" role="status">Approved — waiting for the proposer to finalize.</p>
       )}
     </div>
   );

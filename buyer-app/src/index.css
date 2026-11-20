@@ -263,7 +263,7 @@ main {
   max-width: 480px;
 }
 
-.create-commitment-form h3 {
+.create-commitment-form h2 {
   margin: 0 0 6px;
   font-family: var(--display);
   font-weight: 600;
@@ -635,4 +635,55 @@ table.tranches tbody th {
   padding: 8px 10px;
   border-radius: 6px;
   max-width: 100%;
+}
+
+/* FX estimate (issue #8, PRD §4.2): the range itself reads first, the
+   "estimate, not a quote" caveat sits directly under it, same weight as
+   other secondary copy so it's read, not skimmed past. */
+.fx-section {
+  margin: 0 0 20px;
+  padding: 14px 16px;
+  border: 1px solid var(--void-line);
+  border-radius: 8px;
+}
+
+.fx-section h2 {
+  margin: 0 0 8px;
+  font-size: 0.9rem;
+}
+
+.fx-figure {
+  margin: 0 0 6px;
+}
+
+.fx-note {
+  color: var(--bone-dim);
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+/* Skip-to-content link (issue #9), same behaviour as site/'s: off-screen
+   until it receives keyboard focus, then the first thing on the page. */
+.skip-link {
+  position: absolute;
+  top: -100%;
+  left: 16px;
+  z-index: 100;
+  background: var(--gold);
+  color: var(--void);
+  font-weight: 600;
+  padding: 10px 18px;
+  border-radius: 6px;
+  text-decoration: none;
+}
+
+.skip-link:focus-visible {
+  top: 16px;
+  outline-color: var(--bone);
+}
+
+/* <main> is only focusable so the skip link can move focus into it; a
+   ring around the whole page body would just be noise. */
+main:focus {
+  outline: none;
 }

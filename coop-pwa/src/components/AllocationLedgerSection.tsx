@@ -196,7 +196,7 @@ export function AllocationLedgerSection({
 
       {!hasLedger && isCooperative && settable && (
         <form className="allocation-form" onSubmit={handleSubmit}>
-          <h4>{t("allocation.formHeading")}</h4>
+          <h2>{t("allocation.formHeading")}</h2>
           {rows.map((row, i) => (
             <div className="allocation-row" key={i}>
               <input

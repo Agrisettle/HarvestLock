@@ -242,9 +242,9 @@ export function CreateCommitmentForm({
 
   return (
     <form className="create-commitment-form" onSubmit={handleSubmit}>
-      <h3>Create a new commitment</h3>
+      <h2>Create a new commitment</h2>
 
-      {(validationError ?? submitError) && <div className="error-banner">{validationError ?? submitError}</div>}
+      {(validationError ?? submitError) && <div className="error-banner" role="alert">{validationError ?? submitError}</div>}
 
       <label htmlFor="cooperative-address">Cooperative address</label>
       <input
@@ -415,6 +415,16 @@ export function CreateCommitmentForm({
             placeholder="500000000"
             inputMode="numeric"
           />
+          {/* Issue #8 / PRD §4.2. The live rate route is per-commitment
+              (GET /commitments/:id/oracle-rate reads through the contract's
+              own oracle config), so nothing can be quoted until it exists.
+              Say where the estimate shows up and what kind of number it is,
+              rather than leaving the buyer with no sense of FX exposure. */}
+          <p className="fx-note" id="fx-exposure-note">
+            You carry the FX risk on this deal: the conversion to the settlement token happens at settlement, at that
+            day&apos;s rate. You top up any shortfall or get any excess refunded. Once the commitment is created, its page
+            shows a live estimate range from the Reflector oracle.
+          </p>
         </>
       )}
 

@@ -128,7 +128,9 @@ describe("CommitmentList keyboard navigation & accessibility (Issue #71)", () =>
     expect(csvButton).toHaveAttribute("type", "button");
 
     const rowButton = screen.getByRole("button", {
-      name: `Commitment ${summary.contract_id}, status: ${summary.status}`,
+      // Name comes from the row's visible text plus visually hidden context
+      // (issue #9: an aria-label tripped axe label-content-name-mismatch).
+      name: `CDJG…LMQY, status ${summary.status}, contract ID ${summary.contract_id}`,
     });
     expect(rowButton).toHaveAttribute("type", "button");
 

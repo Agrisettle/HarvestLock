@@ -184,5 +184,39 @@ hidden otherwise. 7 new component tests, same conventions as
 `CancelSection.test.tsx`'s. Same Freighter-extension honesty note as
 every write action here applies — see above.
 
+**FX estimate as a range** (`src/components/FxEstimateSection.tsx`,
+`src/fxEstimate.ts`, issue #8): PRD §4.2's must-have "Reflector FX
+display as a range, labelled an estimate". For an oracle-configured
+commitment, the detail view reads `GET .../oracle-config` and the live
+`GET .../oracle-rate`. It shows what `denominated_amount` converts to in
+the settlement token as a ±5% range, labelled "Estimate, not a quote".
+The midpoint uses the contract's own `resolve_fx_shortfall` formula
+(integer math, Reflector `decimals = 14`), unit-tested against the
+contract doc comment's worked example. The band is a fixed display
+choice, not a forecast: the API exposes no quote history to derive one
+from, and the copy says the real rate can land outside it. Before
+delivery it assumes full delivery at the top grade; once `Delivered` it
+uses the real `settlement_bps`; once `fx_resolved` it shows the real
+on-chain figure (and any shortfall) instead of an estimate. A stale or
+missing quote shows why there's no estimate rather than a number. Plain
+deals render nothing. The create form can't quote anything yet (the rate
+route is per-commitment), so its FX group explains the exposure and
+points to the estimate on the new commitment's page. Checked in a real
+headless Chromium against mocked API responses, not against live
+Reflector.
+
+**Accessibility pass** (issue #9, alongside coop-pwa and warehouse-app):
+skip-to-content link matching `site/`'s, `<main>` focusable as its
+target, `role="alert"`/`role="status"` on every error, loading and
+"waiting for the other party" message, list semantics fixed on the
+commitment list, and heading levels that no longer skip from h1 to h3.
+Verified in real headless Chromium, not just jsdom: a keyboard tab-through
+of the list, detail and create-form views (every stop shows a focus
+ring), and axe-core's WCAG 2.0/2.1 A+AA and best-practice rules including
+rendered colour contrast, 0 violations. Wallet-gated controls were
+reached by stubbing Freighter's page messaging, which never signs
+anything and doesn't replace the manual Freighter QA issues. `axe-core`
+is now a dev dependency here too, as in the other two apps.
+
 **Deferred**: auth, ERP integration (see above) — neither exists yet,
 don't assume it does.

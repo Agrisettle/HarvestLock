@@ -293,4 +293,26 @@ export function verifyKyb(
 ): Promise<BuyerVerification & { verified: boolean }> {
   return post("/kyb/verify", { account, anchorDomain, transaction });
 }
+
+/** Mirrors GET /commitments/:contractId/oracle-config. `config` is null for a plain deal with no FX conversion. */
+export interface OracleConfig {
+  oracleContract: string;
+  priceAsset: string;
+  maxAgeSecs: string;
+  denominatedAmount: string;
+}
+
+/** Live on-chain read of the commitment's oracle config (PRD §16.3 / §4.2 option (b)). */
+export function getOracleConfig(contractId: string): Promise<{ config: OracleConfig | null }> {
+  return get<{ config: OracleConfig | null }>(`/commitments/${encodeURIComponent(contractId)}/oracle-config`);
+}
+
+/**
+ * A genuinely live Reflector quote, read through the contract on every
+ * call (never cached by the API). Rejects when the quote is stale, missing,
+ * or no oracle is configured; the API answers those as a 409 with the
+ * contract's own error name.
+ */
+export function getOracleRate(contractId: string): Promise<{ price: string; timestamp: string }> {
+  return get<{ price: string; timestamp: string }>(`/commitments/${encodeURIComponent(contractId)}/oracle-rate`);
 }

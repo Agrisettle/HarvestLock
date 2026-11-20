@@ -77,7 +77,7 @@ export function CommitmentDetail({
         <AddressChip address={contractId} className="contract-id" />
       </div>
 
-      {actionError && <div className="error-banner">{actionError}</div>}
+      {actionError && <div className="error-banner" role="alert">{actionError}</div>}
 
       <DisputeSection
         commitment={commitment}

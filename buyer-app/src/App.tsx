@@ -187,6 +187,11 @@ export default function App() {
 
   return (
     <>
+      {/* Skip link, matching site/'s (issue #9). tabIndex=-1 on <main> so the
+          jump moves keyboard focus, not just the scroll position. */}
+      <a href="#main-content" className="skip-link">
+        Skip to content
+      </a>
       <header className="app-header">
         <h1>HarvestLock — Buyer Dashboard</h1>
         <div className="header-actions">
@@ -201,8 +206,8 @@ export default function App() {
         </div>
       </header>
 
-      <main>
-        {walletError && <div className="error-banner">{walletError}</div>}
+      <main id="main-content" tabIndex={-1}>
+        {walletError && <div className="error-banner" role="alert">{walletError}</div>}
 
         <form
           className="lookup"
