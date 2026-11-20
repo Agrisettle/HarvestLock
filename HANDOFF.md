@@ -50,6 +50,24 @@ budget check pass. The five lockfile-sync jobs also leave their lockfiles
 unchanged with the current Node 24/npm 11 workflow; the older Node 20/npm 10
 check with `--legacy-peer-deps` incorrectly rewrote peer-dependency entries.
 
+## Manual Freighter QA — cancel & reassignment (#55–#58), 20 Nov 2026
+
+`docs/qa/manual-freighter-qa-cancel-reassign.md` is a runbook for the four
+outstanding `coop-pwa` wallet flows: #55 propose cancellation, #56 approve a
+buyer-proposed cancellation, #57 finalize a ready cancellation, and #58
+approve a buyer-reassignment proposal (cooperative side). Per-issue write-ups
+ready to post as issue comments live alongside it in `docs/qa/`.
+
+**Honest status:** the source trace, `coop-pwa`'s 127 tests, typecheck and lint
+are verified here; the real Freighter popup and testnet transactions are **not**
+— this environment has no installed extension or interactive desktop session.
+The runbook records the expected popup/chain values derived from `wallet.ts`
+and the sequence docs, plus an observation checklist, and does not claim any
+popup was observed. Two inspection-level findings are noted: `justApproved` in
+`ReassignBuyerSection.tsx` is session-local and lost on reload (documented in
+`coop-pwa/README.md`), and that component's error banner lacks `role="alert"`
+(already tracked in issue #92).
+
 ## Next steps
 
 Check `SPRINT.md`'s day-by-day checklist first — it's the live tracker for this week. Beyond the sprint window, `ROADMAP.md` Phase 0 Track B (contracts) and the API/frontend work implied by Phase 1 are the source of truth.
