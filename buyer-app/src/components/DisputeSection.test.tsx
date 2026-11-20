@@ -249,6 +249,7 @@ describe("DisputeSection", () => {
       ready_xdr: "READY_XDR",
     };
     fetchMock.mockResolvedValueOnce(jsonResponse({ proposal: readyProposal })); // initial poll
+    fetchMock.mockResolvedValueOnce(jsonResponse({ xdr: "FRESH_READY_XDR" })); // refresh-ready
     fetchMock.mockResolvedValueOnce(jsonResponse({ status: "SUCCESS", hash: "abc" })); // submitTx
 
     vi.mocked(wallet.signTransactionXdr).mockResolvedValueOnce("SIGNED_READY_XDR");
@@ -268,7 +269,7 @@ describe("DisputeSection", () => {
     await user.click(finalizeButton);
 
     await waitFor(() => expect(onDisputeChanged).toHaveBeenCalled());
-    expect(wallet.signTransactionXdr).toHaveBeenCalledWith("READY_XDR", baseCommitment.cooperative);
+    expect(wallet.signTransactionXdr).toHaveBeenCalledWith("FRESH_READY_XDR", baseCommitment.cooperative);
     const submitCall = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/transactions/submit"));
     expect(submitCall).toBeDefined();
     expect(String(submitCall?.[1]?.body)).toContain("prop-1"); // completeProposalId included
