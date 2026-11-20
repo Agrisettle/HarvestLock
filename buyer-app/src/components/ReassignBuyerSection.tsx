@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { MultisigProposal, CommitmentDetail as CommitmentDetailType } from "../api";
-import { getReassignBuyerProposal, proposeReassignBuyer, signMultisigProposal, submitTx } from "../api";
+import { getReassignBuyerProposal, proposeReassignBuyer, refreshReadyProposalXdr, signMultisigProposal, submitTx } from "../api";
 import { signAuthEntry, signTransactionXdr } from "../wallet";
 
 /** Mirrors lib.rs's reassign_buyer() reachable-state range — same as cancel()'s, Draft through ReadyForDelivery. */
@@ -113,7 +113,8 @@ export function ReassignBuyerSection({
     if (!proposal?.ready_xdr) return;
     setBusy(true);
     setError(null);
-    signTransactionXdr(proposal.ready_xdr, walletAddress!)
+    refreshReadyProposalXdr(contractId, proposal.id)
+      .then(({ xdr }) => signTransactionXdr(xdr, walletAddress!))
       .then((signedXdr) => submitTx(signedXdr, contractId, proposal.id))
       .then(() => {
         setProposal(null);
