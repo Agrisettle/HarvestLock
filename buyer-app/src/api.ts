@@ -156,13 +156,50 @@ export function buildInitializeTx(contractId: string, fields: InitializeFields):
 }
 
 export interface SubmitResult {
-  status: "SUCCESS" | "FAILED";
+  status: "SUCCESS" | "FAILED" | "PENDING";
   hash: string;
 }
 
-/** Submits a signed envelope. `refreshContractId` also refreshes the API's Postgres cache; `completeProposalId` marks a staged cancellation proposal finished. */
-export function submitTx(signedXdr: string, refreshContractId?: string, completeProposalId?: string): Promise<SubmitResult> {
-  return post<SubmitResult>("/transactions/submit", { xdr: signedXdr, refreshContractId, completeProposalId });
+/**
+ * How long submitTx keeps asking about a transaction the API answered
+ * PENDING (202) for. That only happens once the API's own 30 s
+ * confirmation poll has run out, so this is the second wait, not the first.
+ */
+export const PENDING_POLL = { intervalMs: 3000, attempts: 20 };
+
+/**
+ * Submits a signed envelope. `refreshContractId` also refreshes the API's
+ * Postgres cache; `completeProposalId` marks a staged cancellation
+ * proposal finished.
+ *
+ * Resolves only once the transaction is confirmed on-chain. When the API
+ * answers 202 PENDING, this polls GET /transactions/:hash, which also
+ * applies the same cache/proposal side effects on first SUCCESS. Before
+ * this, callers treated PENDING as success, re-read the chain, still saw
+ * the old status, and showed no message (issue #40, finding F1). A FAILED
+ * outcome, or one still unconfirmed when polling stops, throws, so every
+ * caller's existing error banner shows it. The thrown message names the
+ * hash and says not to resubmit.
+ *
+ * GET /transactions/:hash is safe to retry (read-only), so it uses `get`.
+ * The submit POST itself still never retries.
+ */
+export async function submitTx(signedXdr: string, refreshContractId?: string, completeProposalId?: string): Promise<SubmitResult> {
+  const submitted = await post<SubmitResult>("/transactions/submit", { xdr: signedXdr, refreshContractId, completeProposalId });
+  if (submitted.status !== "PENDING") return submitted;
+
+  const { hash } = submitted;
+  for (let attempt = 1; attempt <= PENDING_POLL.attempts; attempt++) {
+    const polled = await get<SubmitResult>(`/transactions/${encodeURIComponent(hash)}`);
+    if (polled.status === "SUCCESS") return polled;
+    if (polled.status === "FAILED") throw new Error(`Transaction ${hash} failed on-chain.`);
+    if (attempt < PENDING_POLL.attempts) {
+      await new Promise((resolve) => setTimeout(resolve, PENDING_POLL.intervalMs));
+    }
+  }
+  throw new Error(
+    `Transaction ${hash} was submitted but is not confirmed yet. Don't submit it again; refresh this commitment in a minute to see the result.`,
+  );
 }
 
 /** Mirrors api/src/server.ts's serializeProposal — the staged multi-party propose/sign/finalize flow's public shape, shared by `cancel` and `reassign_buyer`. */

@@ -221,6 +221,39 @@ describe("App", () => {
     expect(buildCall).toBeDefined();
   });
 
+  // Issue #40 finding F1: POST /transactions/submit answers 202
+  // {status: "PENDING"} when confirmation outlives the API's 30 s poll.
+  // That used to be treated as success: the app re-read the chain, got
+  // Draft back, and showed no message, so the lock looked like a no-op
+  // and the button came back for a second (doomed) submit.
+  it("waits for a PENDING lock to confirm before refreshing, instead of silently showing Draft", async () => {
+    const draftSummary = { ...summary, status: "Draft" };
+    const draftDetail: CommitmentDetail = { ...detail, status: "Draft" };
+    const lockedDetail: CommitmentDetail = { ...detail, status: "Locked" };
+
+    fetchMock.mockResolvedValueOnce(jsonResponse([draftSummary])); // initial list
+    fetchMock.mockResolvedValueOnce(jsonResponse(draftDetail)); // click row -> detail
+    fetchMock.mockResolvedValueOnce(jsonResponse({ proposal: null })); // CancelSection's background poll
+    fetchMock.mockResolvedValueOnce(jsonResponse({ proposal: null })); // ReassignBuyerSection's background poll
+    fetchMock.mockResolvedValueOnce(jsonResponse({ xdr: "UNSIGNED_XDR" })); // buildTx
+    fetchMock.mockResolvedValueOnce({ ...jsonResponse({ status: "PENDING", hash: "abc" }), status: 202 } as Response); // submitTx
+    fetchMock.mockResolvedValueOnce(jsonResponse({ status: "SUCCESS", hash: "abc" })); // GET /transactions/abc
+    fetchMock.mockResolvedValueOnce(jsonResponse(lockedDetail)); // post-lock refresh
+
+    vi.mocked(wallet.connectWallet).mockResolvedValueOnce(detail.buyer);
+    vi.mocked(wallet.signTransactionXdr).mockResolvedValueOnce("SIGNED_XDR");
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Connect wallet" }));
+    await user.click(await screen.findByTitle(draftSummary.contract_id));
+    await user.click(await screen.findByRole("button", { name: "Lock deposit" }));
+
+    await waitFor(() => expect(screen.getByText("Locked")).toBeInTheDocument());
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/transactions/abc"))).toBe(true);
+  });
+
   it("settles a Delivered commitment as a non-buyer, non-cooperative wallet (permissionless)", async () => {
     const deliveredSummary = { ...summary, status: "Delivered" };
     const deliveredDetail: CommitmentDetail = { ...detail, status: "Delivered" };
