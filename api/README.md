@@ -855,8 +855,13 @@ which the live end-to-end test caught as a failed assertion, not a crash.
 ## What's not built yet
 
 - The voucher/SDP pieces mentioned above — nothing exists for these yet.
+  See [`../docs/sdp-integration-plan.md`](../docs/sdp-integration-plan.md)
+  (issue #4) for the decided integration shape and its prerequisites.
 - Auth/sessions for the frontends — out of scope for MVP per PRD, but the
-  data model shouldn't assume a single user (see `TASKS.md`).
+  data model shouldn't assume a single user (see `TASKS.md`). The model is
+  now decided on paper in
+  [`../docs/identity-session-model.md`](../docs/identity-session-model.md)
+  (issue #5); it is not implemented.
 - No endpoint refreshes the Postgres cache for a contract nobody has
   called `GET /commitments/:contractId` on recently — there's no
   background poller yet, so the list view can go stale for commitments no
