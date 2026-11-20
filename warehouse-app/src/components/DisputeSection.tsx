@@ -154,10 +154,17 @@ export function DisputeSection({
 
   return (
     <div className="dispute-section">
-      {error && <div className="error-banner">{error}</div>}
+      {/* `role="alert"` so the rejection message is announced rather than
+          silently painted above the button the user just activated. */}
+      {error && <div className="error-banner" role="alert">{error}</div>}
 
       {!disputed && (
-        <button className="action-button secondary" onClick={handleFlag} disabled={busy}>
+        <button
+          className="action-button secondary"
+          onClick={handleFlag}
+          disabled={busy}
+          aria-busy={busy}
+        >
           {busy ? "Flagging…" : "Flag a dispute"}
         </button>
       )}
@@ -167,37 +174,52 @@ export function DisputeSection({
           <p className="cancel-status">
             This commitment is disputed — every other action is frozen until it's resolved.
           </p>
-          <button className="action-button secondary" onClick={handlePropose} disabled={busy}>
+          <button
+            className="action-button secondary"
+            onClick={handlePropose}
+            disabled={busy}
+            aria-busy={busy}
+          >
             {busy ? "Proposing…" : "Propose resolving this dispute"}
           </button>
         </>
       )}
 
       {proposal?.status === "pending" && iAmProposer && (
-        <p className="cancel-status">Resolution proposed — waiting for the other two parties to approve.</p>
+        <p className="cancel-status" role="status">Resolution proposed — waiting for the other two parties to approve.</p>
       )}
 
       {proposal?.status === "pending" && isPendingSigner && (
         <>
-          <p className="cancel-status">A party wants to resolve this dispute and resume normal processing.</p>
-          <button className="action-button secondary" onClick={handleApprove} disabled={busy}>
+          <p className="cancel-status" role="status">A party wants to resolve this dispute and resume normal processing.</p>
+          <button
+            className="action-button secondary"
+            onClick={handleApprove}
+            disabled={busy}
+            aria-busy={busy}
+          >
             {busy ? "Approving…" : "Approve resolution"}
           </button>
         </>
       )}
 
       {proposal?.status === "pending" && justApproved && !isPendingSigner && !iAmProposer && (
-        <p className="cancel-status">Approved — waiting for the remaining party to approve too.</p>
+        <p className="cancel-status" role="status">Approved — waiting for the remaining party to approve too.</p>
       )}
 
       {proposal?.status === "ready" && iAmProposer && (
-        <button className="action-button secondary" onClick={handleFinalize} disabled={busy}>
+        <button
+          className="action-button secondary"
+          onClick={handleFinalize}
+          disabled={busy}
+          aria-busy={busy}
+        >
           {busy ? "Finalizing…" : "Finalize resolution"}
         </button>
       )}
 
       {proposal?.status === "ready" && !iAmProposer && (
-        <p className="cancel-status">Approved — waiting for the proposer to finalize.</p>
+        <p className="cancel-status" role="status">Approved — waiting for the proposer to finalize.</p>
       )}
     </div>
   );

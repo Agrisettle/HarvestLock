@@ -42,6 +42,20 @@
   margin-bottom: clamp(3.2rem, 6vw, 4.8rem);
 }
 
+.hero-cta .btn:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 3px;
+}
+
+.hero-cta .btn-ghost {
+  border-color: var(--bone-dim);
+}
+
+.hero-cta .btn-ghost:hover {
+  border-color: var(--gold-bright);
+  color: var(--gold-bright);
+}
+
 .hero-stats {
   display: flex;
   align-items: center;
