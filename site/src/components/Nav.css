@@ -58,10 +58,11 @@
 }
 
 .nav-github {
-  border: 1px solid var(--void-line);
+  border: 1px solid var(--bone-dim);
   padding: 0.5em 1em;
   border-radius: 3px;
   color: var(--bone) !important;
+  transition: border-color 0.2s var(--ease), color 0.2s var(--ease);
 }
 
 .nav-github:hover,

@@ -17,6 +17,7 @@ export function Nav() {
             target="_blank"
             rel="noreferrer noopener"
             className="nav-github"
+            aria-label="View Agrisettle/HarvestLock repository on GitHub (opens in a new tab)"
           >
             GitHub
           </a>

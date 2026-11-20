@@ -41,3 +41,42 @@ describe("Nav keyboard navigation (Issue #107)", () => {
     expect(img).toHaveAttribute("aria-hidden", "true");
   });
 });
+
+describe("Nav color contrast & ARIA labeling (Issue #108)", () => {
+  it("provides accessible name and new tab notice on external GitHub link", () => {
+    render(<Nav />);
+    const githubLink = screen.getByRole("link", {
+      name: /view agrisettle\/harvestlock repository on github \(opens in a new tab\)/i,
+    });
+    expect(githubLink).toBeInTheDocument();
+    expect(githubLink).toHaveAttribute("rel", "noreferrer noopener");
+  });
+
+  it("verifies contrast ratios meet WCAG AA requirements", () => {
+    const lum = (hex: string) => {
+      const rgb = [hex.slice(1, 3), hex.slice(3, 5), hex.slice(5, 7)].map((c) => parseInt(c, 16) / 255);
+      const [r, g, b] = rgb.map((c) => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)));
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const contrastRatio = (hex1: string, hex2: string) => {
+      const [l1, l2] = [lum(hex1), lum(hex2)].sort((a, b) => b - a);
+      return (l1 + 0.05) / (l2 + 0.05);
+    };
+
+    const voidBg = "#0b120f";
+    const bone = "#f3f1e9";
+    const boneDim = "#c9c6ba";
+    const gold = "#d4a937";
+    const goldBright = "#eec765";
+
+    // Text contrast (WCAG AA: >= 4.5:1)
+    expect(contrastRatio(bone, voidBg)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(boneDim, voidBg)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(gold, voidBg)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(goldBright, voidBg)).toBeGreaterThanOrEqual(4.5);
+
+    // Non-text UI boundary contrast (WCAG AA SC 1.4.11: >= 3.0:1)
+    expect(contrastRatio(boneDim, voidBg)).toBeGreaterThanOrEqual(3.0);
+    expect(contrastRatio(gold, voidBg)).toBeGreaterThanOrEqual(3.0);
+  });
+});
