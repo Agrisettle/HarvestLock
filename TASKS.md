@@ -78,3 +78,4 @@ Target shape per PRD §17: TypeScript/Node, Postgres, talks to the deployed Soro
 ## How this file is meant to be used
 
 Pick an unblocked task, say so before starting on anything nontrivial (avoids duplicate work), build it with the same rigor as everything shipped so far — real tests, testnet verification where applicable, HANDOFF.md updated in the same PR, not a follow-up that may never happen. Check the box here when it's actually done, not when it's started.
+\n
