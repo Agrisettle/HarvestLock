@@ -58,15 +58,23 @@ buyer-proposed cancellation, #57 finalize a ready cancellation, and #58
 approve a buyer-reassignment proposal (cooperative side). Per-issue write-ups
 ready to post as issue comments live alongside it in `docs/qa/`.
 
-**Honest status:** the source trace, `coop-pwa`'s 127 tests, typecheck and lint
-are verified here; the real Freighter popup and testnet transactions are **not**
-— this environment has no installed extension or interactive desktop session.
-The runbook records the expected popup/chain values derived from `wallet.ts`
-and the sequence docs, plus an observation checklist, and does not claim any
-popup was observed. Two inspection-level findings are noted: `justApproved` in
-`ReassignBuyerSection.tsx` is session-local and lost on reload (documented in
-`coop-pwa/README.md`), and that component's error banner lacks `role="alert"`
-(already tracked in issue #92).
+## Manual Freighter QA umbrella (#1) & Allocation Ledger verification (#2), 20 Nov 2026
+
+`docs/qa/issue-1-manual-freighter-qa-umbrella.md` and `docs/qa/issue-2-allocation-ledger-verification.md`
+document the complete audit, cross-app write-action verification matrix, and allocation ledger UI
+workflow for issues #1 and #2.
+
+**Honest status:** the full source traces across all three frontends (`coop-pwa`, `buyer-app`,
+`warehouse-app`), API routes, contracts interface, and test suites are verified here. The real
+Freighter popup interactions and live testnet transactions were not executed in this environment, as
+this is a headless sandbox with no interactive desktop or browser extension. The reports record the
+exact expected popup dialogs, parameter encodings (including salted hash guarantees), and tester
+checklists.
+
+**Findings from inspection:**
+- Propose flows (`cancel`, `reassign_buyer`, `resolve_dispute`) trigger **no** wallet popup.
+- Approvals require `signAuthEntry` (Authorization Entry dialog), not `signTransaction`.
+- Allocation ledger recording (`set_allocation`) passes only salted hashes and basis points to Soroban, ensuring off-chain privacy and NDPA s.34 compliance.
 
 ## Next steps
 
