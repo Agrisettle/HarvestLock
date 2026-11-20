@@ -26,11 +26,11 @@ const failures = [
 
 export function Problem() {
   return (
-    <section id="problem">
+    <section id="problem" aria-labelledby="problem-heading">
       <div className="wrap">
         <Reveal as="div" className="section-head">
           <div className="eyebrow">The problem</div>
-          <h2>The price crash isn&rsquo;t a market failure. It&rsquo;s a timing failure.</h2>
+          <h2 id="problem-heading">The price crash isn&rsquo;t a market failure. It&rsquo;s a timing failure.</h2>
           <p className="lede">
             Harvest is the moment of maximum weakness — the crop is
             perishable, storage is scarce, and everyone sells at once. Four
@@ -38,15 +38,22 @@ export function Problem() {
           </p>
         </Reveal>
 
-        <div className="problem-grid">
+        <ol className="problem-grid" role="list" aria-label="Compounding harvest timing failures">
           {failures.map((f, i) => (
-            <Reveal as="div" key={f.n} delay={i * 90} className="problem-card">
-              <span className="problem-n mono">{f.n}</span>
+            <Reveal
+              as="li"
+              key={f.n}
+              delay={i * 90}
+              className="problem-card"
+              tabIndex={0}
+              aria-label={`Failure ${f.n}: ${f.title}`}
+            >
+              <span className="problem-n mono" aria-hidden="true">{f.n}</span>
               <h3>{f.title}</h3>
               <p>{f.body}</p>
             </Reveal>
           ))}
-        </div>
+        </ol>
       </div>
     </section>
   );

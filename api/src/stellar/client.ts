@@ -5,10 +5,11 @@ import {
   Keypair,
   scValToNative,
   rpc,
+  Account,
 } from "@stellar/stellar-sdk";
 import { server, networkPassphrase } from "./rpc.js";
 import { withRetry } from "./retry.js";
-import { ConfigurationError } from "../errors.js";
+import { ConfigurationError, contractErrorFromSimulation } from "../errors.js";
 
 /**
  * Every read in this module works by *simulating* a contract invocation —
@@ -19,44 +20,81 @@ import { ConfigurationError } from "../errors.js";
  * the commitment being read.
  */
 
-function readerKeypair(): Keypair {
+function readerPublicKey(): string {
   const secret = process.env.DEPLOYER_SECRET_KEY;
   if (!secret) {
     throw new ConfigurationError("DEPLOYER_SECRET_KEY is not set — needed as the simulation source account");
   }
-  return Keypair.fromSecret(secret);
+  return Keypair.fromSecret(secret).publicKey();
 }
 
-async function simulateRead(contractId: string, method: string) {
-  const reader = readerKeypair();
-  // Retried, not the checks below: both of these are real network calls
-  // that have been observed to throw transiently on this RPC (a stale
-  // "Account not found" read right after a successful transaction, and a
-  // bare fetch failure) — see api/HANDOFF.md's "Known testnet flakiness"
-  // and src/stellar/retry.ts. A *legitimate* simulation error (e.g. the
-  // contract genuinely isn't initialized) comes back as a normal return
-  // value, not a throw, so it's never accidentally retried here.
-  const account = await withRetry(() => server.getAccount(reader.publicKey()));
-  const contract = new Contract(contractId);
+/**
+ * Short in-memory cache for read simulations (#407). Configurable via
+ * READ_CACHE_TTL_MS; 0 disables caching. Single-flight coalesces concurrent
+ * reads of the same (contract, method) onto one in-flight promise.
+ */
+const READ_CACHE_TTL_MS = Number(process.env.READ_CACHE_TTL_MS ?? 5_000);
+const readCache = new Map<string, { value: unknown; expiresAt: number }>();
+const inFlight = new Map<string, Promise<unknown>>();
 
-  const tx = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase })
-    .addOperation(contract.call(method))
-    .setTimeout(30)
-    .build();
+/** Test hook: drop every cached/in-flight read. */
+export function clearReadCache(): void {
+  readCache.clear();
+  inFlight.clear();
+}
 
-  const sim = await withRetry(() => server.simulateTransaction(tx));
-
-  if (rpc.Api.isSimulationError(sim)) {
-    throw new Error(`contract simulation failed for ${method}: ${sim.error}`);
-  }
-  if (!rpc.Api.isSimulationSuccess(sim)) {
-    throw new Error(`contract simulation did not succeed for ${method}`);
-  }
-  if (!sim.result) {
-    throw new Error(`contract simulation for ${method} returned no result`);
+async function simulateRead(contractId: string, method: string): Promise<unknown> {
+  const key = `${contractId}:${method}`;
+  const now = Date.now();
+  const cached = readCache.get(key);
+  if (READ_CACHE_TTL_MS > 0 && cached && cached.expiresAt > now) {
+    return cached.value;
   }
 
-  return scValToNative(sim.result.retval);
+  const existing = inFlight.get(key);
+  if (existing) return existing;
+
+  const promise = (async () => {
+    // Simulation never checks sequence numbers, so a fixed Account with
+    // sequence "0" is sufficient — no server.getAccount() round trip.
+    const account = new Account(readerPublicKey(), "0");
+    const contract = new Contract(contractId);
+
+    const tx = new TransactionBuilder(account, { fee: BASE_FEE, networkPassphrase })
+      .addOperation(contract.call(method))
+      .setTimeout(30)
+      .build();
+
+    const sim = await withRetry(() => server.simulateTransaction(tx));
+
+    if (rpc.Api.isSimulationError(sim)) {
+      throw (
+        contractErrorFromSimulation(method, sim.error, {
+          notFoundOnMissingInstance: true,
+          contractId,
+        }) ?? new Error(`contract simulation failed for ${method}: ${sim.error}`)
+      );
+    }
+    if (!rpc.Api.isSimulationSuccess(sim)) {
+      throw new Error(`contract simulation did not succeed for ${method}`);
+    }
+    if (!sim.result) {
+      throw new Error(`contract simulation for ${method} returned no result`);
+    }
+
+    return scValToNative(sim.result.retval);
+  })();
+
+  inFlight.set(key, promise);
+  try {
+    const value = await promise;
+    if (READ_CACHE_TTL_MS > 0) {
+      readCache.set(key, { value, expiresAt: Date.now() + READ_CACHE_TTL_MS });
+    }
+    return value;
+  } finally {
+    inFlight.delete(key);
+  }
 }
 
 export interface Commitment {

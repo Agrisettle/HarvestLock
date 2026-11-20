@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { MultisigProposal, CommitmentDetail as CommitmentDetailType } from "../api";
 import { getReassignBuyerProposal, proposeReassignBuyer, signMultisigProposal, submitTx } from "../api";
+import { useI18n } from "../i18n";
 import { signAuthEntry, signTransactionXdr } from "../wallet";
 
 /** Mirrors lib.rs's reassign_buyer() reachable-state range — same as cancel()'s, Draft through ReadyForDelivery. */
@@ -46,6 +47,7 @@ export function ReassignBuyerSection({
   walletAddress: string | null;
   onReassigned: () => void;
 }) {
+  const { t } = useI18n();
   const [proposal, setProposal] = useState<MultisigProposal | null>(null);
   const [newBuyerInput, setNewBuyerInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -129,47 +131,47 @@ export function ReassignBuyerSection({
 
       {!proposal && isCurrentBuyer && (
         <form className="reassign-form" onSubmit={handlePropose}>
-          <label htmlFor="new-buyer-address">Reassign to a new buyer</label>
+          <label htmlFor="new-buyer-address">{t("reassign.label")}</label>
           <input
             id="new-buyer-address"
             value={newBuyerInput}
             onChange={(e) => setNewBuyerInput(e.target.value)}
-            placeholder="G..."
+            placeholder={t("reassign.placeholder")}
             spellCheck={false}
           />
           <button className="action-button secondary" type="submit" disabled={busy || !newBuyerInput.trim()}>
-            {busy ? "Proposing…" : "Propose reassignment"}
+            {busy ? t("reassign.proposing") : t("reassign.propose")}
           </button>
         </form>
       )}
 
       {proposal?.status === "pending" && proposal.proposer_address === walletAddress && (
-        <p className="cancel-status">
-          Reassignment proposed — waiting for the cooperative and the new buyer to approve.
+        <p className="cancel-status" role="status">
+          {t("reassign.proposed")}
         </p>
       )}
 
       {proposal?.status === "pending" && isPendingSigner && (
         <>
-          <p className="cancel-status">The current buyer wants to reassign this commitment to a new buyer.</p>
+          <p className="cancel-status" role="status">{t("reassign.otherWants")}</p>
           <button className="action-button secondary" onClick={handleApprove} disabled={busy}>
-            {busy ? "Approving…" : "Approve reassignment"}
+            {busy ? t("reassign.approving") : t("reassign.approve")}
           </button>
         </>
       )}
 
       {proposal?.status === "pending" && justApproved && !isPendingSigner && (
-        <p className="cancel-status">Approved — waiting for the other party to approve too.</p>
+        <p className="cancel-status" role="status">{t("reassign.approvedWaitingOther")}</p>
       )}
 
       {proposal?.status === "ready" && proposal.proposer_address === walletAddress && (
         <button className="action-button secondary" onClick={handleFinalize} disabled={busy}>
-          {busy ? "Finalizing…" : "Finalize reassignment"}
+          {busy ? t("reassign.finalizing") : t("reassign.finalize")}
         </button>
       )}
 
       {proposal?.status === "ready" && proposal.proposer_address !== walletAddress && (
-        <p className="cancel-status">Approved — waiting for the current buyer to finalize.</p>
+        <p className="cancel-status" role="status">{t("reassign.approvedWaitingBuyer")}</p>
       )}
     </div>
   );

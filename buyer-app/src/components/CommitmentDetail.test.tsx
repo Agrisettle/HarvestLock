@@ -94,6 +94,12 @@ describe("CommitmentDetail's pendingSummary (buyer-specific framing)", () => {
 });
 
 describe("CommitmentDetail's shared formatting", () => {
+  it("shows claim deadlines in UTC with an explicit timezone label", () => {
+    const commitment = { ...baseCommitment, advance1_deadline: "1798245397" };
+    render(<CommitmentDetail commitment={commitment} contractId="CXXX" {...noopProps} />);
+    expect(screen.getByText("26 Dec 2026, 00:36 UTC")).toBeInTheDocument();
+  });
+
   it("labels the buyer's own address distinctly", () => {
     render(<CommitmentDetail commitment={baseCommitment} contractId="CXXX" {...noopProps} />);
     expect(screen.getByText("Buyer (you)")).toBeInTheDocument();
@@ -102,7 +108,7 @@ describe("CommitmentDetail's shared formatting", () => {
   it("leads with total locked, not a raw party address", () => {
     render(<CommitmentDetail commitment={baseCommitment} contractId="CXXX" {...noopProps} />);
     expect(screen.getByText("Total locked")).toBeInTheDocument();
-    expect(screen.getByText(baseCommitment.total_amount)).toBeInTheDocument();
+    expect(screen.getByText("100.00")).toBeInTheDocument();
   });
 });
 
@@ -182,5 +188,68 @@ describe("CommitmentDetail's action button", () => {
       />,
     );
     expect(screen.getByText(/something went wrong/)).toBeInTheDocument();
+  });
+});
+
+describe("CommitmentDetail keyboard navigation & accessibility (Issue #69)", () => {
+  it("renders action button with type='button' and aria-busy when in flight", () => {
+    const draft = { ...baseCommitment, status: "Draft" };
+    const { rerender } = render(
+      <CommitmentDetail
+        commitment={draft}
+        contractId="CXXX"
+        {...noopProps}
+        walletAddress={baseCommitment.buyer}
+        actionInFlight={false}
+      />,
+    );
+    const button = screen.getByRole("button", { name: "Lock deposit" });
+    expect(button).toHaveAttribute("type", "button");
+    expect(button).toHaveAttribute("aria-busy", "false");
+
+    rerender(
+      <CommitmentDetail
+        commitment={draft}
+        contractId="CXXX"
+        {...noopProps}
+        walletAddress={baseCommitment.buyer}
+        actionInFlight={true}
+      />,
+    );
+    const busyButton = screen.getByRole("button", { name: "Locking…" });
+    expect(busyButton).toHaveAttribute("aria-busy", "true");
+  });
+
+  it("renders error banner with role='alert' for immediate screen reader announcement", () => {
+    render(
+      <CommitmentDetail
+        commitment={baseCommitment}
+        contractId="CXXX"
+        {...noopProps}
+        actionError="lock -> 500: network timeout"
+      />,
+    );
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent("network timeout");
+  });
+
+  it("provides accessible tranche table structure with scope attributes and keyboard-accessible scroll region", () => {
+    render(<CommitmentDetail commitment={baseCommitment} contractId="CXXX" {...noopProps} />);
+    const region = screen.getByRole("region", { name: "Tranche schedule" });
+    expect(region).toHaveAttribute("tabIndex", "0");
+
+    const columnHeaders = screen.getAllByRole("columnheader");
+    expect(columnHeaders).toHaveLength(4);
+    expect(columnHeaders.map((h) => h.textContent)).toEqual(["Tranche", "Share", "Claim deadline", "State"]);
+    for (const h of columnHeaders) {
+      expect(h).toHaveAttribute("scope", "col");
+    }
+
+    const rowHeaders = screen.getAllByRole("rowheader");
+    expect(rowHeaders).toHaveLength(2);
+    expect(rowHeaders.map((h) => h.textContent)).toEqual(["Advance 1", "Advance 2"]);
+    for (const h of rowHeaders) {
+      expect(h).toHaveAttribute("scope", "row");
+    }
   });
 });

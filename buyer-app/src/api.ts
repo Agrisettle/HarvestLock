@@ -1,3 +1,5 @@
+import { withRetry } from "./retry";
+
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
 
 /** Mirrors api/src/server.ts's serializeCommitment — every bigint on the
@@ -60,8 +62,17 @@ export interface CommitmentSummary {
   updated_at: string;
 }
 
+// Retry policy: only a transport failure (fetch rejecting) is ever retried,
+// never a server rejection, and only for calls that are safe to replay.
+// GETs always are. A POST is retried only when the call opts in with
+// `{ retry: true }`, which is reserved for building unsigned XDR (no side
+// effects). A transport failure can land *after* the request reached the
+// API (e.g. a mobile connection dropping during the 30 s submit poll), so
+// `/commitments/deploy` (would deploy a second, orphaned contract),
+// `/transactions/submit` (re-sends a possibly in-flight transaction) and the
+// propose/sign calls (can race themselves) are never retried.
 async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`);
+  const res = await withRetry(() => fetch(`${API_URL}${path}`));
   if (!res.ok) {
     const body = await res.text();
     throw new Error(`${path} -> ${res.status}: ${body}`);
@@ -69,12 +80,14 @@ async function get<T>(path: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-async function post<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
+async function post<T>(path: string, body: unknown, opts: { retry?: boolean } = {}): Promise<T> {
+  const send = () =>
+    fetch(`${API_URL}${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  const res = opts.retry ? await withRetry(send) : await send();
   if (!res.ok) {
     const responseBody = await res.text();
     throw new Error(`${path} -> ${res.status}: ${responseBody}`);
@@ -87,19 +100,28 @@ export function getCommitment(contractId: string): Promise<CommitmentDetail> {
   return get<CommitmentDetail>(`/commitments/${encodeURIComponent(contractId)}`);
 }
 
-/** Postgres-cached list — the only way to enumerate commitments, since the chain has no such query. */
-export function listCommitments(): Promise<CommitmentSummary[]> {
-  return get<CommitmentSummary[]>("/commitments");
+/**
+ * Postgres-cached list — the only way to enumerate commitments, since the
+ * chain has no such query. Pass `{ limit, offset }` to fetch one page of
+ * the list instead of the first page: the API (api/src/db/commitments.ts)
+ * defaults to 20 per page and clamps anything above its hard maximum, so
+ * callers should treat a page of exactly `limit` rows as "maybe more",
+ * not "done" — there is no total in the response shape.
+ */
+export function listCommitments(page?: { limit: number; offset: number }): Promise<CommitmentSummary[]> {
+  if (!page) return get<CommitmentSummary[]>("/commitments");
+  const query = new URLSearchParams({ limit: String(page.limit), offset: String(page.offset) });
+  return get<CommitmentSummary[]>(`/commitments?${query.toString()}`);
 }
 
 /** Builds unsigned XDR for a no-argument lifecycle method (`lock`, `settle`). The caller's wallet signs it next. */
 export function buildTx(contractId: string, method: string, sourcePublicKey: string): Promise<{ xdr: string }> {
-  return post<{ xdr: string }>(`/commitments/${encodeURIComponent(contractId)}/tx/${method}`, { sourcePublicKey });
+  return post<{ xdr: string }>(`/commitments/${encodeURIComponent(contractId)}/tx/${method}`, { sourcePublicKey }, { retry: true });
 }
 
 /** Builds unsigned `flag_dispute` XDR. `flagger` must be the commitment's buyer, cooperative, or warehouse operator (enforced on-chain) — single-signer, so unlike resolve_dispute this needs no multi-party staging. */
 export function buildFlagDisputeTx(contractId: string, flagger: string, sourcePublicKey: string): Promise<{ xdr: string }> {
-  return post<{ xdr: string }>(`/commitments/${encodeURIComponent(contractId)}/tx/flag-dispute`, { flagger, sourcePublicKey });
+  return post<{ xdr: string }>(`/commitments/${encodeURIComponent(contractId)}/tx/flag-dispute`, { flagger, sourcePublicKey }, { retry: true });
 }
 
 /** Deploys a fresh, uninitialized escrow contract instance. Deployer-paid — no party signature needed for this step. */
@@ -130,7 +152,7 @@ export interface InitializeFields {
 
 /** Builds unsigned `initialize` XDR for a freshly-deployed contract. Must be signed by `fields.buyer`. */
 export function buildInitializeTx(contractId: string, fields: InitializeFields): Promise<{ xdr: string }> {
-  return post<{ xdr: string }>(`/commitments/${encodeURIComponent(contractId)}/tx/initialize`, fields);
+  return post<{ xdr: string }>(`/commitments/${encodeURIComponent(contractId)}/tx/initialize`, fields, { retry: true });
 }
 
 export interface SubmitResult {

@@ -1,0 +1,19 @@
+{
+  "name": "harvestlock-e2e",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Real end-to-end Playwright smoke tests: each frontend driven in a real browser against a real locally-running API and real Stellar testnet, with a throwaway testnet keypair injected in place of a Freighter extension. Gated behind E2E_LIVE=1 -- see README.md.",
+  "scripts": {
+    "test": "playwright test",
+    "typecheck": "tsc --noEmit",
+    "install-browsers": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "@stellar/stellar-sdk": "^17.2.1",
+    "@types/node": "^26.6.5",
+    "dotenv": "^17.4.2",
+    "typescript": "^7.0.2"
+  }
+}

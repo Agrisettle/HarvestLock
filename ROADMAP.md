@@ -298,6 +298,23 @@ funding gate, not just an internal milestone — target them explicitly.
       component tests.
 - [ ] SDP integration: deploy (do not fork, PRD §17.1) SDP, get one real
       phone-number-provisioned wallet, execute one split payout to it.
+      **Deployed; split payout on-chain — one caveat**, 18 Oct 2026 —
+      upstream `stellar/sdp-v2:latest` (v7.0.0) on testnet, no fork, no
+      source changes; a two-member split payout (0.12 + 0.08 XLM) delivered
+      into two phone-provisioned embedded wallets (Soroban smart-wallet
+      contracts, one per member), plus two classic-payout verification
+      batches — all hashes in `docs/sdp-spike.md`. **The passkey ceremony
+      was driven through the same endpoint the wallet SDK calls with a
+      generated P-256 key rather than a real browser WebAuthn ceremony,
+      and SMS stayed in SDP's DRY_RUN mode**, so the remaining gap is a
+      real phone, a real SMS provider and a real browser passkey — not
+      platform capability. One operational finding: a reused passkey key
+      collides at contract-deploy time (`contract already exists`) with no
+      auto-retry in SDP, so the wiring must generate a fresh key per
+      receiver and monitor provisioning failures. **Integration plan, 20 Nov
+      2026:** [docs/sdp-integration-plan.md](./docs/sdp-integration-plan.md)
+      decides a manual-first trigger, idempotency/schema, config and the
+      real-phone/SMS/passkey + TIRM prerequisites. Still not implemented.
 - [x] Reflector integration with the staleness bound built in Track B, now
       wired to live testnet data. **Done**, 5 Sept 2026 — `oracle_rate()`
       made a genuine cross-contract call to Reflector's real testnet fiat
@@ -325,7 +342,11 @@ funding gate, not just an internal milestone — target them explicitly.
       architectural difference, not a rounding error; see
       `docs/key-recovery-exercise.md` for the full comparison, a real
       run's actual testnet addresses/tx hashes, and the product decision
-      this still leaves open.
+      this still leaves open. **Design proposal, 20 Nov 2026:**
+      [`docs/cooperative-wallet-recovery.md`](./docs/cooperative-wallet-recovery.md)
+      recommends the PRD's Soroban smart-wallet route with classic
+      multisig kept only as a documented fallback, gated on a live
+      escrow/client-support spike. Not implemented.
 
 ### Mainnet + UX tranche (SCF: 40%)
 

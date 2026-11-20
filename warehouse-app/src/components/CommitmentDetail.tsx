@@ -4,6 +4,16 @@ import { AddressChip } from "./AddressChip";
 import { ConfirmDeliveryForm } from "./ConfirmDeliveryForm";
 import { DisputeSection } from "./DisputeSection";
 
+const deadlineFormatter = new Intl.DateTimeFormat("en-GB", {
+  dateStyle: "medium",
+  timeStyle: "short",
+  timeZone: "UTC",
+});
+
+function formatDeadline(unixSecs: string): string {
+  return `${deadlineFormatter.format(new Date(Number(unixSecs) * 1000))} UTC`;
+}
+
 function formatBps(bps: number): string {
   return `${(bps / 100).toFixed(2)}%`;
 }
@@ -16,6 +26,22 @@ function formatBps(bps: number): string {
  * call them.
  */
 type Action = "checkpoint" | "deliver" | null;
+
+/*
+ * Loading/error/empty states (UX audit, #182):
+ *   • Loading   — owned by App.tsx: while `detailLoading` is true it renders
+ *     <div className="loading-state">Reading {contractId} from chain…</div>;
+ *     in-flight actions show "Marking checkpoint…"/"Confirming…" on disabled
+ *     buttons instead of going blank.
+ *   • Error     — `detailError` (chain lookup failure) and `actionError`
+ *     (signing/submission failure) both render the shared `error-banner` with
+ *     the specific upstream message (api.ts's `get`/`post` surface
+ *     `${path} -> ${status}: ${body}`), never a generic "something went wrong".
+ *   • Empty     — there is no separate empty state: a loaded commitment always
+ *     renders its detail card, and a commitment that doesn't exist surfaces as
+ *     a 404 error banner rather than an empty page. Before a contract ID has
+ *     been looked up, the lookup form stays on screen.
+ */
 
 function nextAction(c: CommitmentDetailType): Action {
   if (c.status === "Advance1Released") return "checkpoint";
@@ -86,6 +112,7 @@ export function CommitmentDetail({
       {(commitment.status === "Delivered" || commitment.status === "Settled") && (
         <div className="delivery-record">
           <h3>Delivery attested</h3>
+          <p className="delivery-reference">Contract {contractId}</p>
           <dl className="party-grid">
             <div>
               <dt>Delivered quantity</dt>
@@ -104,6 +131,9 @@ export function CommitmentDetail({
               <dd>{formatBps(commitment.settlement_bps)} of contract value</dd>
             </div>
           </dl>
+          <button className="print-receipt-button" onClick={() => window.print()}>
+            Print receipt
+          </button>
         </div>
       )}
 
@@ -126,26 +156,28 @@ export function CommitmentDetail({
         </div>
         <div>
           <dt>Delivery deadline</dt>
-          <dd>{new Date(Number(commitment.delivery_deadline) * 1000).toLocaleString()}</dd>
+          <dd>{formatDeadline(commitment.delivery_deadline)}</dd>
         </div>
       </dl>
 
-      <table className="tranches">
-        <thead>
-          <tr>
-            <th>Grade</th>
-            <th>Price multiplier</th>
-          </tr>
-        </thead>
-        <tbody>
-          {commitment.grade_price_bps.map((bps, i) => (
-            <tr key={i}>
-              <td>Grade {i}</td>
-              <td>{formatBps(bps)}</td>
+      <div className="tranches-scroll" role="region" aria-label="Grade price schedule" tabIndex={0}>
+        <table className="tranches">
+          <thead>
+            <tr>
+              <th>Grade</th>
+              <th>Price multiplier</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {commitment.grade_price_bps.map((bps, i) => (
+              <tr key={i}>
+                <td>Grade {i}</td>
+                <td>{formatBps(bps)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

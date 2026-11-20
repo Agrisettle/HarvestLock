@@ -180,3 +180,13 @@ succeeded normally. `api/`'s `simulateRead` now retries transient
 failures automatically (`src/stellar/retry.ts`, added after a second,
 different occurrence made this stop being speculative) — see
 `api/HANDOFF.md`.
+
+## Accessibility assertions in component tests
+
+`src/a11y.ts` exports `expectNoA11yViolations(container)`, which runs
+axe-core against a rendered component. To cover a new component, take the
+`container` from the existing `render(...)` in its test and end the test
+with `await expectNoA11yViolations(container);` for each state that
+matters (empty, error, pending, ready). `color-contrast` is disabled
+because jsdom can't compute it; contrast stays a manual and Lighthouse
+check (#145, #152).

@@ -1,0 +1,657 @@
+openapi: 3.1.0
+info:
+  title: HarvestLock API
+  version: 0.1.0
+  description: >-
+    HTTP API for building unsigned Soroban transactions, submitting wallet-signed
+    envelopes, reading commitment state, and coordinating staged multi-party
+    proposals. The API never signs a party's lifecycle transaction.
+servers:
+  - url: /
+    description: Relative to the deployed API origin.
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Liveness check
+      responses:
+        '200':
+          description: API process is alive.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: { type: boolean, const: true }
+  /version:
+    get:
+      operationId: getVersion
+      summary: Get deployed build metadata
+      responses:
+        '200':
+          description: Commit SHA and UTC timestamp recorded by the API build.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [commitSha, buildTimestamp]
+                properties:
+                  commitSha: { type: string }
+                  buildTimestamp: { type: string, format: date-time }
+  /commitments/deploy:
+    post:
+      operationId: deployCommitment
+      summary: Deploy an uninitialized escrow contract instance
+      description: Deployer-paid; this does not initialize the commitment.
+      responses:
+        '201':
+          description: Contract deployed.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [contractId]
+                properties:
+                  contractId: { type: string }
+        default: { $ref: '#/components/responses/Error' }
+  /commitments/{contractId}/tx/initialize:
+    post:
+      operationId: buildInitializeTransaction
+      summary: Build unsigned initialize transaction XDR
+      parameters:
+        - $ref: '#/components/parameters/contractId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InitializeRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/Xdr' }
+        '400': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+  /commitments/{contractId}/tx/{method}:
+    post:
+      operationId: buildNoArgumentTransaction
+      summary: Build an unsigned no-argument lifecycle transaction
+      description: >-
+        `method` must be one of lock, release_advance_1, claim_advance_1,
+        reclaim_advance_1, mark_checkpoint, release_advance_2, claim_advance_2,
+        reclaim_advance_2, settle, cancel, ready_for_delivery, fund_remainder,
+        expire_remainder_window, reclaim_on_nondelivery, resolve_dispute, or
+        expire_dispute_window. Contract authorization is enforced on-chain.
+      parameters:
+        - $ref: '#/components/parameters/contractId'
+        - name: method
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [lock, release_advance_1, claim_advance_1, reclaim_advance_1, mark_checkpoint, release_advance_2, claim_advance_2, reclaim_advance_2, settle, cancel, ready_for_delivery, fund_remainder, expire_remainder_window, reclaim_on_nondelivery, resolve_dispute, expire_dispute_window]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sourcePublicKey]
+              properties:
+                sourcePublicKey: { type: string, description: Stellar public key used as transaction source. }
+      responses:
+        '200': { $ref: '#/components/responses/Xdr' }
+        '400': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+  /commitments/{contractId}/tx/reassign-buyer:
+    post:
+      operationId: buildReassignBuyerTransaction
+      summary: Build unsigned reassign_buyer transaction XDR
+      parameters:
+        - $ref: '#/components/parameters/contractId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [newBuyer, sourcePublicKey]
+              properties:
+                newBuyer: { type: string }
+                sourcePublicKey: { type: string }
+      responses:
+        '200': { $ref: '#/components/responses/Xdr' }
+        '400': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+  /commitments/{contractId}/tx/confirm-delivery:
+    post:
+      operationId: buildConfirmDeliveryTransaction
+      summary: Build unsigned confirm_delivery transaction XDR
+      parameters:
+        - $ref: '#/components/parameters/contractId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [deliveredQuantity, gradeIndex, sourcePublicKey]
+              properties:
+                deliveredQuantity: { type: integer, minimum: 0 }
+                gradeIndex: { type: integer, minimum: 0 }
+                sourcePublicKey: { type: string }
+      responses:
+        '200': { $ref: '#/components/responses/Xdr' }
+        '400': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+  /commitments/{contractId}/tx/flag-dispute:
+    post:
+      operationId: buildFlagDisputeTransaction
+      summary: Build unsigned flag_dispute transaction XDR
+      parameters:
+        - $ref: '#/components/parameters/contractId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [flagger, sourcePublicKey]
+              properties:
+                flagger: { type: string }
+                sourcePublicKey: { type: string }
+      responses:
+        '200': { $ref: '#/components/responses/Xdr' }
+        '400': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+  /commitments/{contractId}/tx/set-allocation:
+    post:
+      operationId: buildSetAllocationTransaction
+      summary: Build unsigned set_allocation transaction XDR
+      description: Returns staged phone-number mappings for the submit call; these are not persisted here.
+      parameters:
+        - $ref: '#/components/parameters/contractId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [members, sourcePublicKey]
+              properties:
+                sourcePublicKey: { type: string }
+                members:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [phoneNumber, shareBps]
+                    properties:
+                      phoneNumber: { type: string, minLength: 1 }
+                      shareBps: { type: integer, minimum: 0, maximum: 10000 }
+      responses:
+        '200':
+          description: Unsigned XDR and staged allocation members.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [xdr, members]
+                properties:
+                  xdr: { type: string }
+                  members:
+                    type: array
+                    items: { $ref: '#/components/schemas/StagedAllocationMember' }
+        '400': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+  /commitments/{contractId}/allocation:
+    get:
+      operationId: getAllocation
+      summary: Read on-chain allocation hashes and shares
+      description: The response does not include phone numbers.
+      parameters:
+        - $ref: '#/components/parameters/contractId'
+      responses:
+        '200':
+          description: Allocation ledger.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [members]
+                properties:
+                  members:
+                    type: array
+                    items:
+                      type: object
+                      required: [memberHash, shareBps]
+                      properties:
+                        memberHash: { type: string, pattern: '^[0-9a-f]{64}$' }
+                        shareBps: { type: integer }
+        default: { $ref: '#/components/responses/Error' }
+  /commitments/{contractId}/oracle-config:
+    get:
+      operationId: getOracleConfig
+      summary: Read the configured oracle settings
+      parameters:
+        - $ref: '#/components/parameters/contractId'
+      responses:
+        '200':
+          description: Oracle configuration, or null when none is configured.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [config]
+                properties:
+                  config:
+                    oneOf:
+                      - type: 'null'
+                      - type: object
+                        required: [oracleContract, priceAsset, maxAgeSecs, denominatedAmount]
+                        properties:
+                          oracleContract: { type: string }
+                          priceAsset: { type: string }
+                          maxAgeSecs: { type: string }
+                          denominatedAmount: { type: string }
+        default: { $ref: '#/components/responses/Error' }
+  /commitments/{contractId}/oracle-rate:
+    get:
+      operationId: getOracleRate
+      summary: Read the current configured oracle rate
+      description: Calls the configured on-chain oracle for every request; missing or stale rates return an error.
+      parameters:
+        - $ref: '#/components/parameters/contractId'
+      responses:
+        '200':
+          description: Current price and oracle timestamp, represented as decimal strings.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [price, timestamp]
+                properties:
+                  price: { type: string }
+                  timestamp: { type: string }
+        default: { $ref: '#/components/responses/Error' }
+  /allocation-members/{memberHash}:
+    delete:
+      operationId: eraseAllocationMember
+      summary: Erase the phone-number mapping for an allocation hash
+      parameters:
+        - name: memberHash
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[0-9a-fA-F]{64}$' }
+      responses:
+        '200':
+          description: Mapping erased (including an already-erased mapping).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [erased]
+                properties:
+                  erased: { type: boolean, const: true }
+        '400': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /commitments/{contractId}/tx/cancel/propose:
+    parameters:
+      - $ref: '#/components/parameters/contractId'
+    post:
+      operationId: proposeCancel
+      summary: Create or retrieve the active staged cancellation proposal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [proposerPublicKey]
+              properties:
+                proposerPublicKey: { type: string }
+      responses:
+        '200': { $ref: '#/components/responses/Proposal' }
+        '201': { $ref: '#/components/responses/Proposal' }
+        '400': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+    get:
+      operationId: getCancelProposal
+      summary: Read the active staged cancellation proposal
+      responses:
+        '200': { $ref: '#/components/responses/ProposalEnvelope' }
+        default: { $ref: '#/components/responses/Error' }
+  /commitments/{contractId}/tx/reassign-buyer/propose:
+    parameters:
+      - $ref: '#/components/parameters/contractId'
+    post:
+      operationId: proposeReassignBuyer
+      summary: Create or retrieve the active staged buyer reassignment proposal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [proposerPublicKey, newBuyer]
+              properties:
+                proposerPublicKey: { type: string }
+                newBuyer: { type: string }
+      responses:
+        '200': { $ref: '#/components/responses/Proposal' }
+        '201': { $ref: '#/components/responses/Proposal' }
+        '400': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+    get:
+      operationId: getReassignBuyerProposal
+      summary: Read the active staged buyer reassignment proposal
+      responses:
+        '200': { $ref: '#/components/responses/ProposalEnvelope' }
+        default: { $ref: '#/components/responses/Error' }
+  /commitments/{contractId}/tx/resolve-dispute/propose:
+    parameters:
+      - $ref: '#/components/parameters/contractId'
+    post:
+      operationId: proposeResolveDispute
+      summary: Create or retrieve the active staged dispute-resolution proposal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [proposerPublicKey]
+              properties:
+                proposerPublicKey: { type: string }
+      responses:
+        '200': { $ref: '#/components/responses/Proposal' }
+        '201': { $ref: '#/components/responses/Proposal' }
+        '400': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+    get:
+      operationId: getResolveDisputeProposal
+      summary: Read the active staged dispute-resolution proposal
+      responses:
+        '200': { $ref: '#/components/responses/ProposalEnvelope' }
+        default: { $ref: '#/components/responses/Error' }
+  /commitments/{contractId}/tx/propose/{proposalId}/sign:
+    post:
+      operationId: signProposalEntry
+      summary: Submit one party's signed Soroban authorization entry
+      parameters:
+        - $ref: '#/components/parameters/contractId'
+        - name: proposalId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [signerPublicKey, signedEntryXdr]
+              properties:
+                signerPublicKey: { type: string }
+                signedEntryXdr: { type: string }
+      responses:
+        '200': { $ref: '#/components/responses/Proposal' }
+        '400': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+  /transactions/submit:
+    post:
+      operationId: submitTransaction
+      summary: Submit a wallet-signed transaction envelope
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [xdr]
+              properties:
+                xdr: { type: string, description: Signed transaction envelope XDR. }
+                refreshContractId: { type: string }
+                completeProposalId: { type: string }
+                allocationContractId: { type: string }
+                allocationMembers:
+                  type: array
+                  items: { $ref: '#/components/schemas/StagedAllocationMember' }
+      responses:
+        '200':
+          description: Transaction submission result from the Stellar SDK.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '202':
+          description: >-
+            The network accepted the transaction but confirmation took longer
+            than the 30-second poll window. Persisted server-side so
+            GET /transactions/{hash} can report the outcome and apply the
+            request's side effects exactly once.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, hash]
+                properties:
+                  status: { type: string, const: PENDING }
+                  hash: { type: string, pattern: '^[0-9a-f]{64}$' }
+        '400': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+  /transactions/{hash}:
+    get:
+      operationId: getTransactionStatus
+      summary: Poll a transaction that was reported PENDING
+      description: >-
+        Returns PENDING, SUCCESS, or FAILED. On the first SUCCESS observation
+        the stored side effects (cache refresh, proposal completion, allocation
+        member persistence) run exactly once. Unknown hashes are 404.
+      parameters:
+        - $ref: '#/components/parameters/transactionHash'
+      responses:
+        '200':
+          description: Current status of the transaction.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, hash]
+                properties:
+                  status:
+                    type: string
+                    enum: [PENDING, SUCCESS, FAILED]
+                  hash: { type: string, pattern: '^[0-9a-f]{64}$' }
+        '400': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+  /commitments/{contractId}:
+    get:
+      operationId: getCommitment
+      summary: Read a commitment from chain
+      parameters:
+        - $ref: '#/components/parameters/contractId'
+      responses:
+        '200':
+          description: Live commitment state; bigint fields are serialized as decimal strings.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        default: { $ref: '#/components/responses/Error' }
+  /commitments:
+    get:
+      operationId: listCommitments
+      summary: List cached commitments
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, default: 20 }
+        - name: offset
+          in: query
+          required: false
+          schema: { type: integer, minimum: 0, default: 0 }
+      responses:
+        '200':
+          description: Cached commitment rows.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: object, additionalProperties: true }
+        default: { $ref: '#/components/responses/Error' }
+  /parties/{address}/standing:
+    get:
+      operationId: getPartyStanding
+      summary: Read a party's reputation standing
+      parameters:
+        - name: address
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Standing row, or a clean default when no history exists.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PartyStanding' }
+        '400': { $ref: '#/components/responses/Error' }
+        default: { $ref: '#/components/responses/Error' }
+components:
+  parameters:
+    contractId:
+      name: contractId
+      in: path
+      required: true
+      description: Stellar contract ID (C-address).
+      schema: { type: string }
+    transactionHash:
+      name: hash
+      in: path
+      required: true
+      description: Stellar transaction hash, exactly 64 hexadecimal characters.
+      schema: { type: string, pattern: '^[0-9a-fA-F]{64}$' }
+  responses:
+    Xdr:
+      description: Unsigned transaction envelope XDR.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [xdr]
+            properties:
+              xdr: { type: string }
+    Proposal:
+      description: Serialized staged proposal.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Proposal' }
+    ProposalEnvelope:
+      description: Active proposal, or null when no active proposal exists.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [proposal]
+            properties:
+              proposal:
+                oneOf:
+                  - type: 'null'
+                  - $ref: '#/components/schemas/Proposal'
+    Error:
+      description: >-
+        Error response using the shared {statusCode, error, message} envelope.
+        Contract rejections additionally carry contractError {code, name} and
+        use HTTP 409 (or 404 on a read of a missing/uninitialized contract).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    Error:
+      type: object
+      required: [statusCode, error, message]
+      properties:
+        statusCode: { type: integer, example: 409 }
+        error: { type: string, example: Conflict }
+        message: { type: string }
+        contractError:
+          type: object
+          description: Present only when the Soroban contract itself rejected the call; absent on genuine RPC/transport 5xx failures.
+          required: [code, name]
+          properties:
+            code:
+              type: [integer, 'null']
+              description: The contract's Error discriminant (see docs/contract-glossary.md). Null when the contract instance does not exist on this network.
+              example: 8
+            name:
+              type: string
+              description: The glossary name for code, or ContractNotFound / UnknownContractError.
+              example: AlreadyClaimed
+    InitializeRequest:
+      type: object
+      required: [buyer, cooperative, warehouseOperator, token, totalAmount, advance1Bps, advance2Bps, claimWindowSecs, remainderWindowSecs, deliveryWindowSecs, contractedQuantity, gradePriceBps, sourcePublicKey]
+      properties:
+        buyer: { type: string }
+        cooperative: { type: string }
+        warehouseOperator: { type: string }
+        token: { type: string }
+        totalAmount: { type: string, description: Integer amount in stroops, sent as a decimal string. Must be positive and fit an i128. }
+        advance1Bps: { type: integer, minimum: 0, maximum: 10000 }
+        advance2Bps: { type: integer, minimum: 0, maximum: 10000 }
+        claimWindowSecs: { type: string, description: Integer seconds, minimum 3600, maximum 7776000. }
+        remainderWindowSecs: { type: string, description: Integer seconds, minimum 3600, maximum 2592000. }
+        deliveryWindowSecs: { type: string, description: Integer seconds, minimum 86400, maximum 31536000. }
+        contractedQuantity: { type: integer, minimum: 1, maximum: 4294967295 }
+        gradePriceBps:
+          type: array
+          minItems: 1
+          items: { type: integer, minimum: 0, maximum: 10000 }
+        oracleConfig:
+          oneOf:
+            - type: 'null'
+            - type: object
+              required: [oracleContract, priceAsset, maxAgeSecs, denominatedAmount]
+              properties:
+                oracleContract: { type: string }
+                priceAsset: { type: string }
+                maxAgeSecs: { type: string }
+                denominatedAmount: { type: string }
+        sourcePublicKey: { type: string }
+    StagedAllocationMember:
+      type: object
+      required: [phoneNumber, shareBps, salt, memberHash]
+      properties:
+        phoneNumber: { type: string }
+        shareBps: { type: integer }
+        salt: { type: string, description: Hex-encoded random salt. }
+        memberHash: { type: string, description: Hex-encoded HMAC-SHA256 hash. }
+    Proposal:
+      type: object
+      required: [id, contract_id, method, proposer_address, status, pending_entries, ready_xdr]
+      properties:
+        id: { type: string }
+        contract_id: { type: string }
+        method: { type: string }
+        proposer_address: { type: string }
+        status: { type: string, enum: [pending, ready, completed] }
+        pending_entries:
+          type: array
+          items:
+            type: object
+            required: [address, entry_xdr]
+            properties:
+              address: { type: string }
+              entry_xdr: { type: string }
+        ready_xdr: { type: [string, 'null'] }
+    PartyStanding:
+      type: object
+      required: [address, strike_count, barred, barred_reason, barred_at]
+      properties:
+        address: { type: string }
+        strike_count: { type: integer }
+        barred: { type: boolean }
+        barred_reason: { type: [string, 'null'] }
+        barred_at: { type: [string, 'null'] }

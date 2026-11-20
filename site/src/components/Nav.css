@@ -2,7 +2,7 @@
   position: sticky;
   top: 0;
   z-index: 40;
-  background: rgba(11, 18, 15, 0.72);
+  background: color-mix(in srgb, var(--void) 90%, transparent);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--void-line-soft);
@@ -25,6 +25,12 @@
   font-weight: 500;
   color: var(--bone);
   letter-spacing: -0.01em;
+  border-radius: 4px;
+}
+
+.nav-brand:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 4px;
 }
 
 .nav-links {
@@ -37,23 +43,37 @@
 .nav-links a {
   text-decoration: none;
   color: var(--bone-dim);
+  border-radius: 2px;
   transition: color 0.2s var(--ease);
 }
 
-.nav-links a:hover {
+.nav-links a:hover,
+.nav-links a:focus-visible {
   color: var(--gold-bright);
 }
 
+.nav-links a:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 4px;
+}
+
 .nav-github {
-  border: 1px solid var(--void-line);
+  border: 1px solid var(--bone-dim);
   padding: 0.5em 1em;
   border-radius: 3px;
   color: var(--bone) !important;
+  transition: border-color 0.2s var(--ease), color 0.2s var(--ease);
 }
 
-.nav-github:hover {
+.nav-github:hover,
+.nav-github:focus-visible {
   border-color: var(--gold);
   color: var(--gold-bright) !important;
+}
+
+.nav-github:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 3px;
 }
 
 @media (max-width: 640px) {

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useI18n } from "../i18n";
 
 /**
  * Every Stellar address/contract ID in this app is 56 characters — shown
@@ -24,6 +25,7 @@ export function AddressChip({
   copyable?: boolean;
   className?: string;
 }) {
+  const { t } = useI18n();
   const [copied, setCopied] = useState(false);
 
   function handleCopy(e: React.MouseEvent) {
@@ -45,11 +47,11 @@ export function AddressChip({
   return (
     <span className={`address-chip${className ? ` ${className}` : ""}`} title={address}>
       <span className="address-chip-text">
-        {address.slice(0, 4)}…{address.slice(-4)}
+        {`${address.slice(0, 4)}…${address.slice(-4)}`}
       </span>
       {copyable && (
         <button type="button" className="address-chip-copy" onClick={handleCopy}>
-          {copied ? "Copied" : "Copy"}
+          {copied ? t("addressChip.copied") : t("addressChip.copy")}
         </button>
       )}
     </span>

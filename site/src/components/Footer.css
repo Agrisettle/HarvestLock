@@ -40,8 +40,15 @@
 
 .footer-links {
   display: flex;
-  gap: 22px;
+  gap: 10px 22px;
   font-size: 0.88rem;
+  /* At 360px the four links plus the build SHA (373px min-content) ran
+     past the right edge, where #root's overflow-x: hidden clipped them —
+     the build SHA and part of Apache-2.0 were unreachable, not just
+     narrow. Let the row wrap onto a second line instead; row-gap is
+     tuned down from the 22px column gap so the wrapped rows stay a
+     coherent block. */
+  flex-wrap: wrap;
 }
 
 .footer-links a {

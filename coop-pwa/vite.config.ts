@@ -1,3 +1,4 @@
+import { execSync } from "node:child_process";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
@@ -14,8 +15,25 @@ import { VitePWA } from "vite-plugin-pwa";
 // and standalone builds stay at root.
 const base = process.env.VERCEL ? "/coop/" : process.env.GITHUB_PAGES ? "/HarvestLock/coop/" : "/";
 
+// Short commit SHA of the build, surfaced in the UI footer. Hosts that
+// build from a tarball (Vercel) or detached checkout expose the full SHA
+// via env; otherwise ask git. Absent entirely (no git, no env) => the UI
+// simply omits the footer rather than showing a made-up value.
+function buildSha(): string | undefined {
+  const fromEnv = process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.GITHUB_SHA;
+  if (fromEnv) return fromEnv.slice(0, 7);
+  try {
+    return execSync("git rev-parse --short HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export default defineConfig({
   base,
+  define: {
+    "import.meta.env.VITE_BUILD_SHA": JSON.stringify(buildSha()),
+  },
   plugins: [
     react(),
     // PRD §7/§16.3's "connectivity loss at depot" edge case, finally

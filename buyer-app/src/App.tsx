@@ -14,10 +14,19 @@ import { CommitmentDetail } from "./components/CommitmentDetail";
 import { CommitmentList } from "./components/CommitmentList";
 import { CreateCommitmentForm, type CreateCommitmentFields, parseGradePriceBps } from "./components/CreateCommitmentForm";
 
+/** One page of the commitments list. Mirrors the API's default page size
+ * (api/src/db/commitments.ts's DEFAULT_PAGE_SIZE) — the API clamps above
+ * its own maximum regardless, so this only picks the size the UI walks
+ * the list in. */
+const PAGE_SIZE = 20;
+
 export default function App() {
   const [commitments, setCommitments] = useState<CommitmentSummary[]>([]);
   const [listError, setListError] = useState<string | null>(null);
   const [listLoading, setListLoading] = useState(true);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
 
   const [lookupInput, setLookupInput] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -37,11 +46,39 @@ export default function App() {
   const refreshList = useCallback(() => {
     setListLoading(true);
     setListError(null);
-    listCommitments()
-      .then(setCommitments)
-      .catch((err: unknown) => setListError(err instanceof Error ? err.message : String(err)))
+    setLoadMoreError(null);
+    listCommitments({ limit: PAGE_SIZE, offset: 0 })
+      .then((firstPage) => {
+        setCommitments(firstPage);
+        setHasMore(firstPage.length === PAGE_SIZE);
+      })
+      .catch((err: unknown) =>
+        setListError(`Unable to load your commitments: ${err instanceof Error ? err.message : String(err)}`),
+      )
       .finally(() => setListLoading(false));
   }, []);
+
+  // Fetch the next page and append it. The list response carries no
+  // total, so the heuristic is "a full page means maybe more, a short
+  // page means done" — the same one warehouse-app's paginated list
+  // already uses. A failed load-more keeps every page already shown and
+  // reports under the list (an initial-load failure, by contrast,
+  // replaces the whole section, handled above).
+  const loadMore = useCallback(() => {
+    setLoadingMore(true);
+    setLoadMoreError(null);
+    listCommitments({ limit: PAGE_SIZE, offset: commitments.length })
+      .then((nextPage) => {
+        setCommitments((prev) => [...prev, ...nextPage]);
+        setHasMore(nextPage.length === PAGE_SIZE);
+      })
+      .catch((err: unknown) =>
+        setLoadMoreError(
+          `Unable to load more commitments: ${err instanceof Error ? err.message : String(err)}`,
+        ),
+      )
+      .finally(() => setLoadingMore(false));
+  }, [commitments.length]);
 
   useEffect(() => {
     refreshList();
@@ -56,7 +93,7 @@ export default function App() {
       .then(setDetail)
       .catch((err: unknown) => {
         setDetail(null);
-        setDetailError(err instanceof Error ? err.message : String(err));
+        setDetailError(`Unable to load commitment ${contractId}: ${err instanceof Error ? err.message : String(err)}`);
       })
       .finally(() => setDetailLoading(false));
   }, []);
@@ -146,7 +183,7 @@ export default function App() {
     <>
       <header className="app-header">
         <h1>HarvestLock — Buyer Dashboard</h1>
-        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+        <div className="header-actions">
           <span className="tag">read-only reads · testnet</span>
           {walletAddress ? (
             <span className="wallet-address">{walletAddress.slice(0, 4)}…{walletAddress.slice(-4)}</span>
@@ -195,39 +232,61 @@ export default function App() {
           </section>
         )}
 
-        {selectedId && (
-          <section>
-            {detailLoading && <div className="loading-state">Reading {selectedId} from chain…</div>}
-            {detailError && <div className="error-banner">{detailError}</div>}
-            {detail && !detailLoading && (
-              <CommitmentDetail
-                commitment={detail}
-                contractId={selectedId}
-                walletAddress={walletAddress}
-                onAction={handleAction}
-                actionInFlight={actionInFlight}
-                actionError={actionError}
-                onCancelled={() => loadDetail(selectedId)}
-                onReassigned={() => loadDetail(selectedId)}
-                onDisputeChanged={() => loadDetail(selectedId)}
-              />
-            )}
-          </section>
-        )}
+        <section aria-label="Commitment details">
+          {!selectedId && (
+            <div className="empty-state">Look up a contract ID or select one of your commitments to view its details.</div>
+          )}
+          {detailLoading && (
+            <div className="loading-state" role="status" aria-live="polite">
+              Reading commitment {selectedId} from chain…
+            </div>
+          )}
+          {detailError && <div className="error-banner" role="alert">{detailError}</div>}
+          {selectedId && detail && !detailLoading && (
+            <CommitmentDetail
+              commitment={detail}
+              contractId={selectedId}
+              walletAddress={walletAddress}
+              onAction={handleAction}
+              actionInFlight={actionInFlight}
+              actionError={actionError}
+              onCancelled={() => loadDetail(selectedId)}
+              onReassigned={() => loadDetail(selectedId)}
+              onDisputeChanged={() => loadDetail(selectedId)}
+            />
+          )}
+        </section>
 
         <section>
           <div className="detail-header">
-            <h2 style={{ margin: 0, fontFamily: "var(--display)", fontWeight: 600, fontSize: "1.1rem" }}>
+            <h2 className="section-title">
               What you've locked
             </h2>
             <button className="refresh-button" onClick={refreshList} disabled={listLoading}>
               {listLoading ? "Refreshing…" : "Refresh"}
             </button>
           </div>
-          {listError && <div className="error-banner">{listError}</div>}
-          {!listError && !listLoading && <CommitmentList commitments={commitments} onSelect={loadDetail} />}
+          {listLoading ? (
+            <div className="loading-state" role="status" aria-live="polite">Loading your commitments…</div>
+          ) : listError ? (
+            <div className="error-banner" role="alert">{listError}</div>
+          ) : (
+            <>
+              <CommitmentList
+                commitments={commitments}
+                onSelect={loadDetail}
+                hasMore={hasMore}
+                loadingMore={loadingMore}
+                onLoadMore={loadMore}
+              />
+              {loadMoreError && <div className="error-banner" role="alert">{loadMoreError}</div>}
+            </>
+          )}
         </section>
       </main>
+      {import.meta.env.VITE_BUILD_SHA && (
+        <footer className="build-info">build {import.meta.env.VITE_BUILD_SHA}</footer>
+      )}
     </>
   );
 }

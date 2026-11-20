@@ -30,24 +30,34 @@ export interface UpsertResult {
 
 /**
  * Reads the prior cached status and writes the new one inside a single
- * transaction (`SELECT ... FOR UPDATE` then the upsert), so a caller can
- * tell whether this call is the one that just observed a transition into
- * a terminal status — see `src/reputation.ts`, which is the reason this
- * returns `previousStatus` at all. Doing the read and write in one
- * transaction, not two separate queries, avoids a race where two
- * concurrent refreshes of the same contract could both see the same
- * "previous" status and double-apply a reputation consequence.
+ * transaction (`SELECT ... FOR UPDATE` then the upsert), returning
+ * `previousStatus` alongside the row. Reputation idempotency no longer
+ * depends on this value — `standing_events`' UNIQUE (contract_id,
+ * event_type) is the exactly-once gate now (see `src/reputation.ts` and
+ * `src/db/reputation.ts`) — but the read/write pairing still gives any
+ * caller a consistent "before and after" view of the cache, and existing
+ * callers/tests use it.
  */
 export async function upsertCommitment(contractId: string, c: Commitment): Promise<UpsertResult> {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
-    const { rows: existing } = await client.query<{ status: string }>(
-      "SELECT status FROM commitments WHERE contract_id = $1 FOR UPDATE",
+    const { rows: existing } = await client.query<CommitmentRow>(
+      "SELECT * FROM commitments WHERE contract_id = $1 FOR UPDATE",
       [contractId],
     );
     const previousStatus = existing[0]?.status ?? null;
+    const existingRow = existing[0] ?? null;
+
+    // Skip the write when nothing changed: status (and every other field)
+    // is immutable for an existing commitment, so an identical status means
+    // the cached row is already current. This keeps `updated_at` stable
+    // and avoids a pointless write on the hot read path.
+    if (existingRow && previousStatus === c.status) {
+      await client.query("COMMIT");
+      return { row: existingRow, previousStatus };
+    }
 
     const { rows } = await client.query<CommitmentRow>(
       `INSERT INTO commitments
@@ -84,7 +94,28 @@ export async function upsertCommitment(contractId: string, c: Commitment): Promi
   }
 }
 
-export async function listCommitments(): Promise<CommitmentRow[]> {
-  const { rows } = await pool.query<CommitmentRow>("SELECT * FROM commitments ORDER BY created_at DESC");
+/** Default page size for the commitments list when the caller passes no (or an unusable) limit. */
+export const DEFAULT_PAGE_SIZE = 20;
+
+/**
+ * Hard ceiling on the commitments list's page size. The route clamps any
+ * larger requested limit down to this, so no request can ask the cache
+ * for an unbounded slice no matter what query string it sends — the exact
+ * failure mode issue #225 was filed against.
+ */
+export const MAX_PAGE_SIZE = 100;
+
+export async function listCommitments({ limit, offset }: { limit?: number; offset?: number } = {}): Promise<CommitmentRow[]> {
+  const limitNum = limit ?? DEFAULT_PAGE_SIZE;
+  const offsetNum = offset ?? 0;
+  // `id` tiebreak: created_at alone is not a stable sort key — every row
+  // upserted in the same transaction shares a now() timestamp, and with
+  // ties Postgres is free to return each page in a different order, which
+  // makes consecutive pages skip or duplicate rows. A unique column last
+  // makes the order total, so pages always partition the set exactly.
+  const { rows } = await pool.query<CommitmentRow>(
+    `SELECT * FROM commitments ORDER BY created_at DESC, id LIMIT $1 OFFSET $2`,
+    [limitNum, offsetNum],
+  );
   return rows;
 }

@@ -103,6 +103,18 @@ describe("App", () => {
     expect(screen.getByText("What you've locked")).toBeInTheDocument();
   });
 
+  it("shows loading and empty states while the commitments list is being fetched", async () => {
+    let resolveList!: (response: Response) => void;
+    fetchMock.mockReturnValueOnce(new Promise<Response>((resolve) => { resolveList = resolve; }));
+    render(<App />);
+
+    expect(screen.getByRole("status")).toHaveTextContent("Loading your commitments");
+    expect(screen.getByText("Look up a contract ID or select one of your commitments to view its details.")).toBeInTheDocument();
+
+    resolveList(jsonResponse([]));
+    expect(await screen.findByText(/Nothing locked yet/)).toBeInTheDocument();
+  });
+
   it("shows an error banner, not a crash, when the list fetch fails", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ error: "db down" }, false));
     render(<App />);
@@ -135,6 +147,44 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Look up" }));
 
     expect(await screen.findByText(/Pending: advance 1/)).toBeInTheDocument();
+  });
+
+  it("names the commitment when a detail lookup fails before reaching the API", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse([]));
+    // Persistent rejection, not Once: api.ts's get() wraps fetch in
+    // withRetry (retry.ts), so a single queued rejection is consumed by
+    // attempt one and attempt two falls through to the unmocked fetch
+    // (undefined), surfacing "Cannot read properties of undefined" instead
+    // of the transport error this test means to assert. Rejection is what
+    // fetch does on a transport-level failure, so that's what every
+    // attempt should see — the same shape api/retry.test.ts uses for its
+    // "persistent failure still surfaces" case.
+    fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.type(screen.getByLabelText("Contract ID"), "CUNKNOWN");
+    await user.click(screen.getByRole("button", { name: "Look up" }));
+
+    // withRetry's bounded backoff (500ms, 1s) means the error surfaces
+    // after ~1.5s, past the default 1s findBy window. Timeout goes in
+    // findBy's *third* argument (waitFor options) -- the second is query
+    // options, where a timeout key is silently ignored.
+    expect(await screen.findByRole("alert", {}, { timeout: 5_000 })).toHaveTextContent(
+      "Unable to load commitment CUNKNOWN: Failed to fetch",
+    );
+  }, 15_000);
+
+  it("shows a live loading state while a commitment lookup is pending", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse([]));
+    fetchMock.mockReturnValueOnce(new Promise<Response>(() => {}));
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.type(screen.getByLabelText("Contract ID"), "CUNKNOWN");
+    await user.click(screen.getByRole("button", { name: "Look up" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Reading commitment CUNKNOWN from chain");
   });
 
   it("locks a Draft commitment: build -> sign -> submit -> refresh, end to end through the app", async () => {
@@ -247,13 +297,14 @@ describe("App", () => {
     await user.type(screen.getByLabelText("Cooperative address"), "GCOOPADDR");
     await user.type(screen.getByLabelText("Warehouse operator address"), "GWHADDR");
     await user.type(screen.getByLabelText("Token contract address"), "CTOKENADDR");
-    await user.type(screen.getByLabelText("Total amount (stroops)"), "1000000000");
-    await user.clear(screen.getByLabelText("Advance 1 share (basis points)"));
-    await user.type(screen.getByLabelText("Advance 1 share (basis points)"), "1500");
-    await user.clear(screen.getByLabelText("Advance 2 share (basis points)"));
-    await user.type(screen.getByLabelText("Advance 2 share (basis points)"), "2000");
-    await user.clear(screen.getByLabelText("Claim window (seconds)"));
-    await user.type(screen.getByLabelText("Claim window (seconds)"), "3600");
+    await user.type(screen.getByLabelText("Total amount (USDC)"), "100");
+    await user.clear(screen.getByLabelText("Advance 1 share (%)"));
+    await user.type(screen.getByLabelText("Advance 1 share (%)"), "15");
+    await user.clear(screen.getByLabelText("Advance 2 share (%)"));
+    await user.type(screen.getByLabelText("Advance 2 share (%)"), "20");
+    await user.clear(screen.getByLabelText("Claim window"));
+    await user.type(screen.getByLabelText("Claim window"), "1");
+    await user.selectOptions(screen.getByLabelText("Claim window unit"), "hours");
     await user.type(screen.getByLabelText(/Contracted quantity/), "1000");
     await user.click(screen.getByRole("checkbox", { name: /Roles & Responsibilities/ }));
 
@@ -267,5 +318,37 @@ describe("App", () => {
     const initCall = fetchMock.mock.calls.find(([url]) => String(url).includes("/tx/initialize"));
     expect(initCall).toBeDefined();
     expect(String(initCall?.[1]?.body)).toContain("GNEWBUYER");
+  }, 15_000);
+
+  it("walks a multi-page list: a full first page, then 'Load more' for the next, control gone once exhausted", async () => {
+    // Issue #226's point: the list no longer assumes one response holds
+    // everything. 20 rows is exactly one full API page (App.tsx's
+    // PAGE_SIZE), so the app must fetch what comes after instead of
+    // rendering those 20 as the complete list.
+    const fullPage = Array.from({ length: 20 }, (_, i) => ({
+      ...summary,
+      id: `row-${i}`,
+      contract_id: `CPAGEBOUNDARY${i}`,
+    }));
+    const secondPage = [{ ...summary, id: "row-20", contract_id: "CPAGEBOUNDARY20" }];
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(fullPage)); // first page
+    fetchMock.mockResolvedValueOnce(jsonResponse(secondPage)); // after Load more
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(await screen.findByTitle("CPAGEBOUNDARY0")).toBeInTheDocument();
+    expect(screen.queryByTitle("CPAGEBOUNDARY20")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Load more" }));
+
+    // Appended, not replaced: page one's rows are still on screen.
+    expect(await screen.findByTitle("CPAGEBOUNDARY20")).toBeInTheDocument();
+    expect(screen.getByTitle("CPAGEBOUNDARY0")).toBeInTheDocument();
+    // A short second page means exhausted, so the control goes away.
+    expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
+
+    // The second request asked for the page after the 20 already loaded.
+    expect(String(fetchMock.mock.calls[1]?.[0])).toContain("limit=20&offset=20");
   }, 15_000);
 });

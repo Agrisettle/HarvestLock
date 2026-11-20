@@ -37,6 +37,7 @@ export function Footer() {
           >
             Apache-2.0
           </a>
+          {import.meta.env.VITE_BUILD_SHA && <span>build {import.meta.env.VITE_BUILD_SHA}</span>}
         </div>
       </div>
     </footer>

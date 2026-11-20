@@ -13,6 +13,20 @@ function formatGradeLabel(index: number, bps: number): string {
  * table), which is why the confirmation copy below says so plainly rather
  * than implying HarvestLock could undo or referee it later.
  */
+/*
+ * Loading/error/empty states (UX audit, #183):
+ *   • Loading   — `submitting` disables the button and flips its label to
+ *     "Confirming…"; the form stays visible while the transaction builds,
+ *     signs and submits, so the operator isn't looking at a blank screen.
+ *   • Error     — `submitError` renders the shared `error-banner` with the
+ *     specific upstream message (api.ts's `get`/`post` surface
+ *     `${path} -> ${status}: ${body}`), never a generic "something went wrong".
+ *   • Empty     — N/A: the form always renders its fields (delivered quantity
+ *     defaults to the contracted quantity; grade options come from the
+ *     commitment's own `grade_price_bps` schedule). "Nothing to show" is not a
+ *     possible state of this component.
+ */
+
 export function ConfirmDeliveryForm({
   contractedQuantity,
   gradePriceBps,

@@ -1,3 +1,6 @@
+import { withRetry } from "./retry";
+import { OfflineError } from "./offlineQueue";
+
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3000";
 
 /** Mirrors api/src/server.ts's serializeCommitment — every bigint on the
@@ -60,24 +63,100 @@ export interface CommitmentSummary {
   updated_at: string;
 }
 
+/**
+ * A non-ok API response. `message` is the human-readable reason only (what
+ * components show); the request path and raw response body stay on the
+ * object for debugging but are never part of the message.
+ */
+export class ApiError extends Error {
+  readonly status: number;
+  readonly path: string;
+  readonly body: string;
+  /** The contract error code (e.g. "Error(Contract, #23)") when the API message carries one. */
+  readonly contractError?: string;
+  /** Seconds from a 429's Retry-After header, when present. */
+  readonly retryAfterSecs?: number;
+
+  constructor(path: string, status: number, body: string, message: string, extra: { contractError?: string; retryAfterSecs?: number } = {}) {
+    super(message);
+    this.name = "ApiError";
+    this.path = path;
+    this.status = status;
+    this.body = body;
+    this.contractError = extra.contractError;
+    this.retryAfterSecs = extra.retryAfterSecs;
+  }
+}
+
+/** Builds an ApiError from a non-ok response: prefers the API's `message`, falls back to `error` (older handlers), then to the status text. */
+async function toApiError(path: string, res: Response): Promise<ApiError> {
+  const body = await res.text();
+  let message = "";
+  try {
+    const parsed: unknown = JSON.parse(body);
+    if (parsed && typeof parsed === "object") {
+      const { message: m, error: e } = parsed as { message?: unknown; error?: unknown };
+      if (typeof m === "string" && m) message = m;
+      else if (typeof e === "string" && e) message = e;
+    }
+  } catch {
+    // Non-JSON body: fall through to the status text.
+  }
+  let retryAfterSecs: number | undefined;
+  if (res.status === 429) {
+    const n = Number(res.headers?.get("Retry-After"));
+    if (Number.isFinite(n) && n > 0) retryAfterSecs = Math.ceil(n);
+    message = retryAfterSecs !== undefined ? `Too many requests, try again in ${retryAfterSecs} s` : "Too many requests, try again shortly";
+  }
+  if (!message) message = res.statusText || `Request failed (${res.status})`;
+  const contractError = /Error\(Contract, #\d+\)/.exec(message)?.[0];
+  return new ApiError(path, res.status, body, message, { contractError, retryAfterSecs });
+}
+
+// Retry policy: only a transport failure (fetch rejecting) is ever retried,
+// never a server rejection, and only for calls that are safe to replay.
+// GETs always are. A POST is retried only when the call opts in with
+// `{ retry: true }`, which is reserved for building unsigned XDR (no side
+// effects). A transport failure can land *after* the request reached the
+// API (e.g. a mobile connection dropping during the 30 s submit poll), so
+// `/commitments/deploy` (would deploy a second, orphaned contract),
+// `/transactions/submit` (re-sends a possibly in-flight transaction) and the
+// propose/sign calls (can race themselves) are never retried.
+// `fetch` rejecting means no HTTP response at all. Wrapping exactly that
+// (and nothing else) in OfflineError is what lets the offline claim queue
+// tell "no network" apart from an unrelated TypeError elsewhere.
+async function request(url: string, init: RequestInit | undefined, retry: boolean): Promise<Response> {
+  const send = () => (init ? fetch(url, init) : fetch(url));
+  try {
+    return await (retry ? withRetry(send) : send());
+  } catch (err) {
+    if (err instanceof TypeError) {
+      throw new OfflineError(err.message, { cause: err });
+    }
+    throw err;
+  }
+}
+
 async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`);
+  const res = await request(`${API_URL}${path}`, undefined, true);
   if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`${path} -> ${res.status}: ${body}`);
+    throw await toApiError(path, res);
   }
   return res.json() as Promise<T>;
 }
 
-async function post<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
+async function post<T>(path: string, body: unknown, opts: { retry?: boolean } = {}): Promise<T> {
+  const res = await request(
+    `${API_URL}${path}`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    },
+    opts.retry === true,
+  );
   if (!res.ok) {
-    const responseBody = await res.text();
-    throw new Error(`${path} -> ${res.status}: ${responseBody}`);
+    throw await toApiError(path, res);
   }
   return res.json() as Promise<T>;
 }
@@ -88,18 +167,21 @@ export function getCommitment(contractId: string): Promise<CommitmentDetail> {
 }
 
 /** Postgres-cached list — the only way to enumerate commitments, since the chain has no such query. */
-export function listCommitments(): Promise<CommitmentSummary[]> {
-  return get<CommitmentSummary[]>("/commitments");
+export function listCommitments(
+  { limit = 20, offset = 0 }: { limit?: number; offset?: number } = {},
+): Promise<CommitmentSummary[]> {
+  const query = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  return get<CommitmentSummary[]>(`/commitments?${query}`);
 }
 
 /** Builds unsigned XDR for a no-argument lifecycle method (e.g. `claim_advance_1`). The caller's wallet signs it next. */
 export function buildTx(contractId: string, method: string, sourcePublicKey: string): Promise<{ xdr: string }> {
-  return post<{ xdr: string }>(`/commitments/${encodeURIComponent(contractId)}/tx/${method}`, { sourcePublicKey });
+  return post<{ xdr: string }>(`/commitments/${encodeURIComponent(contractId)}/tx/${method}`, { sourcePublicKey }, { retry: true });
 }
 
 /** Builds unsigned `flag_dispute` XDR. `flagger` must be the commitment's buyer, cooperative, or warehouse operator (enforced on-chain) — single-signer, so unlike resolve_dispute this needs no multi-party staging. */
 export function buildFlagDisputeTx(contractId: string, flagger: string, sourcePublicKey: string): Promise<{ xdr: string }> {
-  return post<{ xdr: string }>(`/commitments/${encodeURIComponent(contractId)}/tx/flag-dispute`, { flagger, sourcePublicKey });
+  return post<{ xdr: string }>(`/commitments/${encodeURIComponent(contractId)}/tx/flag-dispute`, { flagger, sourcePublicKey }, { retry: true });
 }
 
 export interface SubmitResult {
@@ -147,6 +229,7 @@ export function buildSetAllocationTx(
   return post<{ xdr: string; members: StagedAllocationMember[] }>(
     `/commitments/${encodeURIComponent(contractId)}/tx/set-allocation`,
     { members, sourcePublicKey },
+    { retry: true },
   );
 }
 
@@ -159,6 +242,9 @@ function getAllocation(contractId: string): Promise<{ members: AllocationMember[
 export async function getAllocationLedger(contractId: string): Promise<AllocationMember[] | null> {
   try {
     const { members } = await getAllocation(contractId);
+    if (!Array.isArray(members)) {
+      throw new Error(`Invalid allocation ledger response for ${contractId}: expected a members array`);
+    }
     return members;
   } catch (err) {
     if (err instanceof Error && /AllocationNotSet|Error\(Contract, #23\)/.test(err.message)) {

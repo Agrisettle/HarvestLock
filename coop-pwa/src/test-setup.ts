@@ -17,4 +17,8 @@ import { cleanup } from "@testing-library/react";
 // tree still sitting in the document.
 afterEach(() => {
   cleanup();
+  // The language picker persists to localStorage and sets <html lang>.
+  // Clear both between tests so one test's choice can't leak into another.
+  localStorage.clear();
+  document.documentElement.lang = "en";
 });

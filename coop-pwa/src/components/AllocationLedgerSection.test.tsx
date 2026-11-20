@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AllocationLedgerSection } from "./AllocationLedgerSection";
 import type { CommitmentDetail } from "../api";
 import * as wallet from "../wallet";
+import { expectNoA11yViolations } from "../a11y";
 
 // Same mocking shape as CancelSection.test.tsx/ReassignBuyerSection.test.tsx
 // -- no real Freighter extension exists in this environment; what's
@@ -75,23 +76,59 @@ beforeEach(() => {
 });
 
 describe("AllocationLedgerSection", () => {
-  it("renders nothing for a non-cooperative viewer when no ledger has been set", async () => {
+  it("shows the confirmed-unset state to a non-cooperative viewer without offering the form", async () => {
     fetchMock.mockResolvedValueOnce(allocationNotSetResponse());
-    const { container } = render(
+    render(
       <AllocationLedgerSection commitment={baseCommitment} contractId="CXXX" walletAddress={baseCommitment.buyer} />,
     );
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    expect(container).toBeEmptyDOMElement();
+    expect(await screen.findByText("No allocation ledger has been recorded yet.")).toBeInTheDocument();
+    expect(screen.queryByText("Record member allocation")).not.toBeInTheDocument();
   });
 
-  it("renders nothing once the commitment is past Draft and no ledger exists -- set_allocation is pre-lock only", async () => {
+  it("shows the confirmed-unset state past Draft without offering the pre-lock form", async () => {
     fetchMock.mockResolvedValueOnce(allocationNotSetResponse());
     const locked = { ...baseCommitment, status: "Locked" };
-    const { container } = render(
+    render(
       <AllocationLedgerSection commitment={locked} contractId="CXXX" walletAddress={baseCommitment.cooperative} />,
     );
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    expect(container).toBeEmptyDOMElement();
+    expect(await screen.findByText("No allocation ledger has been recorded yet.")).toBeInTheDocument();
+    expect(screen.queryByText("Record member allocation")).not.toBeInTheDocument();
+  });
+
+  it("shows a loading state while the ledger request is pending", () => {
+    fetchMock.mockReturnValueOnce(new Promise<Response>(() => {}));
+    render(
+      <AllocationLedgerSection commitment={baseCommitment} contractId="CXXX" walletAddress={baseCommitment.cooperative} />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("Loading allocation ledger");
+  });
+
+  it("shows a contextual read error and lets the viewer retry", async () => {
+    fetchMock.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    const user = userEvent.setup();
+    render(
+      <AllocationLedgerSection commitment={baseCommitment} contractId="CXXX" walletAddress={baseCommitment.cooperative} />,
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/Unable to load allocation ledger for CXXX/);
+    expect(screen.queryByText("Record member allocation")).not.toBeInTheDocument();
+
+    fetchMock.mockResolvedValueOnce(allocationNotSetResponse());
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByText("Record member allocation")).toBeInTheDocument();
+  });
+
+  it("does not treat a malformed response as a confirmed empty ledger", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({}));
+    render(
+      <AllocationLedgerSection commitment={baseCommitment} contractId="CXXX" walletAddress={baseCommitment.cooperative} />,
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Invalid allocation ledger response for CXXX: expected a members array",
+    );
+    expect(screen.queryByText("No allocation ledger has been recorded yet.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Record member allocation")).not.toBeInTheDocument();
   });
 
   it("shows the record-allocation form for the cooperative pre-lock when no ledger has been set", async () => {
@@ -104,14 +141,21 @@ describe("AllocationLedgerSection", () => {
 
   it("shows the recorded ledger (hashes + shares, never a phone number) once one exists, for any viewer", async () => {
     fetchMock.mockResolvedValueOnce(
-      jsonResponse({ members: [{ memberHash: "abcdef0123456789", shareBps: 6000 }] }),
+      jsonResponse({
+        members: [
+          { memberHash: "abcdef0123456789", shareBps: 6000 },
+          { memberHash: "0123456789abcdef", shareBps: 2500 },
+          { memberHash: "fedcba9876543210", shareBps: 1500 },
+        ],
+      }),
     );
-    render(<AllocationLedgerSection commitment={baseCommitment} contractId="CXXX" walletAddress={null} />);
+    const { container } = render(<AllocationLedgerSection commitment={baseCommitment} contractId="CXXX" walletAddress={null} />);
 
     expect(await screen.findByText("Allocation ledger")).toBeInTheDocument();
     expect(screen.getByText("60.00%")).toBeInTheDocument();
     expect(screen.getByText(/abcdef012345/)).toBeInTheDocument();
     expect(screen.queryByText("Record member allocation")).not.toBeInTheDocument();
+    await expectNoA11yViolations(container);
   });
 
   it("adds and removes member rows", async () => {
@@ -125,14 +169,57 @@ describe("AllocationLedgerSection", () => {
     expect(screen.getAllByLabelText(/phone number/i)).toHaveLength(1);
     await user.click(screen.getByRole("button", { name: "Add member" }));
     expect(screen.getAllByLabelText(/phone number/i)).toHaveLength(2);
+    expect(screen.getByLabelText("Member 2 phone number")).toHaveFocus();
+    await user.tab();
+    expect(screen.getByLabelText("Member 2 share (basis points)")).toHaveFocus();
+    await user.tab();
+    expect(screen.getAllByRole("button", { name: "Remove" })[1]).toHaveFocus();
+    await user.tab();
+    expect(screen.getByRole("button", { name: "Add member" })).toHaveFocus();
+    await user.tab();
+    expect(screen.getByRole("button", { name: "Record allocation" })).toHaveFocus();
 
     await user.click(screen.getAllByRole("button", { name: "Remove" })[0]);
     expect(screen.getAllByLabelText(/phone number/i)).toHaveLength(1);
+    expect(screen.getByLabelText("Member 1 phone number")).toHaveFocus();
 
     // The last remaining row can't be removed -- set_allocation needs at
     // least one member, same reasoning as CreateCommitmentForm's grade
     // price schedule needing at least one entry.
     expect(screen.getByRole("button", { name: "Remove" })).toBeDisabled();
+  });
+
+  it("rejects a single empty row left after removing every filled row, with the phone-number message", async () => {
+    fetchMock.mockResolvedValueOnce(allocationNotSetResponse());
+    const user = userEvent.setup();
+    render(
+      <AllocationLedgerSection commitment={baseCommitment} contractId="CXXX" walletAddress={baseCommitment.cooperative} />,
+    );
+    await screen.findByText("Record member allocation");
+
+    // Fill two rows, then add a third and leave it empty.
+    await user.click(screen.getByRole("button", { name: "Add member" }));
+    await user.type(screen.getByLabelText("Member 1 phone number"), "+2348000000001");
+    await user.type(screen.getByLabelText("Member 1 share (basis points)"), "6000");
+    await user.type(screen.getByLabelText("Member 2 phone number"), "+2348000000002");
+    await user.type(screen.getByLabelText("Member 2 share (basis points)"), "4000");
+    await user.click(screen.getByRole("button", { name: "Add member" }));
+    expect(screen.getAllByLabelText(/phone number/i)).toHaveLength(3);
+
+    // Remove every row but the last one -- the empty row added above.
+    await user.click(screen.getAllByRole("button", { name: "Remove" })[0]);
+    await user.click(screen.getAllByRole("button", { name: "Remove" })[0]);
+
+    expect(screen.getAllByLabelText(/phone number/i)).toHaveLength(1);
+    expect(screen.getByLabelText("Member 1 phone number")).toHaveValue("");
+    expect(screen.getByLabelText("Member 1 share (basis points)")).toHaveValue("");
+
+    await user.click(screen.getByRole("button", { name: "Record allocation" }));
+
+    expect(await screen.findByText("Every member needs a phone number.")).toBeInTheDocument();
+    // Only the initial allocation-ledger read should have hit the network --
+    // validation failing client-side means set-allocation was never built.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("rejects shares summing to over 10000 bps before touching the network", async () => {

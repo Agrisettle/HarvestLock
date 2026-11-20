@@ -35,18 +35,21 @@ jobs:
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v4
         with:
-          node-version: 20
+          # Must match the app workflows (Node 24 / npm 11, plain `npm ci`).
+          # Node 20's npm 10 plus --legacy-peer-deps dropped the peer-dep
+          # entries npm 11 writes, so every PR touching package.json failed.
+          node-version: 24
           cache: npm
           cache-dependency-path: ${{ matrix.workspace.dir }}/package-lock.json
 
       - name: Check if lock file is in sync
         run: |
           # Install with package-lock only to detect drift, mirroring the
-          # install flag used by CI. The auto-merge bot lists every variant
+          # install flags used by CI. The auto-merge bot lists every variant
           # of this matrix check in REQUIRED_CHECKS; the merge gate treats
           # an absent check as n/a, so that is safe for PRs that do not
           # touch package files.
-          npm install --package-lock-only --ignore-scripts --no-audit --no-fund --legacy-peer-deps 2>&1
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund 2>&1
           if ! git diff --quiet package-lock.json; then
             echo "::error::package-lock.json is out of sync with package.json in ${{ matrix.workspace.dir }}. Please run 'npm install' and commit the updated lock file."
             git diff package-lock.json

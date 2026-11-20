@@ -11,7 +11,7 @@ import {
 import { randomBytes } from "node:crypto";
 import { server, networkPassphrase } from "./rpc.js";
 import { withRetry } from "./retry.js";
-import { ConfigurationError } from "../errors.js";
+import { ConfigurationError, ServiceUnavailableError } from "../errors.js";
 
 /**
  * One contract instance per commitment (PRD §4.8) — there is no factory
@@ -36,6 +36,43 @@ function wasmHashBytes(): Buffer {
     throw new ConfigurationError("ESCROW_WASM_HASH is not set — see .env.example for how to get it");
   }
   return Buffer.from(hex, "hex");
+}
+
+const STROOPS_PER_XLM = 10_000_000n;
+
+function envXlmStroops(name: string, fallbackXlm: bigint): bigint {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === "") return fallbackXlm * STROOPS_PER_XLM;
+  if (!/^\d+$/.test(raw.trim())) {
+    throw new ConfigurationError(`${name} must be a whole number of XLM`);
+  }
+  return BigInt(raw.trim()) * STROOPS_PER_XLM;
+}
+
+/** Native (XLM) balance of an account in stroops (an account ledger-entry read). */
+async function nativeBalanceStroops(publicKey: string): Promise<bigint> {
+  const entry = await withRetry(() => server.getAccountEntry(publicKey));
+  return BigInt(entry.balance);
+}
+
+/**
+ * Refuses (503) when the deployer's XLM balance is below
+ * DEPLOYER_MIN_BALANCE_XLM (default 10), and warns once it is within
+ * DEPLOYER_BALANCE_WARN_XLM (default 25). The same key is the source
+ * account for every read simulation, so draining it takes down chain
+ * reads as well as deploys.
+ */
+export async function assertDeployerBalance(log?: { warn: (obj: object, msg: string) => void }): Promise<void> {
+  const floor = envXlmStroops("DEPLOYER_MIN_BALANCE_XLM", 10n);
+  const warnAt = envXlmStroops("DEPLOYER_BALANCE_WARN_XLM", 25n);
+  const balance = await nativeBalanceStroops(deployerKeypair().publicKey());
+  if (balance < floor) {
+    log?.warn({ balanceStroops: balance.toString(), floorStroops: floor.toString() }, "deployer balance below floor; refusing deploy");
+    throw new ServiceUnavailableError("contract deployment is temporarily unavailable");
+  }
+  if (balance < warnAt) {
+    log?.warn({ balanceStroops: balance.toString(), floorStroops: floor.toString() }, "deployer balance is near its floor; top it up");
+  }
 }
 
 /** Deploys a new, uninitialized escrow contract instance. Returns its contract ID (C...). */

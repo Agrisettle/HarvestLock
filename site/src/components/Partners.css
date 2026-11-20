@@ -12,6 +12,7 @@
   right: -6%;
   bottom: -18%;
   width: 340px;
+  aspect-ratio: 1;
   opacity: 0.08;
   pointer-events: none;
 }
@@ -33,4 +34,18 @@
   display: flex;
   gap: 14px;
   flex-wrap: wrap;
+}
+
+.partners-cta .btn:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 3px;
+}
+
+.partners-cta .btn-ghost {
+  border-color: var(--bone-dim);
+}
+
+.partners-cta .btn-ghost:hover {
+  border-color: var(--gold-bright);
+  color: var(--gold-bright);
 }

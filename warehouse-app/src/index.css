@@ -113,7 +113,12 @@ main {
 }
 
 .lookup button,
-.refresh-button {
+.refresh-button,
+/* Styled like .refresh-button rather than left as an unstyled UA default
+   (measured 80x21px at 360px): it is the same list-pagination control as
+   Refresh, and 21px is below the 24x24 tap-target floor this app's mobile
+   pass holds its other controls to. */
+.load-more-button {
   background: var(--pine);
   color: var(--bone);
   border: none;
@@ -126,7 +131,8 @@ main {
 }
 
 .lookup button:disabled,
-.refresh-button:disabled {
+.refresh-button:disabled,
+.load-more-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
@@ -167,6 +173,23 @@ main {
   cursor: not-allowed;
 }
 
+/* DisputeSection (feature added to this app after the other two) copied
+   its markup from buyer-app/coop-pwa but these two rules were never
+   copied along with it, so "Flag a dispute"/"Approve resolution"
+   rendered as the gold primary button and its status paragraphs carried
+   default UA margins. Same rules as the other two copies. */
+.action-button.secondary {
+  background: transparent;
+  color: var(--bone);
+  border: 1px solid var(--void-line);
+}
+
+.cancel-status {
+  color: var(--bone-dim);
+  font-size: 0.85rem;
+  margin: 0 0 10px;
+}
+
 .error-banner {
   background: rgba(193, 67, 46, 0.12);
   border: 1px solid var(--signal);
@@ -174,6 +197,12 @@ main {
   padding: 12px 16px;
   border-radius: 6px;
   font-size: 0.9rem;
+  /* API errors are surfaced verbatim (`api.ts`'s get/post throw
+     `${path} -> ${status}: ${body}`), and that path embeds a 56-character
+     contract ID with no spaces in it -- one unbreakable token. Measured at
+     a 360px viewport it ran ~380px past the right edge and dragged the
+     whole page into horizontal scroll, so the break has to be forced. */
+  overflow-wrap: anywhere;
 }
 
 .card {
@@ -316,6 +345,18 @@ main {
   margin: 0;
 }
 
+/* This app's grade table is only two narrow columns, so unlike
+   buyer-app/coop-pwa's four- and five-column tranche tables it already
+   fits a 360px screen (measured). The scroll container is here anyway:
+   a table can't shrink below min-content, `grade_price_bps` is
+   variable-length, and these three index.css copies are deliberately
+   kept in sync by hand (see wallet.ts's note on that convention), so the
+   guard belongs in all three rather than only where it bites today. */
+.tranches-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 table.tranches {
   width: 100%;
   border-collapse: collapse;
@@ -416,4 +457,124 @@ table.tranches th {
   font-weight: 600;
   font-size: 1.05rem;
   color: var(--gold-bright);
+}
+
+.delivery-reference {
+  margin: 0 0 16px;
+  color: var(--bone-faint);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
+
+.print-receipt-button {
+  background: transparent;
+  border: 1px solid var(--void-line);
+  border-radius: 6px;
+  color: var(--bone);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  padding: 8px 12px;
+}
+
+.print-receipt-button:hover {
+  border-color: var(--pine);
+}
+
+@media print {
+  @page {
+    margin: 16mm;
+  }
+
+  body {
+    background: #fff;
+    color: #111;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  .delivery-record,
+  .delivery-record * {
+    visibility: visible !important;
+  }
+
+  .delivery-record {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    margin: 0;
+    color: #111;
+  }
+
+  .delivery-record h3 {
+    color: #111;
+    font-size: 18pt;
+  }
+
+  .delivery-record .delivery-reference,
+  .delivery-record .party-grid dt {
+    color: #444;
+  }
+
+  .delivery-record .party-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .delivery-record .party-grid > div {
+    border: 1px solid #bbb;
+    padding: 12px;
+    break-inside: avoid;
+  }
+
+  .print-receipt-button {
+    display: none !important;
+  }
+}
+
+.build-info {
+  text-align: center;
+  padding: 1rem;
+  font-size: 0.75rem;
+  opacity: 0.5;
+  font-family: monospace;
+}
+
+/* Mobile-width pass: a 360-400px Android viewport is at least as likely
+   as a desktop one for a buyer, cooperative lead or warehouse operator,
+   and this file had no media query at all before. Every value below was
+   measured in Chrome at 360px and 400px rather than guessed. */
+@media (max-width: 480px) {
+  .app-header,
+  main {
+    /* 24px side gutters cost 48px of a 360px screen. 16px is still a
+       comfortable margin and hands the content back 16px -- enough, with
+       the cell padding below, for most tranche tables to stop scrolling. */
+    padding: 16px;
+  }
+
+  main {
+    gap: 16px;
+  }
+
+  table.tranches {
+    font-size: 0.8rem;
+  }
+
+  table.tranches th,
+  table.tranches td {
+    padding: 8px 6px;
+  }
+
+  /* 41x18px is too small to hit reliably with a thumb -- WCAG 2.5.8's
+     minimum is 24x24. Left compact on wider viewports, where the pointer
+     is a mouse and the row height matters more. */
+  .address-chip-copy {
+    min-height: 24px;
+    display: inline-flex;
+    align-items: center;
+  }
 }

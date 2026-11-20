@@ -42,11 +42,22 @@ jobs:
       - name: npm ci
         run: npm ci
 
+      # Fails the job on a high or critical advisory in anything npm ci just
+      # installed (runtime and dev dependencies alike). Moderate and low
+      # advisories do not fail the build. Kept inside this job so the
+      # required check name is unchanged.
+      - name: npm audit (fail on high or critical)
+        run: npm audit --audit-level=high
+
+
       - name: typecheck
         run: npx tsc -b --noEmit
 
       - name: lint
         run: npm run lint
+
+      - name: test
+        run: npm test
 
       - name: build
         run: npm run build

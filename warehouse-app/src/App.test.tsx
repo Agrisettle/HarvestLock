@@ -65,10 +65,10 @@ const detail: CommitmentDetail = {
   dispute_deadline: "0",
 };
 
-function jsonResponse(body: unknown, ok = true) {
+function jsonResponse(body: unknown, ok = true, status = ok ? 200 : 500) {
   return {
     ok,
-    status: ok ? 200 : 500,
+    status,
     json: () => Promise.resolve(body),
     text: () => Promise.resolve(JSON.stringify(body)),
   } as Response;
@@ -96,11 +96,36 @@ describe("App", () => {
     expect(screen.getByText("Commitments to attest")).toBeInTheDocument();
   });
 
+  it("shows a loading state while the list request is in flight", async () => {
+    let resolveList: (value: Response) => void = () => {};
+    const listPromise = new Promise<Response>((res) => {
+      resolveList = res;
+    });
+    fetchMock.mockResolvedValue(listPromise);
+    render(<App />);
+
+    expect(screen.getByText("Loading commitments…")).toBeInTheDocument();
+    expect(screen.queryByTitle(summary.contract_id)).not.toBeInTheDocument();
+
+    resolveList(jsonResponse([summary]));
+    await waitFor(() => expect(screen.getByTitle(summary.contract_id)).toBeInTheDocument());
+    expect(screen.queryByText("Loading commitments…")).not.toBeInTheDocument();
+  });
+
   it("shows an error banner, not a crash, when the list fetch fails", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ error: "db down" }, false));
     render(<App />);
 
-    expect(await screen.findByText(/-> 500/)).toBeInTheDocument();
+    expect(await screen.findByText(/db down/)).toBeInTheDocument();
+    // Only the human message: no request path, status code or raw JSON body.
+    expect(screen.queryByText(/->|statusCode|"error"/)).not.toBeInTheDocument();
+  });
+
+  it("shows the empty state when the list request succeeds with no commitments", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse([]));
+    render(<App />);
+
+    expect(await screen.findByText(/Nothing to attest yet/)).toBeInTheDocument();
   });
 
   it("loads detail when a cached row is clicked", async () => {
@@ -128,6 +153,44 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Look up" }));
 
     expect(await screen.findByRole("button", { name: "Mark mid-season checkpoint" })).toBeInTheDocument();
+  });
+
+  it("shows a detail loading state while a lookup is in flight", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse([]));
+    let resolveDetail: (value: Response) => void = () => {};
+    fetchMock.mockReturnValueOnce(
+      new Promise<Response>((res) => {
+        resolveDetail = res;
+      }),
+    );
+    const user = userEvent.setup();
+    render(<App />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await user.type(screen.getByLabelText("Contract ID"), "CLOOKUP");
+    await user.click(screen.getByRole("button", { name: "Look up" }));
+
+    expect(screen.getByText("Reading CLOOKUP from chain…")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Mark mid-season checkpoint" })).not.toBeInTheDocument();
+
+    resolveDetail(jsonResponse(detail));
+    expect(await screen.findByRole("button", { name: "Mark mid-season checkpoint" })).toBeInTheDocument();
+    expect(screen.queryByText("Reading CLOOKUP from chain…")).not.toBeInTheDocument();
+  });
+
+  it("shows the specific not-found response when a detail lookup fails", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse([]));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ error: "contract not found on chain" }, false, 404),
+    );
+    const user = userEvent.setup();
+    render(<App />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    await user.type(screen.getByLabelText("Contract ID"), "CUNKNOWN");
+    await user.click(screen.getByRole("button", { name: "Look up" }));
+
+    expect(await screen.findByText(/contract not found on chain/)).toBeInTheDocument();
   });
 
   it("marks the checkpoint: build -> sign -> submit -> refresh, end to end through the app", async () => {
@@ -193,6 +256,30 @@ describe("App", () => {
     expect(confirmCall).toBeDefined();
     expect(String(confirmCall?.[1]?.body)).toContain('"deliveredQuantity":900');
     expect(String(confirmCall?.[1]?.body)).toContain('"gradeIndex":1');
+  });
+
+  it("prints the confirmed delivery summary", async () => {
+    const deliveredDetail: CommitmentDetail = {
+      ...detail,
+      status: "Delivered",
+      delivered_quantity: 900,
+      grade_index: 1,
+      settlement_bps: 8_100,
+    };
+    fetchMock.mockResolvedValueOnce(jsonResponse([summary]));
+    fetchMock.mockResolvedValueOnce(jsonResponse(deliveredDetail));
+    const print = vi.fn();
+    vi.stubGlobal("print", print);
+
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByTitle(summary.contract_id));
+
+    expect(await screen.findByText("900 / 1000 contracted")).toBeInTheDocument();
+    expect(screen.getByText("1 (90.00%)")).toBeInTheDocument();
+    expect(screen.getByText("81.00% of contract value")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Print receipt" }));
+    expect(print).toHaveBeenCalledOnce();
   });
 
   it("shows an action error banner, not a crash, if signing is rejected", async () => {

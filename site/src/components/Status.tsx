@@ -24,11 +24,11 @@ export function Status() {
   const liveStatus = useLiveStatus(REFERENCE_CONTRACT_ID);
 
   return (
-    <section id="status">
+    <section id="status" aria-labelledby="status-heading">
       <div className="wrap">
         <Reveal as="div" className="section-head">
           <div className="eyebrow">Where this actually stands</div>
-          <h2>Pre-validation. Building in the open, not behind a deck.</h2>
+          <h2 id="status-heading">Pre-validation. Building in the open, not behind a deck.</h2>
           <p className="lede">
             No pilot partner announced yet. What exists is real, tested, and
             checkable — not a mockup standing in for a product.
@@ -38,7 +38,7 @@ export function Status() {
         <div className="status-grid">
           <Reveal as="div" className="status-col">
             <h3 className="status-col-title">Shipped</h3>
-            <ul className="status-list">
+            <ul className="status-list" role="list">
               {shipped.map((s) => (
                 <li key={s}>{s}</li>
               ))}
@@ -46,7 +46,7 @@ export function Status() {
           </Reveal>
           <Reveal as="div" delay={90} className="status-col">
             <h3 className="status-col-title status-col-title--next">Next</h3>
-            <ul className="status-list status-list--next">
+            <ul className="status-list status-list--next" role="list">
               {next.map((s) => (
                 <li key={s}>{s}</li>
               ))}
@@ -59,7 +59,8 @@ export function Status() {
             className="status-link"
             href="https://github.com/Agrisettle/HarvestLock"
             target="_blank"
-            rel="noreferrer"
+            rel="noreferrer noopener"
+            aria-label="View Agrisettle/HarvestLock repository on GitHub (opens in a new tab)"
           >
             <span className="status-link-label">Repository</span>
             <span className="mono status-link-value">Agrisettle/HarvestLock</span>
@@ -68,21 +69,32 @@ export function Status() {
             className="status-link"
             href="https://github.com/Agrisettle/HarvestLock-Contracts"
             target="_blank"
-            rel="noreferrer"
+            rel="noreferrer noopener"
+            aria-label="View HarvestLock smart contracts source code on GitHub (opens in a new tab)"
           >
             <span className="status-link-label">Contract source</span>
             <span className="mono status-link-value">agrisettle/HarvestLock-Contracts</span>
           </a>
           <a
             className="status-link"
-            href="https://stellar.expert/explorer/testnet/contract/CDVF6UVJOLF3OHCFSYSJ72RMG2T6DUQ42VRJ6IHL6MVEFDYEBZ3KTFK4"
+            href={`https://stellar.expert/explorer/testnet/contract/${REFERENCE_CONTRACT_ID}`}
             target="_blank"
-            rel="noreferrer"
+            rel="noreferrer noopener"
+            aria-label={`View testnet contract ${REFERENCE_CONTRACT_ID} on Stellar Expert (opens in a new tab)${liveStatus ? `, state: ${liveStatus.status}${liveStatus.isStale ? ", data is stale" : ""}` : ""}`}
           >
             <span className="status-link-label">Testnet contract</span>
             <span className="mono status-link-value">
               CDVF6U…FK4
-              {liveStatus && <span className="status-live-badge">{liveStatus}</span>}
+              {liveStatus && (
+                <span
+                  className={`status-live-badge${liveStatus.isStale ? " status-live-badge--stale" : ""}`}
+                  title={`Last successful chain read: ${new Date(liveStatus.updatedAt).toLocaleString()}`}
+                  role="status"
+                  aria-label={`Contract status: ${liveStatus.status}${liveStatus.isStale ? ", data is stale" : ""}`}
+                >
+                  {liveStatus.status}{liveStatus.isStale ? " · stale" : ""}
+                </span>
+              )}
             </span>
           </a>
         </Reveal>

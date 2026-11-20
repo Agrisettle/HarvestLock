@@ -3,6 +3,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { CommitmentDetail } from "./CommitmentDetail";
 import type { CommitmentDetail as CommitmentDetailType } from "../api";
+import { expectNoA11yViolations } from "../a11y";
 
 const baseCommitment: CommitmentDetailType = {
   status: "Advance1Released",
@@ -68,17 +69,19 @@ describe("CommitmentDetail's next action", () => {
     expect(screen.queryByRole("button", { name: "Mark mid-season checkpoint" })).not.toBeInTheDocument();
   });
 
-  it("shows a waiting note, not the confirm-delivery form, when ReadyForDelivery but the remainder isn't funded yet", () => {
+  it("shows a waiting note, not the confirm-delivery form, when ReadyForDelivery but the remainder isn't funded yet", async () => {
     const commitment = { ...baseCommitment, status: "ReadyForDelivery", remainder_funded: false };
-    render(<CommitmentDetail commitment={commitment} contractId="CXXX" {...noopProps} />);
+    const { container } = render(<CommitmentDetail commitment={commitment} contractId="CXXX" {...noopProps} />);
     expect(screen.getByText(/hasn't funded the remainder yet/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Confirm delivery" })).not.toBeInTheDocument();
+    await expectNoA11yViolations(container);
   });
 
-  it("shows the confirm-delivery form once ReadyForDelivery and the remainder is funded", () => {
+  it("shows the confirm-delivery form once ReadyForDelivery and the remainder is funded", async () => {
     const commitment = { ...baseCommitment, status: "ReadyForDelivery", remainder_funded: true };
-    render(<CommitmentDetail commitment={commitment} contractId="CXXX" {...noopProps} />);
+    const { container } = render(<CommitmentDetail commitment={commitment} contractId="CXXX" {...noopProps} />);
     expect(screen.getByRole("button", { name: "Confirm delivery" })).toBeInTheDocument();
+    await expectNoA11yViolations(container);
   });
 
   it("passes this commitment's own contracted_quantity/grade_price_bps into the confirm-delivery form", () => {
@@ -115,5 +118,12 @@ describe("CommitmentDetail's grade schedule table", () => {
     expect(screen.getByText("Grade 0")).toBeInTheDocument();
     expect(screen.getByText("Grade 1")).toBeInTheDocument();
     expect(screen.getByText("Grade 2")).toBeInTheDocument();
+  });
+});
+
+describe("CommitmentDetail's delivery deadline", () => {
+  it("shows the absolute deadline in UTC with an explicit timezone label", () => {
+    render(<CommitmentDetail commitment={baseCommitment} contractId="CXXX" {...noopProps} />);
+    expect(screen.getByText("26 Dec 2026, 00:36 UTC")).toBeInTheDocument();
   });
 });

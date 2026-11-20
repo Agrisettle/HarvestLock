@@ -15,13 +15,24 @@ pilot; don't build that speculatively before one exists.
 ## Setup
 
 ```
-npm install
+npm ci
 cp .env.example .env   # only needed if the API isn't on localhost:3000
 npm run dev
 ```
 
 Needs `api/` running (`cd ../api && npm run dev`) and reachable at
 `VITE_API_URL` (defaults to `http://localhost:3000`).
+
+## Bundle-size budget
+
+The buyer-app CI build runs `npm run check:bundle-size` after Vite builds
+the app. The check adds the raw byte sizes of every generated `.js` and
+`.css` file in `dist/assets/` and fails above **350,000 bytes**. It does
+not include source maps, HTML, images, or compression estimates. The
+budget gives the current production build (265,840 JavaScript and CSS
+bytes, measured with Node 24/npm 11) about 32% headroom while making bundle growth visible
+in the same CI run as the build. Update the budget only with a reviewed
+reason and a new measured baseline.
 
 ## What's real vs. deferred
 
@@ -41,6 +52,20 @@ Automated tests (`npm test`) cover `pendingSummary`'s branches and
 `App`'s fetch-mocked flows, same setup as `coop-pwa` — see that app's
 README for the two real environment issues found getting it working
 (forks-pool hang, Testing Library cleanup needing an explicit hook).
+
+**CommitmentList's three states** (`src/components/CommitmentList.tsx`,
+18 Oct 2026): a deliberate audit of loading / failed / empty found the
+weakest one was loading — `App.tsx` only mounted this component once
+`listLoading` was false and `listError` was null, so the very first load
+rendered a blank gap under "What you've locked" rather than a loading
+state, and a failed fetch only showed a banner in the section above. The
+component now owns all three: a loading message, the request's own
+specific error (`api.ts` throws `${path} -> ${status}: ${body}`, not a
+generic "something went wrong"), the existing empty-state copy, or the
+rows. Covered by its own `CommitmentList.test.tsx` (4 tests) and
+Storybook `Loading`/`Error` stories. `coop-pwa`'s identical component
+still has the old shape — deliberately not touched here, since this
+audit was scoped to buyer-app.
 
 **Lock and settle write actions** (`src/wallet.ts`, `src/App.tsx`, added 2
 Sept 2026): same build → Freighter signs → submit → refresh shape as

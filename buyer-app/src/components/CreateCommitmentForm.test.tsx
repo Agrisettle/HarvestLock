@@ -164,13 +164,14 @@ describe("CreateCommitmentForm", () => {
     await user.type(screen.getByLabelText("Cooperative address"), validFields.cooperative);
     await user.type(screen.getByLabelText("Warehouse operator address"), validFields.warehouseOperator);
     await user.type(screen.getByLabelText("Token contract address"), validFields.token);
-    await user.type(screen.getByLabelText("Total amount (stroops)"), validFields.totalAmount);
-    await user.clear(screen.getByLabelText("Advance 1 share (basis points)"));
-    await user.type(screen.getByLabelText("Advance 1 share (basis points)"), "1500");
-    await user.clear(screen.getByLabelText("Advance 2 share (basis points)"));
-    await user.type(screen.getByLabelText("Advance 2 share (basis points)"), "2000");
-    await user.clear(screen.getByLabelText("Claim window (seconds)"));
-    await user.type(screen.getByLabelText("Claim window (seconds)"), "3600");
+    await user.type(screen.getByLabelText("Total amount (USDC)"), "100");
+    await user.clear(screen.getByLabelText("Advance 1 share (%)"));
+    await user.type(screen.getByLabelText("Advance 1 share (%)"), "15");
+    await user.clear(screen.getByLabelText("Advance 2 share (%)"));
+    await user.type(screen.getByLabelText("Advance 2 share (%)"), "20");
+    await user.clear(screen.getByLabelText("Claim window"));
+    await user.type(screen.getByLabelText("Claim window"), "1");
+    await user.selectOptions(screen.getByLabelText("Claim window unit"), "hours");
     await user.type(screen.getByLabelText(/Contracted quantity/), validFields.contractedQuantity);
     await user.click(screen.getByRole("checkbox", { name: /Roles & Responsibilities/ }));
 
@@ -191,6 +192,40 @@ describe("CreateCommitmentForm", () => {
     );
   });
 
+  it("rejects an amount with more than 7 decimal places without submitting", async () => {
+    const onSubmit = vi.fn();
+    const user = userEvent.setup();
+    render(<CreateCommitmentForm onSubmit={onSubmit} submitting={false} submitError={null} />);
+    await user.type(screen.getByLabelText("Total amount (USDC)"), "1.12345678");
+    await user.click(screen.getByRole("button", { name: "Create commitment" }));
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByText(/At most 7 decimal places/)).toBeInTheDocument();
+  });
+
+  it("sends the exact stroop, second and basis-point strings for friendly inputs", async () => {
+    const onSubmit = vi.fn();
+    const user = userEvent.setup();
+    render(<CreateCommitmentForm onSubmit={onSubmit} submitting={false} submitError={null} />);
+    await user.type(screen.getByLabelText("Cooperative address"), validFields.cooperative);
+    await user.type(screen.getByLabelText("Warehouse operator address"), validFields.warehouseOperator);
+    await user.type(screen.getByLabelText("Token contract address"), validFields.token);
+    await user.type(screen.getByLabelText("Total amount (USDC)"), "1250.5");
+    await user.clear(screen.getByLabelText("Advance 1 share (%)"));
+    await user.type(screen.getByLabelText("Advance 1 share (%)"), "12.5");
+    await user.type(screen.getByLabelText(/Contracted quantity/), validFields.contractedQuantity);
+    await user.click(screen.getByRole("checkbox", { name: /Roles & Responsibilities/ }));
+    await user.click(screen.getByRole("button", { name: "Create commitment" }));
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        totalAmount: "12505000000",
+        advance1Bps: 1250,
+        claimWindowSecs: "86400",
+        remainderWindowSecs: "604800",
+        deliveryWindowSecs: "10368000",
+      }),
+    );
+  });
+
   it("does not call onSubmit when the Roles & Responsibilities checkbox is left unchecked", async () => {
     const onSubmit = vi.fn();
     const user = userEvent.setup();
@@ -199,11 +234,11 @@ describe("CreateCommitmentForm", () => {
     await user.type(screen.getByLabelText("Cooperative address"), validFields.cooperative);
     await user.type(screen.getByLabelText("Warehouse operator address"), validFields.warehouseOperator);
     await user.type(screen.getByLabelText("Token contract address"), validFields.token);
-    await user.type(screen.getByLabelText("Total amount (stroops)"), validFields.totalAmount);
-    await user.clear(screen.getByLabelText("Advance 1 share (basis points)"));
-    await user.type(screen.getByLabelText("Advance 1 share (basis points)"), "1500");
-    await user.clear(screen.getByLabelText("Advance 2 share (basis points)"));
-    await user.type(screen.getByLabelText("Advance 2 share (basis points)"), "2000");
+    await user.type(screen.getByLabelText("Total amount (USDC)"), "100");
+    await user.clear(screen.getByLabelText("Advance 1 share (%)"));
+    await user.type(screen.getByLabelText("Advance 1 share (%)"), "15");
+    await user.clear(screen.getByLabelText("Advance 2 share (%)"));
+    await user.type(screen.getByLabelText("Advance 2 share (%)"), "20");
     await user.type(screen.getByLabelText(/Contracted quantity/), validFields.contractedQuantity);
     // Deliberately not checking the Roles & Responsibilities checkbox this time.
 
@@ -214,6 +249,35 @@ describe("CreateCommitmentForm", () => {
     // regex also matches the checkbox's own (unrelated) label text.
     expect(screen.getByText(/must confirm you've read Roles & Responsibilities/)).toBeInTheDocument();
   }, 15_000);
+
+  it("clears the oracle fields' validation errors when FX conversion is toggled off, not just hides the inputs", async () => {
+    const onSubmit = vi.fn();
+    const user = userEvent.setup();
+    render(<CreateCommitmentForm onSubmit={onSubmit} submitting={false} submitError={null} />);
+
+    await user.type(screen.getByLabelText("Cooperative address"), validFields.cooperative);
+    await user.type(screen.getByLabelText("Warehouse operator address"), validFields.warehouseOperator);
+    await user.type(screen.getByLabelText("Token contract address"), validFields.token);
+    await user.type(screen.getByLabelText("Total amount (USDC)"), "100");
+    await user.type(screen.getByLabelText(/Contracted quantity/), validFields.contractedQuantity);
+    await user.click(screen.getByRole("checkbox", { name: /Roles & Responsibilities/ }));
+
+    // Enable FX conversion but leave its oracle fields blank, so submitting
+    // fails with an oracle-specific validation error.
+    await user.click(screen.getByRole("checkbox", { name: /FX conversion/ }));
+    await user.click(screen.getByRole("button", { name: "Create commitment" }));
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByText(/Oracle contract address is required/)).toBeInTheDocument();
+
+    // Turning FX conversion back off hides the oracle inputs...
+    await user.click(screen.getByRole("checkbox", { name: /FX conversion/ }));
+    expect(screen.queryByLabelText("Reflector oracle contract address")).not.toBeInTheDocument();
+
+    // ...and must clear the now-irrelevant validation error, not leave it
+    // pointing at fields the buyer can no longer see.
+    expect(screen.queryByText(/Oracle contract address is required/)).not.toBeInTheDocument();
+  });
 
   it("shows 'Creating…' and disables the button while submitting", () => {
     render(<CreateCommitmentForm onSubmit={vi.fn()} submitting={true} submitError={null} />);

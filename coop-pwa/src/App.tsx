@@ -11,12 +11,26 @@ import { connectWallet, signTransactionXdr } from "./wallet";
 import { CommitmentDetail } from "./components/CommitmentDetail";
 import { CommitmentList } from "./components/CommitmentList";
 import { OfflineQueueBanner } from "./components/OfflineQueueBanner";
+import { LanguagePicker } from "./components/LanguagePicker";
+import { I18nProvider, useI18n } from "./i18n";
 import { enqueueClaim, listQueuedClaims, removeQueuedClaim, isOfflineError, type QueuedClaim } from "./offlineQueue";
 
 export default function App() {
+  return (
+    <I18nProvider>
+      <AppContent />
+    </I18nProvider>
+  );
+}
+
+function AppContent() {
+  const { t } = useI18n();
   const [commitments, setCommitments] = useState<CommitmentSummary[]>([]);
   const [listError, setListError] = useState<string | null>(null);
   const [listLoading, setListLoading] = useState(true);
+  const [listMoreLoading, setListMoreLoading] = useState(false);
+  const [listMoreError, setListMoreError] = useState<string | null>(null);
+  const [hasMoreCommitments, setHasMoreCommitments] = useState(false);
 
   const [lookupInput, setLookupInput] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -31,6 +45,9 @@ export default function App() {
 
   const [queuedClaims, setQueuedClaims] = useState<QueuedClaim[]>([]);
   const [retryingId, setRetryingId] = useState<number | null>(null);
+  // Per-item retry failures, shown in the banner itself so they stay visible
+  // whatever commitment (or none) is selected.
+  const [retryErrors, setRetryErrors] = useState<Record<number, string>>({});
 
   // Best-effort: IndexedDB can be unavailable (private-browsing mode in
   // some browsers) without that being this app's problem to surface as
@@ -49,29 +66,62 @@ export default function App() {
   const refreshList = useCallback(() => {
     setListLoading(true);
     setListError(null);
+    setListMoreError(null);
     listCommitments()
-      .then(setCommitments)
-      .catch((err: unknown) => setListError(err instanceof Error ? err.message : String(err)))
+      .then((page) => {
+        setCommitments(page);
+        setHasMoreCommitments(page.length === 20);
+      })
+      .catch((err: unknown) =>
+        setListError(
+          t("app.listError", { message: err instanceof Error ? err.message : String(err) }),
+        ),
+      )
       .finally(() => setListLoading(false));
-  }, []);
+  }, [t]);
+
+  const loadMoreCommitments = useCallback(() => {
+    if (listMoreLoading || !hasMoreCommitments) return;
+    setListMoreLoading(true);
+    setListMoreError(null);
+    listCommitments({ offset: commitments.length })
+      .then((page) => {
+        setCommitments((current) => [...current, ...page]);
+        setHasMoreCommitments(page.length === 20);
+      })
+      .catch((err: unknown) =>
+        setListMoreError(
+          t("app.listMoreError", { message: err instanceof Error ? err.message : String(err) }),
+        ),
+      )
+      .finally(() => setListMoreLoading(false));
+  }, [commitments.length, hasMoreCommitments, listMoreLoading, t]);
 
   useEffect(() => {
     refreshList();
   }, [refreshList]);
 
-  const loadDetail = useCallback((contractId: string) => {
-    setSelectedId(contractId);
-    setDetailLoading(true);
-    setDetailError(null);
-    setClaimError(null);
-    getCommitment(contractId)
-      .then(setDetail)
-      .catch((err: unknown) => {
-        setDetail(null);
-        setDetailError(err instanceof Error ? err.message : String(err));
-      })
-      .finally(() => setDetailLoading(false));
-  }, []);
+  const loadDetail = useCallback(
+    (contractId: string) => {
+      setSelectedId(contractId);
+      setDetailLoading(true);
+      setDetailError(null);
+      setClaimError(null);
+      getCommitment(contractId)
+        .then(setDetail)
+        .catch((err: unknown) => {
+          setDetail(null);
+          setDetailError(
+            t("app.detailError", {
+              contractId,
+              message: err instanceof Error ? err.message : String(err),
+            }),
+          );
+        })
+        .finally(() => setDetailLoading(false));
+    },
+    [t],
+  );
 
   const handleConnectWallet = useCallback(() => {
     setWalletError(null);
@@ -124,6 +174,7 @@ export default function App() {
     (claim: QueuedClaim) => {
       if (!walletAddress) return;
       setRetryingId(claim.id);
+      setRetryErrors(({ [claim.id]: _cleared, ...rest }) => rest);
       const method = claim.tranche === 1 ? "claim_advance_1" : "claim_advance_2";
       buildTx(claim.contractId, method, walletAddress)
         .then(({ xdr }) => signTransactionXdr(xdr, walletAddress))
@@ -137,28 +188,37 @@ export default function App() {
         })
         .catch((err: unknown) => {
           if (isOfflineError(err)) return; // still offline -- leave it queued, say nothing new
-          // A real rejection, not just "still offline" -- don't retry
-          // this forever, surface why and let the cooperative decide
-          // what to do next.
-          removeQueuedClaim(claim.id).then(refreshQueue);
-          setClaimError(err instanceof Error ? err.message : String(err));
+          // A real rejection, not just "still offline". Keep the item and
+          // show why on it in the banner: the cooperative decides whether
+          // to retry again or dismiss it, and it never vanishes unseen.
+          const message = err instanceof Error ? err.message : String(err);
+          setRetryErrors((prev) => ({ ...prev, [claim.id]: message }));
         })
         .finally(() => setRetryingId(null));
     },
     [walletAddress, selectedId, refreshQueue],
   );
 
+  const dismissQueuedClaim = useCallback(
+    (claim: QueuedClaim) => {
+      removeQueuedClaim(claim.id).then(refreshQueue);
+      setRetryErrors(({ [claim.id]: _dismissed, ...rest }) => rest);
+    },
+    [refreshQueue],
+  );
+
   return (
     <>
       <header className="app-header">
-        <h1>HarvestLock — Cooperative Dashboard</h1>
-        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-          <span className="tag">read-only reads · testnet</span>
+        <h1>{t("app.title")}</h1>
+        <div className="header-actions">
+          <LanguagePicker />
+          <span className="tag">{t("app.tag")}</span>
           {walletAddress ? (
-            <span className="wallet-address">{walletAddress.slice(0, 4)}…{walletAddress.slice(-4)}</span>
+            <span className="wallet-address">{`${walletAddress.slice(0, 4)}…${walletAddress.slice(-4)}`}</span>
           ) : (
             <button className="wallet-button" onClick={handleConnectWallet}>
-              Connect wallet
+              {t("app.connectWallet")}
             </button>
           )}
         </div>
@@ -167,7 +227,13 @@ export default function App() {
       <main>
         {walletError && <div className="error-banner">{walletError}</div>}
 
-        <OfflineQueueBanner queuedClaims={queuedClaims} retryingId={retryingId} onRetry={retryQueuedClaim} />
+        <OfflineQueueBanner
+          queuedClaims={queuedClaims}
+          retryingId={retryingId}
+          retryErrors={retryErrors}
+          onRetry={retryQueuedClaim}
+          onDismiss={dismissQueuedClaim}
+        />
 
         <form
           className="lookup"
@@ -177,53 +243,73 @@ export default function App() {
           }}
         >
           <label htmlFor="contract-lookup" className="sr-only">
-            Contract ID
+            {t("app.contractIdLabel")}
           </label>
           <input
             id="contract-lookup"
             value={lookupInput}
             onChange={(e) => setLookupInput(e.target.value)}
-            placeholder="Contract ID (C...)"
+            placeholder={t("app.contractIdPlaceholder")}
             spellCheck={false}
           />
           <button type="submit" disabled={!lookupInput.trim()}>
-            Look up
+            {t("app.lookUp")}
           </button>
         </form>
 
-        {selectedId && (
-          <section>
-            {detailLoading && <div className="loading-state">Reading {selectedId} from chain…</div>}
-            {detailError && <div className="error-banner">{detailError}</div>}
-            {detail && !detailLoading && (
-              <CommitmentDetail
-                commitment={detail}
-                contractId={selectedId}
-                walletAddress={walletAddress}
-                onClaim={handleClaim}
-                claimingTranche={claimingTranche}
-                claimError={claimError}
-                onCancelled={() => loadDetail(selectedId)}
-                onReassigned={() => loadDetail(selectedId)}
-                onDisputeChanged={() => loadDetail(selectedId)}
-              />
-            )}
-          </section>
-        )}
+        <section aria-label={t("app.detailsRegion")}>
+          {!selectedId && (
+            <div className="empty-state">{t("app.emptyDetail")}</div>
+          )}
+          {detailLoading && (
+            <div className="loading-state" role="status" aria-live="polite">
+              {t("app.readingCommitment", { contractId: selectedId ?? "" })}
+            </div>
+          )}
+          {detailError && <div className="error-banner" role="alert">{detailError}</div>}
+          {selectedId && detail && !detailLoading && (
+            <CommitmentDetail
+              commitment={detail}
+              contractId={selectedId}
+              walletAddress={walletAddress}
+              onClaim={handleClaim}
+              claimingTranche={claimingTranche}
+              claimError={claimError}
+              onCancelled={() => loadDetail(selectedId)}
+              onReassigned={() => loadDetail(selectedId)}
+              onDisputeChanged={() => loadDetail(selectedId)}
+            />
+          )}
+        </section>
 
         <section>
           <div className="detail-header">
-            <h2 style={{ margin: 0, fontFamily: "var(--display)", fontWeight: 600, fontSize: "1.1rem" }}>
-              Known commitments
+            <h2 className="section-title">
+              {t("app.knownCommitments")}
             </h2>
             <button className="refresh-button" onClick={refreshList} disabled={listLoading}>
-              {listLoading ? "Refreshing…" : "Refresh"}
+              {listLoading ? t("app.refreshing") : t("app.refresh")}
             </button>
           </div>
-          {listError && <div className="error-banner">{listError}</div>}
-          {!listError && !listLoading && <CommitmentList commitments={commitments} onSelect={loadDetail} />}
+          {listLoading ? (
+            <div className="loading-state" role="status" aria-live="polite">{t("app.loadingKnown")}</div>
+          ) : listError ? (
+            <div className="error-banner" role="alert">{listError}</div>
+          ) : (
+            <CommitmentList
+              commitments={commitments}
+              onSelect={loadDetail}
+              hasMore={hasMoreCommitments}
+              loadingMore={listMoreLoading}
+              loadMoreError={listMoreError}
+              onLoadMore={loadMoreCommitments}
+            />
+          )}
         </section>
       </main>
+      {import.meta.env.VITE_BUILD_SHA && (
+        <footer className="build-info">{t("app.build", { sha: import.meta.env.VITE_BUILD_SHA })}</footer>
+      )}
     </>
   );
 }

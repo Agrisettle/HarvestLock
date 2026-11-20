@@ -7,6 +7,7 @@ import {
   signMultisigProposal,
   submitTx,
 } from "../api";
+import { useI18n } from "../i18n";
 import { signAuthEntry, signTransactionXdr } from "../wallet";
 
 /** Mirrors lib.rs's flag_dispute() reachable-state range — Locked through Delivered, never Draft (nothing escrowed yet to freeze) and never a terminal status. */
@@ -65,6 +66,7 @@ export function DisputeSection({
   walletAddress: string | null;
   onDisputeChanged: () => void;
 }) {
+  const { t } = useI18n();
   const [proposal, setProposal] = useState<MultisigProposal | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -156,46 +158,46 @@ export function DisputeSection({
 
       {!disputed && (
         <button className="action-button secondary" onClick={handleFlag} disabled={busy}>
-          {busy ? "Flagging…" : "Flag a dispute"}
+          {busy ? t("dispute.flagging") : t("dispute.flag")}
         </button>
       )}
 
       {disputed && !proposal && (
         <>
           <p className="cancel-status">
-            This commitment is disputed — every other action is frozen until it's resolved.
+            {t("dispute.frozen")}
           </p>
           <button className="action-button secondary" onClick={handlePropose} disabled={busy}>
-            {busy ? "Proposing…" : "Propose resolving this dispute"}
+            {busy ? t("dispute.proposing") : t("dispute.propose")}
           </button>
         </>
       )}
 
       {proposal?.status === "pending" && iAmProposer && (
-        <p className="cancel-status">Resolution proposed — waiting for the other two parties to approve.</p>
+        <p className="cancel-status" role="status">{t("dispute.proposed")}</p>
       )}
 
       {proposal?.status === "pending" && isPendingSigner && (
         <>
-          <p className="cancel-status">A party wants to resolve this dispute and resume normal processing.</p>
+          <p className="cancel-status" role="status">{t("dispute.otherWants")}</p>
           <button className="action-button secondary" onClick={handleApprove} disabled={busy}>
-            {busy ? "Approving…" : "Approve resolution"}
+            {busy ? t("dispute.approving") : t("dispute.approve")}
           </button>
         </>
       )}
 
       {proposal?.status === "pending" && justApproved && !isPendingSigner && !iAmProposer && (
-        <p className="cancel-status">Approved — waiting for the remaining party to approve too.</p>
+        <p className="cancel-status" role="status">{t("dispute.approvedWaiting")}</p>
       )}
 
       {proposal?.status === "ready" && iAmProposer && (
         <button className="action-button secondary" onClick={handleFinalize} disabled={busy}>
-          {busy ? "Finalizing…" : "Finalize resolution"}
+          {busy ? t("dispute.finalizing") : t("dispute.finalize")}
         </button>
       )}
 
       {proposal?.status === "ready" && !iAmProposer && (
-        <p className="cancel-status">Approved — waiting for the proposer to finalize.</p>
+        <p className="cancel-status" role="status">{t("dispute.approvedWaitingProposer")}</p>
       )}
     </div>
   );

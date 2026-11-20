@@ -32,7 +32,7 @@ const PLACEHOLDER_TOKEN = "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGC
 // a second buildServer()/afterAll(() => app.close()) pair in a different
 // describe block would close that same pool out from under whichever
 // describe block runs after it (a real bug this file hit once already).
-const app = buildServer();
+const app = await buildServer();
 afterAll(() => app.close());
 
 describe("stellar/client (live testnet reads)", () => {

@@ -1,9 +1,10 @@
 /* ---------- Agrisettle / HarvestLock design tokens ---------- */
-/* Dark-first, per BRANDING.md. This site commits to one visual world
-   rather than adapting to system light mode — the mark and the whole
-   identity were built and proven against the Void ground. */
+/* Dark palette follows Agrisettle's brand. The light palette below keeps
+   the same relationships while letting system preference choose the ground. */
 
 :root {
+  color-scheme: dark;
+
   --void: #0b120f;
   --void-raised: #121a16;
   --void-line: #23302a;
@@ -15,9 +16,12 @@
 
   --pine: #1e6b4e;
   --pine-soft: #163f30;
+  --pine-text: #6fbf9d;
   --gold: #d4a937;
   --gold-bright: #eec765;
-  --signal: #c1432e;
+  --gold-fill: #d4a937;
+  --gold-ink: #0b120f;
+  --signal: #f07a63;
 
   --display: "Fraunces", ui-serif, Georgia, serif;
   --body: "Inter", -apple-system, "Segoe UI", sans-serif;
@@ -27,6 +31,30 @@
   --wide: 1180px;
 
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+
+    --void: #f7f6f0;
+    --void-raised: #eeece2;
+    --void-line: #c7c4b8;
+    --void-line-soft: #dedbd0;
+
+    --bone: #1c261f;
+    --bone-dim: #3f4b43;
+    --bone-faint: #59645d;
+
+    --pine: #1e6b4e;
+    --pine-soft: #e2eee7;
+    --pine-text: #1e6b4e;
+    --gold: #755000;
+    --gold-bright: #684700;
+    --gold-fill: #f1cf72;
+    --gold-ink: #1c261f;
+    --signal: #a82f1f;
+  }
 }
 
 * {
@@ -77,8 +105,8 @@ body {
   top: -100%;
   left: 16px;
   z-index: 100;
-  background: var(--gold);
-  color: var(--void);
+  background: var(--gold-fill);
+  color: var(--gold-ink);
   font-family: var(--body);
   font-weight: 600;
   font-size: 15px;
@@ -90,7 +118,7 @@ body {
 
 .skip-link:focus-visible {
   top: 16px;
-  outline-color: var(--void);
+  outline-color: var(--gold-ink);
 }
 
 #root {
@@ -108,8 +136,8 @@ img {
 }
 
 ::selection {
-  background: var(--gold);
-  color: var(--void);
+  background: var(--gold-fill);
+  color: var(--gold-ink);
 }
 
 /* ---------- type scale ---------- */
@@ -233,12 +261,13 @@ section {
 }
 
 .btn-primary {
-  background: var(--gold);
-  color: var(--void);
+  background: var(--gold-fill);
+  color: var(--gold-ink);
 }
 
 .btn-primary:hover {
-  background: var(--gold-bright);
+  background: var(--gold-fill);
+  filter: brightness(0.96);
 }
 
 .btn-ghost {
@@ -273,7 +302,9 @@ section {
     transform 0.7s var(--ease);
 }
 
-.reveal.in-view {
+.reveal.in-view,
+.reveal:focus-within,
+.reveal:focus-visible {
   opacity: 1;
   transform: translateY(0);
 }

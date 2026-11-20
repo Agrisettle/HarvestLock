@@ -28,14 +28,14 @@ permissions:
 # api/README.md/api/HANDOFF.md and
 # https://github.com/Agrisettle/HarvestLock/issues/10.
 #
-# What DOES run here now: server.test.ts and reputation.test.ts, the two
-# test files that need a real Postgres (the same service container the
-# migrate step below already stands up) but never touch Stellar/Soroban
-# at all -- neither imports anything that requires DEPLOYER_SECRET_KEY or
-# ESCROW_WASM_HASH, checked directly before wiring this in. This was
-# previously a real coverage gap: a green badge with the actual test
-# suite never running in CI at all, not even the parts that need no
-# secret.
+# What DOES run here now: server.test.ts, reputation.test.ts, and
+# retry.test.ts -- all network-free. The first two need a real Postgres
+# (the same service container the migrate step below already stands up);
+# retry.test.ts is pure deterministic fakes. None imports anything that
+# requires DEPLOYER_SECRET_KEY or ESCROW_WASM_HASH, checked directly
+# before wiring this in. This was previously a real coverage gap: a green
+# badge with the actual test suite never running in CI at all, not even
+# the parts that need no secret.
 
 jobs:
   build:
@@ -83,6 +83,15 @@ jobs:
       - name: npm ci
         run: npm ci
 
+      # Fails the job on a high or critical advisory in anything npm ci just
+      # installed (runtime and dev dependencies alike: dev tooling runs in CI
+      # with this job's token). Moderate and low advisories are reported by
+      # `npm audit` locally but do not fail the build. Added inside this job
+      # rather than as a new one so the required check name is unchanged.
+      - name: npm audit (fail on high or critical)
+        run: npm audit --audit-level=high
+
+
       - name: typecheck
         run: npm run typecheck
 
@@ -92,5 +101,5 @@ jobs:
       - name: migrate (proves the schema is actually valid SQL)
         run: npm run migrate
 
-      - name: test (server.test.ts + reputation.test.ts -- no Stellar network calls)
-        run: npx vitest run test/server.test.ts test/reputation.test.ts
+      - name: test (server.test.ts + reputation.test.ts + retry.test.ts -- no Stellar network calls)
+        run: npx vitest run test/server.test.ts test/reputation.test.ts test/retry.test.ts

@@ -1,0 +1,18 @@
+# HarvestLock — security.txt (RFC 9116)
+# https://www.rfc-editor.org/rfc/rfc9116.html
+#
+# Served from /.well-known/security.txt on the public site (Vite copies
+# site/public/ verbatim to dist/). Keep this in sync with SECURITY.md --
+# that file is the human-readable policy this file points at, and
+# samuelojetunde898@gmail.com is the same disclosure contact named there.
+#
+# Canonical is deliberately omitted for the same reason the og:image
+# meta tag in site/index.html is a relative path: the site has no stable
+# production domain yet, and a wrong static domain here would be worse
+# than none. Add `Canonical: https://<domain>/.well-known/security.txt`
+# the day a real URL exists.
+
+Contact: mailto:samuelojetunde898@gmail.com
+Expires: 2027-10-17T00:00:00.000Z
+Preferred-Languages: en
+Policy: https://github.com/Agrisettle/HarvestLock/blob/main/SECURITY.md

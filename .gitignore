@@ -8,6 +8,7 @@ node_modules/
 dist/
 gh-pages-dist/
 build/
+storybook-static/
 .env
 .env.*
 !.env.example
@@ -23,4 +24,10 @@ Thumbs.db
 *.log
 npm-debug.log*
 .vercel
-.env*
+
+# Playwright (e2e)
+test-results/
+playwright-report/
+
+# Python bytecode (CI scanner self-tests)
+__pycache__/

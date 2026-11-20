@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { durationToSecs, parseTokenAmount, percentToBps, type DurationUnit } from "../amount";
 
 // Mirrors api/src/server.ts's MIN_CLAIM_WINDOW_SECS/MAX_CLAIM_WINDOW_SECS
 // (and the two window pairs below) — the API enforces these regardless,
@@ -73,6 +74,54 @@ const emptyFields: CreateCommitmentFields = {
   rolesAcknowledged: false,
 };
 
+// What the buyer actually types: token units (USDC), a number plus a
+// days/hours unit, and percentages. Converted to the API's stroop / second /
+// basis-point strings on submit, so the API contract is unchanged.
+interface WindowInput {
+  value: string;
+  unit: DurationUnit;
+}
+interface FriendlyInputs {
+  amount: string;
+  advance1Pct: string;
+  advance2Pct: string;
+  claim: WindowInput;
+  remainder: WindowInput;
+  delivery: WindowInput;
+}
+
+const emptyInputs: FriendlyInputs = {
+  amount: "",
+  advance1Pct: "0",
+  advance2Pct: "0",
+  claim: { value: "1", unit: "days" },
+  remainder: { value: "7", unit: "days" },
+  delivery: { value: "120", unit: "days" },
+};
+
+/** Converts the friendly inputs into the API-shaped fields. Returns an error message instead of throwing. */
+export function applyFriendlyInputs(
+  fields: CreateCommitmentFields,
+  inputs: FriendlyInputs,
+): { fields: CreateCommitmentFields } | { error: string } {
+  try {
+    const totalAmount = parseTokenAmount(inputs.amount.trim() === "" ? "0" : inputs.amount).toString();
+    return {
+      fields: {
+        ...fields,
+        totalAmount,
+        advance1Bps: percentToBps(inputs.advance1Pct),
+        advance2Bps: percentToBps(inputs.advance2Pct),
+        claimWindowSecs: durationToSecs(inputs.claim.value, inputs.claim.unit),
+        remainderWindowSecs: durationToSecs(inputs.remainder.value, inputs.remainder.unit),
+        deliveryWindowSecs: durationToSecs(inputs.delivery.value, inputs.delivery.unit),
+      },
+    };
+  } catch (e) {
+    return { error: `${e instanceof Error ? e.message : "Invalid number."}` };
+  }
+}
+
 /** Parses the comma-separated grade-price-schedule input into lib.rs's `grade_price_bps: Vec<u32>` shape. Exported so App.tsx's submit handler can reuse the exact same parse, not a second copy of it. */
 export function parseGradePriceBps(raw: string): number[] {
   return raw
@@ -139,6 +188,22 @@ export function validateCreateCommitmentFields(fields: CreateCommitmentFields): 
   return null;
 }
 
+// Every message validateCreateCommitmentFields can emit for the FX/oracle
+// group. Turning FX conversion off hides those inputs, so an error that
+// points at one would be left in the banner with nothing the buyer can do
+// about it -- clear those when the group closes, but leave unrelated
+// validation errors alone.
+const FX_VALIDATION_ERROR_PREFIXES = [
+  "Oracle contract address",
+  "Price asset",
+  "Oracle max quote age",
+  "Deal value in the price asset",
+];
+
+function isFxValidationError(message: string): boolean {
+  return FX_VALIDATION_ERROR_PREFIXES.some((prefix) => message.startsWith(prefix));
+}
+
 export function CreateCommitmentForm({
   onSubmit,
   submitting,
@@ -149,17 +214,30 @@ export function CreateCommitmentForm({
   submitError: string | null;
 }) {
   const [fields, setFields] = useState<CreateCommitmentFields>(emptyFields);
+  const [inputs, setInputs] = useState<FriendlyInputs>(emptyInputs);
   const [validationError, setValidationError] = useState<string | null>(null);
 
   function update<K extends keyof CreateCommitmentFields>(key: K, value: CreateCommitmentFields[K]) {
     setFields((prev) => ({ ...prev, [key]: value }));
   }
 
+  function toggleFxConversion(enabled: boolean) {
+    update("fxConversionEnabled", enabled);
+    if (!enabled) {
+      setValidationError((current) => (current && isFxValidationError(current) ? null : current));
+    }
+  }
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const error = validateCreateCommitmentFields(fields);
+    const converted = applyFriendlyInputs(fields, inputs);
+    if ("error" in converted) {
+      setValidationError(converted.error);
+      return;
+    }
+    const error = validateCreateCommitmentFields(converted.fields);
     setValidationError(error);
-    if (!error) onSubmit(fields);
+    if (!error) onSubmit(converted.fields);
   }
 
   return (
@@ -195,58 +273,84 @@ export function CreateCommitmentForm({
         spellCheck={false}
       />
 
-      <label htmlFor="total-amount">Total amount (stroops)</label>
+      <label htmlFor="total-amount">Total amount (USDC)</label>
       <input
         id="total-amount"
-        value={fields.totalAmount}
-        onChange={(e) => update("totalAmount", e.target.value.replace(/[^0-9]/g, ""))}
-        placeholder="1000000000"
-        inputMode="numeric"
+        value={inputs.amount}
+        onChange={(e) => setInputs((p) => ({ ...p, amount: e.target.value.replace(/[^0-9.]/g, "") }))}
+        placeholder="100.00"
+        inputMode="decimal"
       />
 
-      <label htmlFor="advance1-bps">Advance 1 share (basis points)</label>
+      <label htmlFor="advance1-pct">Advance 1 share (%)</label>
       <input
-        id="advance1-bps"
-        type="number"
-        min={0}
-        max={10_000}
-        value={fields.advance1Bps}
-        onChange={(e) => update("advance1Bps", Number(e.target.value))}
+        id="advance1-pct"
+        value={inputs.advance1Pct}
+        onChange={(e) => setInputs((p) => ({ ...p, advance1Pct: e.target.value.replace(/[^0-9.]/g, "") }))}
+        inputMode="decimal"
       />
 
-      <label htmlFor="advance2-bps">Advance 2 share (basis points)</label>
+      <label htmlFor="advance2-pct">Advance 2 share (%)</label>
       <input
-        id="advance2-bps"
-        type="number"
-        min={0}
-        max={10_000}
-        value={fields.advance2Bps}
-        onChange={(e) => update("advance2Bps", Number(e.target.value))}
+        id="advance2-pct"
+        value={inputs.advance2Pct}
+        onChange={(e) => setInputs((p) => ({ ...p, advance2Pct: e.target.value.replace(/[^0-9.]/g, "") }))}
+        inputMode="decimal"
       />
 
-      <label htmlFor="claim-window">Claim window (seconds)</label>
-      <input
-        id="claim-window"
-        value={fields.claimWindowSecs}
-        onChange={(e) => update("claimWindowSecs", e.target.value.replace(/[^0-9]/g, ""))}
-        inputMode="numeric"
-      />
+      <label htmlFor="claim-window">Claim window</label>
+      <div className="window-input">
+        <input
+          id="claim-window"
+          value={inputs.claim.value}
+          onChange={(e) => setInputs((p) => ({ ...p, claim: { ...p.claim, value: e.target.value.replace(/[^0-9]/g, "") } }))}
+          inputMode="numeric"
+        />
+        <select
+          aria-label="Claim window unit"
+          value={inputs.claim.unit}
+          onChange={(e) => setInputs((p) => ({ ...p, claim: { ...p.claim, unit: e.target.value as DurationUnit } }))}
+        >
+          <option value="days">days</option>
+          <option value="hours">hours</option>
+        </select>
+      </div>
 
-      <label htmlFor="remainder-window">Remainder-payment window (seconds)</label>
-      <input
-        id="remainder-window"
-        value={fields.remainderWindowSecs}
-        onChange={(e) => update("remainderWindowSecs", e.target.value.replace(/[^0-9]/g, ""))}
-        inputMode="numeric"
-      />
+      <label htmlFor="remainder-window">Remainder-payment window</label>
+      <div className="window-input">
+        <input
+          id="remainder-window"
+          value={inputs.remainder.value}
+          onChange={(e) => setInputs((p) => ({ ...p, remainder: { ...p.remainder, value: e.target.value.replace(/[^0-9]/g, "") } }))}
+          inputMode="numeric"
+        />
+        <select
+          aria-label="Remainder-payment window unit"
+          value={inputs.remainder.unit}
+          onChange={(e) => setInputs((p) => ({ ...p, remainder: { ...p.remainder, unit: e.target.value as DurationUnit } }))}
+        >
+          <option value="days">days</option>
+          <option value="hours">hours</option>
+        </select>
+      </div>
 
-      <label htmlFor="delivery-window">Delivery window (seconds)</label>
-      <input
-        id="delivery-window"
-        value={fields.deliveryWindowSecs}
-        onChange={(e) => update("deliveryWindowSecs", e.target.value.replace(/[^0-9]/g, ""))}
-        inputMode="numeric"
-      />
+      <label htmlFor="delivery-window">Delivery window</label>
+      <div className="window-input">
+        <input
+          id="delivery-window"
+          value={inputs.delivery.value}
+          onChange={(e) => setInputs((p) => ({ ...p, delivery: { ...p.delivery, value: e.target.value.replace(/[^0-9]/g, "") } }))}
+          inputMode="numeric"
+        />
+        <select
+          aria-label="Delivery window unit"
+          value={inputs.delivery.unit}
+          onChange={(e) => setInputs((p) => ({ ...p, delivery: { ...p.delivery, unit: e.target.value as DurationUnit } }))}
+        >
+          <option value="days">days</option>
+          <option value="hours">hours</option>
+        </select>
+      </div>
 
       <label htmlFor="contracted-quantity">Contracted quantity (units — e.g. kg or bags)</label>
       <input
@@ -270,7 +374,7 @@ export function CreateCommitmentForm({
         <input
           type="checkbox"
           checked={fields.fxConversionEnabled}
-          onChange={(e) => update("fxConversionEnabled", e.target.checked)}
+          onChange={(e) => toggleFxConversion(e.target.checked)}
         />
         <span>This deal needs FX conversion to stablecoin at settlement (optional) — leave unchecked for a plain deal.</span>
       </label>

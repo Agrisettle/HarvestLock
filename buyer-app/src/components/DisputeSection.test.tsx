@@ -75,7 +75,7 @@ describe("DisputeSection", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("renders nothing for a connected wallet that isn't a party to the commitment", () => {
+  it("renders no flag button at all for a connected wallet that isn't a party to the commitment", () => {
     const { container } = render(
       <DisputeSection
         commitment={baseCommitment}
@@ -84,6 +84,12 @@ describe("DisputeSection", () => {
         onDisputeChanged={vi.fn()}
       />,
     );
+
+    // A non-party must not get a disabled flag button either: the role guard
+    // returns null before any button is rendered. baseCommitment is "Locked",
+    // so the absence is caused by the role check, not the status check.
+    expect(screen.queryByRole("button", { name: /flag a dispute/i })).toBeNull();
+    expect(screen.queryAllByRole("button")).toHaveLength(0);
     expect(container).toBeEmptyDOMElement();
   });
 

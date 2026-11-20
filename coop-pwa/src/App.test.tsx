@@ -5,6 +5,7 @@ import { IDBFactory } from "fake-indexeddb";
 import App from "./App";
 import type { CommitmentDetail, CommitmentSummary } from "./api";
 import * as wallet from "./wallet";
+import { enqueueClaim, listQueuedClaims } from "./offlineQueue";
 
 // wallet.ts talks to the real Freighter browser extension, which doesn't
 // exist in this test environment (and can't be meaningfully faked the
@@ -131,11 +132,46 @@ describe("App", () => {
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/commitments"));
   });
 
+  it("requests the next commitment page and appends its rows", async () => {
+    const firstPage = Array.from({ length: 20 }, (_, index) => ({
+      ...summary,
+      id: `row-${index + 1}`,
+      contract_id: `CONTRACT-${index + 1}`,
+    }));
+    const nextPage = [{ ...summary, id: "row-21", contract_id: "CONTRACT-21" }];
+    fetchMock.mockResolvedValueOnce(jsonResponse(firstPage));
+    fetchMock.mockResolvedValueOnce(jsonResponse(nextPage));
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(await screen.findByTitle("CONTRACT-1")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Load more" }));
+
+    expect(await screen.findByTitle("CONTRACT-21")).toBeInTheDocument();
+    expect(screen.getByTitle("CONTRACT-1")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenLastCalledWith(expect.stringMatching(/\/commitments\?limit=20&offset=20$/));
+    expect(screen.queryByRole("button", { name: "Load more" })).not.toBeInTheDocument();
+  });
+
+  it("shows loading and empty states while the commitments list is being fetched", async () => {
+    let resolveList!: (response: Response) => void;
+    fetchMock.mockReturnValueOnce(new Promise<Response>((resolve) => { resolveList = resolve; }));
+    render(<App />);
+
+    expect(screen.getByRole("status")).toHaveTextContent("Loading known commitments");
+    expect(screen.getByText("Look up a contract ID or select a known commitment to view its details.")).toBeInTheDocument();
+
+    resolveList(jsonResponse([]));
+    expect(await screen.findByText(/No commitments cached yet/)).toBeInTheDocument();
+  });
+
   it("shows an error banner, not a crash, when the list fetch fails", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ error: "db down" }, false));
     render(<App />);
 
-    expect(await screen.findByText(/-> 500/)).toBeInTheDocument();
+    expect(await screen.findByText(/db down/)).toBeInTheDocument();
+    // Only the human message: no request path, status code or raw JSON body.
+    expect(screen.queryByText(/->|statusCode|"error"/)).not.toBeInTheDocument();
   });
 
   it("loads and renders detail when a cached row is clicked", async () => {
@@ -166,6 +202,30 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Look up" }));
 
     expect(await screen.findByText("15.00%")).toBeInTheDocument();
+  });
+
+  it("names the commitment when a detail lookup fails before reaching the API", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse([]));
+    fetchMock.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.type(screen.getByLabelText("Contract ID"), "CUNKNOWN");
+    await user.click(screen.getByRole("button", { name: "Look up" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/Unable to load commitment CUNKNOWN/);
+  });
+
+  it("shows a live loading state while a commitment lookup is pending", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse([]));
+    fetchMock.mockReturnValueOnce(new Promise<Response>(() => {}));
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.type(screen.getByLabelText("Contract ID"), "CUNKNOWN");
+    await user.click(screen.getByRole("button", { name: "Look up" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Reading commitment CUNKNOWN from chain");
   });
 
   it("connects a wallet and shows its truncated address instead of the connect button", async () => {
@@ -270,7 +330,8 @@ describe("App", () => {
       fetchMock.mockResolvedValueOnce(allocationNotSetResponse()); // AllocationLedgerSection's background read -- unconditional, unlike the two polls above
       // buildTx never even reaches the network -- the exact failure mode
       // isOfflineError exists to detect, not a rejection the server sent back.
-      fetchMock.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+      // (buildTx retries a transport failure, so all three attempts fail.)
+      fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
 
       vi.mocked(wallet.connectWallet).mockResolvedValueOnce(detail.cooperative);
 
@@ -281,7 +342,8 @@ describe("App", () => {
       await user.click(await screen.findByTitle(summary.contract_id));
       await user.click(await screen.findByRole("button", { name: "Claim" }));
 
-      expect(await screen.findByText(/1 claim couldn't reach the network/)).toBeInTheDocument();
+      // Backoff (500ms + 1s) runs before the failure is final, so wait past findBy's 1s default.
+      expect(await screen.findByText(/1 claim couldn't reach the network/, undefined, { timeout: 4000 })).toBeInTheDocument();
       expect(screen.getAllByText(/Advance 1/).length).toBeGreaterThan(0);
       // Never got far enough to even ask Freighter to sign anything.
       expect(wallet.signTransactionXdr).not.toHaveBeenCalled();
@@ -290,6 +352,7 @@ describe("App", () => {
       // submit -> refresh, exactly the same shape as a first attempt,
       // not a replay of the failed one (there was nothing to replay --
       // it never got a signature or an XDR the first time).
+      fetchMock.mockReset();
       fetchMock.mockResolvedValueOnce(jsonResponse({ xdr: "UNSIGNED_XDR" })); // buildTx
       fetchMock.mockResolvedValueOnce(jsonResponse({ status: "SUCCESS", hash: "abc" })); // submitTx
       fetchMock.mockResolvedValueOnce(jsonResponse(claimedDetail)); // post-claim refresh
@@ -303,4 +366,52 @@ describe("App", () => {
     },
     15_000,
   );
+
+  it("shows a failed retry's error in the banner even with no commitment selected, and keeps the item", async () => {
+    await enqueueClaim("CQUEUED1", 1);
+    fetchMock.mockResolvedValueOnce(jsonResponse([])); // initial list
+    vi.mocked(wallet.connectWallet).mockResolvedValueOnce(detail.cooperative);
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Connect wallet" }));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ statusCode: 400, error: "Bad Request", message: "claim window has closed" }, false),
+    ); // buildTx rejected by the API
+    await user.click(await screen.findByRole("button", { name: "Retry" }));
+
+    expect(await screen.findByText("claim window has closed")).toBeInTheDocument();
+    // Still queued, so the cooperative can retry again or dismiss it.
+    expect(screen.getByText(/1 claim couldn't reach the network/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(screen.queryByText(/couldn't reach the network/)).not.toBeInTheDocument());
+  });
+
+  it("does not queue a non-network TypeError: it surfaces as an error instead", async () => {
+    const openDetail: CommitmentDetail = { ...detail, advance1_deadline: String(Math.floor(Date.now() / 1000) + 3600) };
+    fetchMock.mockResolvedValueOnce(jsonResponse([summary])); // initial list
+    fetchMock.mockResolvedValueOnce(jsonResponse(openDetail)); // click row -> detail
+    fetchMock.mockResolvedValueOnce(jsonResponse({ proposal: null })); // CancelSection poll
+    fetchMock.mockResolvedValueOnce(jsonResponse({ proposal: null })); // ReassignBuyerSection poll
+    fetchMock.mockResolvedValueOnce(allocationNotSetResponse());
+    // A programming error in the chain: fetch answered, then reading the body threw a TypeError.
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () => {
+        throw new TypeError("Cannot read properties of undefined (reading 'xdr')");
+      },
+    } as unknown as Response);
+    vi.mocked(wallet.connectWallet).mockResolvedValueOnce(detail.cooperative);
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Connect wallet" }));
+    await user.click(await screen.findByTitle(summary.contract_id));
+    await user.click(await screen.findByRole("button", { name: "Claim" }));
+
+    expect(await screen.findByText(/Cannot read properties of undefined/)).toBeInTheDocument();
+    expect(screen.queryByText(/couldn't reach the network/)).not.toBeInTheDocument();
+    expect(await listQueuedClaims()).toEqual([]);
+  });
 });

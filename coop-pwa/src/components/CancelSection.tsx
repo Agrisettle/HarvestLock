@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { MultisigProposal, CommitmentDetail as CommitmentDetailType } from "../api";
 import { getCancelProposal, proposeCancel, signMultisigProposal, submitTx } from "../api";
+import { useI18n } from "../i18n";
 import { signAuthEntry, signTransactionXdr } from "../wallet";
 
 /** Mirrors lib.rs's cancel() reachable-state range — Draft through ReadyForDelivery, never after Delivered. */
@@ -37,6 +38,7 @@ export function CancelSection({
   walletAddress: string | null;
   onCancelled: () => void;
 }) {
+  const { t } = useI18n();
   const [proposal, setProposal] = useState<MultisigProposal | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -111,35 +113,35 @@ export function CancelSection({
 
   return (
     <div className="cancel-section">
-      {error && <div className="error-banner">{error}</div>}
+      {error && <div className="error-banner" role="alert">{error}</div>}
 
       {!proposal && (
         <button className="action-button secondary" onClick={handlePropose} disabled={busy}>
-          {busy ? "Proposing…" : "Cancel this commitment"}
+          {busy ? t("cancel.proposing") : t("cancel.propose")}
         </button>
       )}
 
       {proposal?.status === "pending" && iAmProposer && (
-        <p className="cancel-status">Cancellation proposed — waiting for the other party to approve.</p>
+        <p className="cancel-status" role="status">{t("cancel.proposed")}</p>
       )}
 
       {proposal?.status === "pending" && iMustApprove && (
         <>
-          <p className="cancel-status">The other party wants to cancel this commitment.</p>
+          <p className="cancel-status" role="status">{t("cancel.otherWants")}</p>
           <button className="action-button secondary" onClick={handleApprove} disabled={busy}>
-            {busy ? "Approving…" : "Approve cancellation"}
+            {busy ? t("cancel.approving") : t("cancel.approve")}
           </button>
         </>
       )}
 
       {proposal?.status === "ready" && iAmProposer && (
         <button className="action-button secondary" onClick={handleFinalize} disabled={busy}>
-          {busy ? "Finalizing…" : "Finalize cancellation"}
+          {busy ? t("cancel.finalizing") : t("cancel.finalize")}
         </button>
       )}
 
       {proposal?.status === "ready" && !iAmProposer && (
-        <p className="cancel-status">Approved — waiting for the proposer to finalize.</p>
+        <p className="cancel-status" role="status">{t("cancel.approvedWaiting")}</p>
       )}
     </div>
   );

@@ -20,7 +20,7 @@
 [![contracts](https://github.com/Agrisettle/HarvestLock-Contracts/actions/workflows/test.yml/badge.svg)](https://github.com/Agrisettle/HarvestLock-Contracts/actions/workflows/test.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](./LICENSE)
 
-[**Live Preview**](https://agrisettle.github.io/HarvestLock/) &nbsp;·&nbsp; [**Demo Video**](https://github.com/Agrisettle/HarvestLock/releases/tag/demo-v1) &nbsp;·&nbsp; [**Prospectus**](./docs/PROSPECTUS.md) &nbsp;·&nbsp; [**PRD**](./docs/PRD.md) &nbsp;·&nbsp; [**Roadmap**](./ROADMAP.md)
+[**Live Preview**](https://agrisettle.github.io/HarvestLock/) &nbsp;·&nbsp; [**Demo Video**](https://github.com/Agrisettle/HarvestLock/releases/tag/demo-v1) &nbsp;·&nbsp; [**Prospectus**](./docs/PROSPECTUS.md) &nbsp;·&nbsp; [**PRD**](./docs/PRD.md) &nbsp;·&nbsp; [**Contract glossary**](./docs/contract-glossary.md) &nbsp;·&nbsp; [**Roadmap**](./ROADMAP.md)
 
 </div>
 
@@ -109,8 +109,9 @@ component that changed (path-scoped — touching `api/` doesn't trigger
 current state, not any particular commit — a red badge means something
 on `main` is actually broken; check the linked workflow run for which
 commit and why. `api/`'s CI runs its network-free tests
-(`server.test.ts`/`reputation.test.ts`, against a real Postgres service
-container) but intentionally still skips the live-testnet suite
+(`server.test.ts`/`reputation.test.ts` against a real Postgres service
+container, plus `retry.test.ts`) but intentionally still skips the
+live-testnet suite
 (`api/test/stellar.test.ts`) — that needs a funded key as a repo
 secret, a decision not yet made safely for a fork-triggerable
 `pull_request` workflow — see `CONTRIBUTING.md` and

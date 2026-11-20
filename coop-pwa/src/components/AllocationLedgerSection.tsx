@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AllocationMember, CommitmentDetail as CommitmentDetailType } from "../api";
 import { buildSetAllocationTx, getAllocationLedger, submitTx } from "../api";
+import { useI18n } from "../i18n";
 import { signTransactionXdr } from "../wallet";
 
 // Mirrors lib.rs's set_allocation() guard: cooperative-gated, and only
@@ -43,51 +44,93 @@ export function AllocationLedgerSection({
   contractId: string;
   walletAddress: string | null;
 }) {
+  const { t, intlLocale } = useI18n();
   const [members, setMembers] = useState<AllocationMember[] | null>(null);
-  const [loaded, setLoaded] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [readError, setReadError] = useState<string | null>(null);
   const [rows, setRows] = useState<MemberRow[]>([emptyRow()]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const phoneInputRefs = useRef<Array<HTMLInputElement | null>>([]);
+  const removeButtonRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const focusAfterRowsChange = useRef<{ kind: "phone" | "remove"; index: number } | null>(null);
 
   const settable = SETTABLE_STATUSES.has(commitment.status);
   const isCooperative = walletAddress !== null && walletAddress === commitment.cooperative;
+  const percentFormatter = useMemo(
+    () =>
+      new Intl.NumberFormat(intlLocale, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }),
+    [intlLocale],
+  );
 
   const refresh = useCallback(() => {
+    setLoading(true);
+    setReadError(null);
     getAllocationLedger(contractId)
       .then((m) => setMembers(m))
-      .catch(() => {
-        // Best-effort, same convention as CancelSection/ReassignBuyerSection's
-        // background polls -- a failed read on mount shouldn't break the
-        // rest of the page for every viewer. A genuine failure here (vs.
-        // "never set yet", already turned into `null` by getAllocationLedger
-        // itself) just means the form shows again; set_allocation's own
-        // one-time contract guard is what actually prevents a double-set,
-        // not this read.
+      .catch((err: unknown) => {
+        setMembers(null);
+        setReadError(
+          t("allocation.readError", {
+            contractId,
+            message: err instanceof Error ? err.message : String(err),
+          }),
+        );
       })
-      .finally(() => setLoaded(true));
-  }, [contractId]);
+      .finally(() => setLoading(false));
+  }, [contractId, t]);
 
   useEffect(() => {
     refresh();
   }, [refresh]);
 
-  if (!loaded) return null;
-  // Array.isArray, not just `!== null` -- a malformed response (or a test
-  // double shaped for a different endpoint) should read as "nothing to
-  // show" here, not crash this component trying to .map() over it.
-  const hasLedger = Array.isArray(members);
-  if (!hasLedger && (!isCooperative || !settable)) return null;
+  useEffect(() => {
+    const target = focusAfterRowsChange.current;
+    if (!target) return;
+    focusAfterRowsChange.current = null;
+    if (target.kind === "phone") {
+      phoneInputRefs.current[target.index]?.focus();
+    } else {
+      removeButtonRefs.current[target.index]?.focus();
+    }
+  }, [rows]);
+
+  if (loading) {
+    return (
+      <div className="allocation-section">
+        <div className="loading-state" role="status" aria-live="polite">{t("allocation.loading")}</div>
+      </div>
+    );
+  }
+  if (readError) {
+    return (
+      <div className="allocation-section">
+        <div className="error-banner" role="alert">{readError}</div>
+        <button className="action-button secondary" type="button" onClick={refresh}>{t("allocation.retry")}</button>
+      </div>
+    );
+  }
+  const hasLedger = members !== null;
 
   function updateRow(i: number, patch: Partial<MemberRow>) {
     setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
   }
 
   function addRow() {
+    focusAfterRowsChange.current = { kind: "phone", index: rows.length };
     setRows((prev) => [...prev, emptyRow()]);
   }
 
   function removeRow(i: number) {
-    setRows((prev) => (prev.length === 1 ? prev : prev.filter((_, idx) => idx !== i)));
+    if (rows.length === 1) return;
+    const remainingRows = rows.length - 1;
+    const nextIndex = Math.min(i, remainingRows - 1);
+    focusAfterRowsChange.current =
+      remainingRows === 1 ? { kind: "phone", index: 0 } : { kind: "remove", index: nextIndex };
+    setRows((prev) => prev.filter((_, idx) => idx !== i));
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -99,16 +142,16 @@ export function AllocationLedgerSection({
     // "fail fast client-side, the API is what actually enforces it"
     // convention as every other form in this project.
     if (parsed.some((m) => m.phoneNumber.length === 0)) {
-      setError("Every member needs a phone number.");
+      setError(t("allocation.errorPhone"));
       return;
     }
     if (parsed.some((m) => !Number.isInteger(m.shareBps) || m.shareBps < 0 || m.shareBps > 10_000)) {
-      setError("Every share must be a whole number between 0 and 10000 basis points.");
+      setError(t("allocation.errorShareRange"));
       return;
     }
     const totalBps = parsed.reduce((sum, m) => sum + m.shareBps, 0);
     if (totalBps > 10_000) {
-      setError(`Shares sum to ${totalBps} basis points, over the 10000 (100%) ceiling.`);
+      setError(t("allocation.errorShareTotal", { total: totalBps }));
       return;
     }
 
@@ -127,22 +170,24 @@ export function AllocationLedgerSection({
 
   return (
     <div className="allocation-section">
-      {error && <div className="error-banner">{error}</div>}
+      {error && <div className="error-banner" role="alert">{error}</div>}
+
+      {!hasLedger && <p className="empty-state">{t("allocation.empty")}</p>}
 
       {hasLedger && (
         <table className="allocation-table">
-          <caption>Allocation ledger</caption>
+          <caption>{t("allocation.caption")}</caption>
           <thead>
             <tr>
-              <th>Member hash</th>
-              <th>Share</th>
+              <th>{t("allocation.memberHash")}</th>
+              <th>{t("allocation.share")}</th>
             </tr>
           </thead>
           <tbody>
-            {members!.map((m) => (
+            {members.map((m) => (
               <tr key={m.memberHash}>
-                <td className="allocation-hash">{m.memberHash.slice(0, 12)}…</td>
-                <td>{(m.shareBps / 100).toFixed(2)}%</td>
+                <td className="allocation-hash">{`${m.memberHash.slice(0, 12)}…`}</td>
+                <td>{t("common.percent", { value: percentFormatter.format(m.shareBps / 100) })}</td>
               </tr>
             ))}
           </tbody>
@@ -151,37 +196,43 @@ export function AllocationLedgerSection({
 
       {!hasLedger && isCooperative && settable && (
         <form className="allocation-form" onSubmit={handleSubmit}>
-          <h4>Record member allocation</h4>
+          <h4>{t("allocation.formHeading")}</h4>
           {rows.map((row, i) => (
             <div className="allocation-row" key={i}>
               <input
-                aria-label={`Member ${i + 1} phone number`}
+                ref={(element) => {
+                  phoneInputRefs.current[i] = element;
+                }}
+                aria-label={t("allocation.memberPhoneLabel", { number: i + 1 })}
                 value={row.phoneNumber}
                 onChange={(e) => updateRow(i, { phoneNumber: e.target.value })}
-                placeholder="Phone number"
+                placeholder={t("allocation.phonePlaceholder")}
               />
               <input
-                aria-label={`Member ${i + 1} share (basis points)`}
+                aria-label={t("allocation.memberShareLabel", { number: i + 1 })}
                 value={row.shareBps}
                 onChange={(e) => updateRow(i, { shareBps: e.target.value.replace(/[^0-9]/g, "") })}
-                placeholder="Share (bps)"
+                placeholder={t("allocation.sharePlaceholder")}
                 inputMode="numeric"
               />
               <button
+                ref={(element) => {
+                  removeButtonRefs.current[i] = element;
+                }}
                 type="button"
                 className="action-button secondary"
                 onClick={() => removeRow(i)}
                 disabled={rows.length === 1}
               >
-                Remove
+                {t("allocation.remove")}
               </button>
             </div>
           ))}
           <button type="button" className="action-button secondary" onClick={addRow}>
-            Add member
+            {t("allocation.addMember")}
           </button>
           <button className="action-button" type="submit" disabled={busy}>
-            {busy ? "Recording…" : "Record allocation"}
+            {busy ? t("allocation.recording") : t("allocation.record")}
           </button>
         </form>
       )}

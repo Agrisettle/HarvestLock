@@ -1,14 +1,15 @@
-import Fastify from "fastify";
+import Fastify, { type FastifyBaseLogger } from "fastify";
 import cors from "@fastify/cors";
 import rateLimit from "@fastify/rate-limit";
 import { STATUS_CODES } from "node:http";
+import { getBuildInfo } from "./buildInfo.js";
 import { StrKey, Address, nativeToScVal, xdr } from "@stellar/stellar-sdk";
 import { getAllocation, getCommitment, getOracleConfig, getOracleRate, type Commitment } from "./stellar/client.js";
-import { deployContractInstance, initializeArgs } from "./stellar/deploy.js";
-import { buildInvokeTransaction, submitSignedTransaction } from "./stellar/tx.js";
-import { upsertCommitment, listCommitments } from "./db/commitments.js";
+import { assertDeployerBalance, deployContractInstance, initializeArgs } from "./stellar/deploy.js";
+import { buildInvokeTransaction, submitSignedTransaction, getTransactionStatus } from "./stellar/tx.js";
+import { upsertCommitment, listCommitments, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from "./db/commitments.js";
 import { pool } from "./db/pool.js";
-import { HttpError, BadRequestError, ForbiddenError, ConfigurationError } from "./errors.js";
+import { HttpError, BadRequestError, NotFoundError, ForbiddenError, ConfigurationError, ContractError } from "./errors.js";
 import { applyReputationConsequences, getStanding } from "./reputation.js";
 import { buildMultiPartyProposal, finalizeMultiPartyProposal } from "./stellar/multiParty.js";
 import {
@@ -20,6 +21,12 @@ import {
   markCompleted,
   type PendingMultisigProposal,
 } from "./db/pendingMultisigProposals.js";
+import {
+  createPendingSubmission,
+  getPendingSubmission,
+  claimPendingSubmissionSuccess,
+  markPendingSubmissionFailed,
+} from "./db/pendingSubmissions.js";
 import {
   stageAllocationMembers,
   recordAllocationMembers,
@@ -42,10 +49,123 @@ function requireValidContractId(contractId: string): void {
   }
 }
 
+/**
+ * The same discipline for every public key a request carries (party
+ * addresses, transaction source accounts): a malformed one used to reach
+ * the SDK's Keypair/Address decoding, which throws a plain Error with no
+ * status code — an opaque 500 for what is unambiguously bad client
+ * input, exactly like the contract-ID case above. StrKey's own validator
+ * again, not a regex, and it also handles missing/non-string values
+ * (isValid returns false rather than throwing), so `undefined` and `42`
+ * fail here as a 400 instead of crashing further down. `fieldName` names
+ * the offending field in the message, since routes can carry more than
+ * one address.
+ */
 function requireValidPublicKey(publicKey: string, fieldName: string): void {
   if (!StrKey.isValidEd25519PublicKey(publicKey)) {
     throw new BadRequestError(`${fieldName} is not a valid public key: ${publicKey}`);
   }
+}
+
+/**
+ * Same discipline again, this time for row IDs: `pending_multisig_proposals.id`
+ * is a Postgres UUID column, so a proposalId that isn't a UUID makes the
+ * driver throw `invalid input syntax for type uuid` with no status code —
+ * an opaque 500 for what is plainly bad client input (issue #202). Format
+ * checked here (the schema's own declared shape) rather than letting the
+ * query fail, so the caller gets a message naming the field.
+ */
+function requireValidUuid(value: string, fieldName: string): void {
+  if (typeof value !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) {
+    throw new BadRequestError(`${fieldName} must be a UUID, got ${value}`);
+  }
+}
+
+/**
+ * Stellar transaction hashes are SHA-256 digests rendered as 64 hex
+ * characters. Checked before any Postgres/RPC lookup so a typo'd or
+ * truncated hash is a clear 400 rather than a driver/RPC error with no
+ * status code.
+ */
+function requireValidTransactionHash(hash: string): void {
+  if (typeof hash !== "string" || !/^[0-9a-f]{64}$/i.test(hash)) {
+    throw new BadRequestError(`hash must be 64 hexadecimal characters, got ${hash}`);
+  }
+}
+
+interface SubmitSideEffects {
+  refreshContractId?: string;
+  completeProposalId?: string;
+  allocationContractId?: string;
+  allocationMembers?: StagedAllocationMember[];
+}
+
+/**
+ * The off-chain work that was historically inlined in
+ * POST /transactions/submit after a confirmed submission. Shared with
+ * GET /transactions/:hash so a transaction that was reported PENDING —
+ * and only later landed — still gets exactly the same treatment.
+ *
+ * Every branch is best-effort and logged, never thrown: the on-chain
+ * transaction has already succeeded, so a cache/Postgres failure must not
+ * turn that into an error response. The caller guarantees this runs at
+ * most once per submission (the atomic claim in
+ * db/pendingSubmissions.ts covers the GET path).
+ */
+async function applySubmitSideEffects(log: FastifyBaseLogger, effects: SubmitSideEffects): Promise<void> {
+  if (effects.refreshContractId) {
+    const refreshContractId = effects.refreshContractId;
+    await getCommitment(refreshContractId)
+      .then((commitment) =>
+        upsertCommitment(refreshContractId, commitment).then(({ previousStatus }) =>
+          applyReputationConsequences(refreshContractId, previousStatus, commitment),
+        ),
+      )
+      .catch((err: unknown) => {
+        log.warn({ err }, "failed to refresh commitments cache after submit");
+      });
+  }
+  // Marks the proposal finished so a stale "ready to finalize" state
+  // doesn't linger for other viewers once the cancel actually landed.
+  if (effects.completeProposalId) {
+    await markCompleted(effects.completeProposalId).catch((err: unknown) => {
+      log.warn({ err }, "failed to mark multisig proposal completed");
+    });
+  }
+  // Persists the phone-number mapping only now that set_allocation has
+  // actually landed on-chain -- see stageAllocationMembers's doc comment
+  // for why this waits until here instead of writing at build time.
+  if (effects.allocationContractId && effects.allocationMembers) {
+    await recordAllocationMembers(effects.allocationContractId, effects.allocationMembers).catch(
+      (err: unknown) => {
+        log.warn({ err }, "failed to persist allocation member phone numbers");
+      },
+    );
+  }
+}
+
+/**
+ * CORS is a browser permission boundary, not API authentication. Require
+ * deployments to name each frontend origin explicitly; an unset value
+ * disables cross-origin access until a real frontend origin is known.
+ */
+function configuredCorsOrigins(): string[] | false {
+  const configured = process.env.CORS_ORIGINS?.trim();
+  if (!configured) return false;
+
+  const origins = configured.split(",").map((origin) => origin.trim());
+  for (const origin of origins) {
+    let parsed: URL;
+    try {
+      parsed = new URL(origin);
+    } catch {
+      throw new Error(`CORS_ORIGINS must contain exact HTTP(S) origins; invalid origin: ${origin}`);
+    }
+    if ((parsed.protocol !== "http:" && parsed.protocol !== "https:") || parsed.origin !== origin) {
+      throw new Error(`CORS_ORIGINS must contain exact HTTP(S) origins without paths: ${origin}`);
+    }
+  }
+  return origins;
 }
 
 /**
@@ -87,12 +207,12 @@ const NO_ARG_METHODS = new Set([
   // adjustment) — see its own route below, same reason initialize and
   // reassign_buyer aren't in this set either.
   "settle",
-  // Needs TWO signatures on the same submitted envelope (buyer AND
-  // cooperative — see lib.rs's cancel()), not one. The generic build/
-  // submit flow already supports this: the caller signs the XDR from
-  // /tx/cancel with the first party's wallet, then signs that *same*
-  // signed envelope again with the second party's before POSTing it to
-  // /transactions/submit — nothing method-specific needed here.
+  // Needs TWO parties' Soroban auth (buyer AND cooperative — see lib.rs's
+  // cancel()), not one. Serving the method here only builds the unsigned
+  // XDR; a single classic signature per wallet is NOT enough, and naively
+  // signing the same envelope twice fails on submission (tx_bad_auth_extra,
+  // see api/README.md). The separate-wallets path is the staged
+  // /tx/cancel/propose → /tx/propose/:id/sign pair below.
   "cancel",
   // Two-phase funding / default-forfeiture additions (lib.rs). All four
   // are single-signer or fully permissionless — none need the multi-party
@@ -103,12 +223,12 @@ const NO_ARG_METHODS = new Set([
   "expire_remainder_window", // permissionless — the buyer-default sweep
   "reclaim_on_nondelivery", // buyer-gated — the seller-non-delivery reclaim
   // Dispute flagging (lib.rs). flag_dispute has its own route below (it
-  // takes an argument). resolve_dispute needs all THREE parties' auth on
-  // the same submitted envelope — same "sign it again" generic support
-  // as cancel/reassign_buyer, nothing extra needed here — and also has
-  // its own staged /tx/resolve-dispute/propose route below for the
-  // separate-wallets case. expire_dispute_window is permissionless, same
-  // shape as expire_remainder_window.
+  // takes an argument). resolve_dispute needs all THREE parties' auth —
+  // same multi-party caveat as cancel above (signing the envelope once per
+  // party does not work), served here only so its unsigned XDR can be
+  // built; the separate-wallets path is its staged
+  // /tx/resolve-dispute/propose route below. expire_dispute_window is
+  // permissionless, same shape as expire_remainder_window.
   "resolve_dispute",
   "expire_dispute_window",
 ]);
@@ -170,6 +290,15 @@ const MAX_REMAINDER_WINDOW_SECS = 60 * 60 * 24 * 30;
 const MIN_DELIVERY_WINDOW_SECS = 60 * 60 * 24;
 const MAX_DELIVERY_WINDOW_SECS = 60 * 60 * 24 * 365;
 
+// The largest value initialize()'s i128 fields (total_amount, and
+// OracleConfig's denominated_amount) can carry. nativeToScVal throws a
+// plain Error for anything bigger, so an oversized digit string from a
+// caller used to surface as an opaque 500 — checked as a 400 up front,
+// same bug class as the malformed-address checks above (issue #201).
+// The u32 fields have their own ceilings where they're validated
+// (contractedQuantity against 2^32-1, bps fields against 10000).
+const I128_MAX = 2n ** 127n - 1n;
+
 // How long a proposal stays open for the other parties to sign before a
 // fresh one can be proposed instead. Generous, matching the ~24-hour
 // ledger-sequence window multiParty.ts already sets on the auth entries
@@ -213,27 +342,42 @@ interface InitializeBody {
   sourcePublicKey: string;
 }
 
-export function buildServer() {
+export async function buildServer() {
   const app = Fastify({ logger: true });
 
-  // Reflects the request origin rather than a fixed list — acceptable for
-  // now since there's no auth/session model yet (MVP framing, PRD §17) and
-  // every response here is public read data or a party-signed write the
-  // contract itself gates via require_auth. Revisit once that changes.
-  app.register(cors, { origin: true });
+  // Never reflect arbitrary Origin headers. Set CORS_ORIGINS to a comma-
+  // separated list of exact frontend origins once deployment domains are
+  // known; until then browser cross-origin access stays disabled. CORS is
+  // not authentication: transaction writes still rely on contract auth.
+  app.register(cors, { origin: configuredCorsOrigins() });
 
-  // Global, per-IP -- audit finding, 9 Sept 2026: nothing bounded request
-  // volume at all before this. 100 requests/minute is an engineering
-  // default, not a researched value (same caveat this file already
-  // applies to the window-length bounds below) -- generous enough not to
-  // trip up a legitimate multi-step build/sign/submit flow or the
-  // 10-second poll a proposal's "waiting" UI state runs, but enough to
-  // blunt casual scraping/abuse. Revisit once there's real traffic to
-  // observe against. Skipped entirely in tests (`NODE_ENV=test`) so the
-  // existing suites' many rapid-fire requests against one shared `app`
-  // instance don't start tripping it.
+  // Global, per-IP -- a normal single-signer transaction takes two API
+  // calls (build XDR, submit signed XDR); wallet signing is local. A
+  // staged three-party transaction takes at most four (propose, two
+  // signer submissions, final submit). The 100/minute ceiling therefore
+  // allows 25 staged transactions/minute before polling; a waiting
+  // proposal's 10-second poll costs six requests/minute per active client.
+  // This is a starting abuse-control budget, not a measured capacity
+  // claim; all clients behind one NAT share it. Revisit from production
+  // traffic before a pilot and use a shared store if multiple API
+  // instances must enforce one per-IP budget. Skipped in tests so suites'
+  // rapid-fire requests against one shared `app` don't trip it.
+  //
+  // The `await` on register() is load-bearing, not decoration:
+  // @fastify/rate-limit attaches itself via an `onRoute` hook (see its
+  // index.js), and Fastify runs onRoute hooks synchronously at
+  // route-definition time. An un-awaited app.register() defers the
+  // plugin body until boot -- i.e. after every route below was already
+  // defined -- so the hook saw zero routes and the limiter silently
+  // never engaged: verified pre-fix that 110 rapid requests produced no
+  // 429 and not a single x-ratelimit-* header on any response. This is
+  // also why the plugin's own README always shows
+  // `await fastify.register(...)`. A 429 from this limiter does carry
+  // `Retry-After` (seconds remaining in the window) -- observed and
+  // documented in api/README.md's "Rate limiting" section, which is
+  // what the three frontends' backoff logic should key off.
   if (process.env.NODE_ENV !== "test") {
-    app.register(rateLimit, { max: 100, timeWindow: "1 minute" });
+    await app.register(rateLimit, { max: 100, timeWindow: "1 minute" });
   }
 
   // Explicit, not left to Fastify's own default handler (audit finding,
@@ -241,19 +385,19 @@ export function buildServer() {
   // actually did). `HttpError` subclasses (BadRequestError, ForbiddenError)
   // keep exactly the behavior Fastify's default already gave them --
   // their own statusCode, their own message, both written to be
-  // client-facing on purpose. `ConfigurationError` (a missing/invalid
+  // client-facing on purpose. `ContractError` additionally carries the
+  // contract's own `{ code, name }` (see errors.ts), so a state-machine
+  // rejection is a structured 409 (or a 404 on a read) rather than a 500
+  // that looks like an outage. `ConfigurationError` (a missing/invalid
   // deployment env var, see errors.ts) is the one category genuinely
   // worth hiding from an external caller -- it's an operator mistake,
   // not client input, and naming the specific env var externally is
   // pure information disclosure with zero benefit to a legitimate
-  // caller. Everything else (Stellar simulation/submission/timeout
-  // failures, SDK decoding assertions) is deliberately left to
+  // caller. Everything else (genuine RPC/transport failures, submission
+  // timeouts, SDK decoding assertions) is deliberately left to
   // propagate with its real message and original statusCode, same as
-  // before this handler existed -- see stellar/client.ts's "let the
-  // contract error propagate" convention and every build/submit route's
-  // simulation-failure feedback, which callers genuinely need to build
-  // a working transaction. Checked, not assumed, that this doesn't leak
-  // secret material: Keypair.fromSecret() never echoes an invalid
+  // before this handler existed. Checked, not assumed, that this doesn't
+  // leak secret material: Keypair.fromSecret() never echoes an invalid
   // value back in its error message, and this project's own testing of
   // a pg connection failure showed an empty `.message`, not connection
   // detail -- see api/HANDOFF.md.
@@ -263,6 +407,14 @@ export function buildServer() {
     // existing test that reads `.json().message`, not `.json().error`,
     // for a thrown HttpError -- this handler replaces Fastify's default,
     // it isn't free to invent a different one).
+    if (err instanceof ContractError) {
+      return reply.code(err.statusCode).send({
+        statusCode: err.statusCode,
+        error: STATUS_CODES[err.statusCode],
+        message: err.message,
+        contractError: err.contractError,
+      });
+    }
     if (err instanceof HttpError) {
       return reply.code(err.statusCode).send({ statusCode: err.statusCode, error: STATUS_CODES[err.statusCode], message: err.message });
     }
@@ -279,12 +431,56 @@ export function buildServer() {
     return reply.code(statusCode).send({ statusCode, error: STATUS_CODES[statusCode], message });
   });
 
-  app.get("/health", async () => ({ ok: true }));
+  // Fastify leaves `req.body` undefined for a request that declares no
+  // Content-Type at all (an unsupported type is already a 415, and a
+  // declared-but-empty JSON body already a 400 — both Fastify's own
+  // handling, before any route code runs). Every handler below reads
+  // fields off `req.body` directly, so that absence used to crash with
+  // "Cannot read properties of undefined (reading '<field>')" — an
+  // unhandled 500 for what is just a request that forgot its body.
+  // Normalizing to an empty object lets each route's own field checks
+  // answer with their normal, clear 400 instead. Found in the dispute-
+  // route bad-input audit (issue #205): a bare POST to
+  // /tx/flag-dispute with no body 500'd exactly this way.
+  app.addHook("preValidation", async (req) => {
+    if (req.body === undefined) req.body = {};
+  });
+
+  app.get("/health", async (_req, reply) => {
+    let database: "ok" | "unavailable" = "ok";
+    try {
+      await pool.query("SELECT 1");
+    } catch (err) {
+      database = "unavailable";
+      app.log.error({ err }, "health check could not reach Postgres");
+    }
+
+    const ok = database === "ok";
+    return reply.code(ok ? 200 : 503).send({ ok, checks: { api: "ok", database } });
+  });
+
+  app.get("/version", async (_req, reply) => reply.send(getBuildInfo()));
 
   // Deploys a fresh, uninitialized contract instance (deployer-paid — no
   // party auth required for a bare deploy). The caller still has to drive
   // /tx/initialize + /transactions/submit to actually bring it to life.
-  app.post("/commitments/deploy", async (_req, reply) => {
+  //
+  // Audited for the #201 bad-input sweep: this route carries no
+  // caller-supplied values at all — no params, no body fields (the
+  // deployer key and WASM hash come from deployment env, see
+  // stellar/deploy.ts) — so there is no malformed value for it to accept
+  // or 500 on beyond what Fastify itself rejects (malformed/unsupported
+  // JSON bodies get the body parser's own 400/415 before this handler
+  // runs). Its remaining failure modes are an operator misconfiguration
+  // (ConfigurationError, deliberately a 500) and the network itself.
+  // Per-route limit, far below the global one: every call spends real XLM
+  // from the deployer, which also pays for every read simulation.
+  const deployRateLimit = {
+    max: Number(process.env.DEPLOY_RATE_LIMIT_MAX ?? 5),
+    timeWindow: Number(process.env.DEPLOY_RATE_LIMIT_WINDOW_MS ?? 10 * 60_000),
+  };
+  app.post("/commitments/deploy", { config: { rateLimit: deployRateLimit } }, async (req, reply) => {
+    await assertDeployerBalance(req.log);
     const contractId = await deployContractInstance();
     return reply.code(201).send({ contractId });
   });
@@ -300,68 +496,130 @@ export function buildServer() {
       requireValidPublicKey(b.cooperative, "cooperative");
       requireValidPublicKey(b.warehouseOperator, "warehouseOperator");
       requireValidContractId(b.token);
+      // The transaction source account the unsigned XDR is built against
+      // — same always-validate rule as every address above.
+      requireValidPublicKey(b.sourcePublicKey, "sourcePublicKey");
       await requireNotBarred(b.buyer, "buyer");
       await requireNotBarred(b.cooperative, "cooperative");
 
+      // Audited for the #201 bad-input sweep. Every conversion below used
+      // to trust its input type and let the failure happen inside
+      // BigInt()/nativeToScVal(): a missing or non-numeric totalAmount,
+      // a non-numeric/NaN window value (NaN passes both range
+      // comparisons, then BigInt("abc") throws), a negative or
+      // non-integer advance bps, an oversized contractedQuantity, or an
+      // i128/u32 overflow all came back as opaque 500s. Each field now
+      // parses and range-checks its value up front, so every one of those
+      // is the caller's clear 400, never a 500.
+      let totalAmount: bigint;
+      if (typeof b.totalAmount !== "string" && typeof b.totalAmount !== "number") {
+        throw new BadRequestError(`totalAmount must be an integer, got ${b.totalAmount}`);
+      }
+      try {
+        totalAmount = BigInt(b.totalAmount);
+      } catch {
+        throw new BadRequestError(`totalAmount must be an integer, got ${b.totalAmount}`);
+      }
+      if (totalAmount <= 0n) {
+        throw new BadRequestError(`totalAmount must be positive, got ${b.totalAmount}`);
+      }
+      if (totalAmount > I128_MAX) {
+        throw new BadRequestError(`totalAmount is out of range for a 128-bit integer, got ${b.totalAmount}`);
+      }
+
+      for (const [field, value] of [
+        ["advance1Bps", b.advance1Bps],
+        ["advance2Bps", b.advance2Bps],
+      ] as const) {
+        if (!Number.isInteger(value) || value < 0 || value > 10_000) {
+          throw new BadRequestError(`${field} must be an integer between 0 and 10000, got ${value}`);
+        }
+      }
+
       const claimWindowSecs = Number(b.claimWindowSecs);
-      if (claimWindowSecs < MIN_CLAIM_WINDOW_SECS || claimWindowSecs > MAX_CLAIM_WINDOW_SECS) {
-        return reply.code(400).send({
-          error: `claimWindowSecs must be between ${MIN_CLAIM_WINDOW_SECS} and ${MAX_CLAIM_WINDOW_SECS} seconds, got ${b.claimWindowSecs}`,
-        });
+      if (!Number.isInteger(claimWindowSecs) || claimWindowSecs < MIN_CLAIM_WINDOW_SECS || claimWindowSecs > MAX_CLAIM_WINDOW_SECS) {
+        throw new BadRequestError(`claimWindowSecs must be between ${MIN_CLAIM_WINDOW_SECS} and ${MAX_CLAIM_WINDOW_SECS} seconds, got ${b.claimWindowSecs}`);
       }
       const remainderWindowSecs = Number(b.remainderWindowSecs);
-      if (remainderWindowSecs < MIN_REMAINDER_WINDOW_SECS || remainderWindowSecs > MAX_REMAINDER_WINDOW_SECS) {
-        return reply.code(400).send({
-          error: `remainderWindowSecs must be between ${MIN_REMAINDER_WINDOW_SECS} and ${MAX_REMAINDER_WINDOW_SECS} seconds, got ${b.remainderWindowSecs}`,
-        });
+      if (
+        !Number.isInteger(remainderWindowSecs) ||
+        remainderWindowSecs < MIN_REMAINDER_WINDOW_SECS ||
+        remainderWindowSecs > MAX_REMAINDER_WINDOW_SECS
+      ) {
+        throw new BadRequestError(`remainderWindowSecs must be between ${MIN_REMAINDER_WINDOW_SECS} and ${MAX_REMAINDER_WINDOW_SECS} seconds, got ${b.remainderWindowSecs}`);
       }
       const deliveryWindowSecs = Number(b.deliveryWindowSecs);
-      if (deliveryWindowSecs < MIN_DELIVERY_WINDOW_SECS || deliveryWindowSecs > MAX_DELIVERY_WINDOW_SECS) {
-        return reply.code(400).send({
-          error: `deliveryWindowSecs must be between ${MIN_DELIVERY_WINDOW_SECS} and ${MAX_DELIVERY_WINDOW_SECS} seconds, got ${b.deliveryWindowSecs}`,
-        });
+      if (
+        !Number.isInteger(deliveryWindowSecs) ||
+        deliveryWindowSecs < MIN_DELIVERY_WINDOW_SECS ||
+        deliveryWindowSecs > MAX_DELIVERY_WINDOW_SECS
+      ) {
+        throw new BadRequestError(`deliveryWindowSecs must be between ${MIN_DELIVERY_WINDOW_SECS} and ${MAX_DELIVERY_WINDOW_SECS} seconds, got ${b.deliveryWindowSecs}`);
       }
       // Mirrors lib.rs's initialize() guards exactly -- no API-specific
       // narrowing here the way the three windows above have, since there's
       // no business judgment call to make on top of the contract's own
       // validation (unlike the windows, which are genuinely a product
-      // decision, not just mirroring).
-      if (!Number.isInteger(b.contractedQuantity) || b.contractedQuantity <= 0) {
-        return reply.code(400).send({ error: `contractedQuantity must be a positive integer, got ${b.contractedQuantity}` });
+      // decision, not just mirroring). The 2^32-1 ceiling isn't a
+      // product rule either, it's the u32 the contract (and
+      // nativeToScVal's encoding) can actually represent -- an oversized
+      // integer used to throw out of the encoder as a 500.
+      if (!Number.isInteger(b.contractedQuantity) || b.contractedQuantity <= 0 || b.contractedQuantity > 0xffff_ffff) {
+        throw new BadRequestError(`contractedQuantity must be a positive integer (max 4294967295), got ${b.contractedQuantity}`);
       }
       if (
         !Array.isArray(b.gradePriceBps) ||
         b.gradePriceBps.length === 0 ||
         b.gradePriceBps.some((bps) => !Number.isInteger(bps) || bps < 0 || bps > 10_000)
       ) {
-        return reply.code(400).send({
-          error: `gradePriceBps must be a non-empty array of integers between 0 and 10000, got ${JSON.stringify(b.gradePriceBps)}`,
-        });
+        throw new BadRequestError(`gradePriceBps must be a non-empty array of integers between 0 and 10000, got ${JSON.stringify(b.gradePriceBps)}`);
       }
+      let parsedOracleConfig: {
+        oracleContract: string;
+        priceAsset: string;
+        maxAgeSecs: bigint;
+        denominatedAmount: bigint;
+      } | null = null;
       if (b.oracleConfig != null) {
         requireValidContractId(b.oracleConfig.oracleContract);
         if (typeof b.oracleConfig.priceAsset !== "string" || b.oracleConfig.priceAsset.trim().length === 0) {
-          return reply.code(400).send({ error: "oracleConfig.priceAsset must be a non-empty string" });
+          throw new BadRequestError("oracleConfig.priceAsset must be a non-empty string");
         }
         const maxAgeSecs = Number(b.oracleConfig.maxAgeSecs);
-        if (!Number.isInteger(maxAgeSecs) || maxAgeSecs <= 0) {
-          return reply.code(400).send({
-            error: `oracleConfig.maxAgeSecs must be a positive integer, got ${b.oracleConfig.maxAgeSecs}`,
-          });
+        // Safe-integer, not just integer: Number.isInteger("1e21" via
+        // Number(...)) is true, but the raw string would still make
+        // BigInt()/the u64 encoder throw later -- parse once here and
+        // pass the parsed value down, so validation and use can't drift.
+        // The typeof guard is because Number(true) is 1: without it a
+        // boolean would pass as a one-second window.
+        if (
+          (typeof b.oracleConfig.maxAgeSecs !== "string" && typeof b.oracleConfig.maxAgeSecs !== "number") ||
+          !Number.isSafeInteger(maxAgeSecs) ||
+          maxAgeSecs <= 0
+        ) {
+          throw new BadRequestError(`oracleConfig.maxAgeSecs must be a positive integer, got ${b.oracleConfig.maxAgeSecs}`);
         }
         let denominatedAmount: bigint;
+        if (typeof b.oracleConfig.denominatedAmount !== "string" && typeof b.oracleConfig.denominatedAmount !== "number") {
+          throw new BadRequestError(`oracleConfig.denominatedAmount must be an integer, got ${b.oracleConfig.denominatedAmount}`);
+        }
         try {
           denominatedAmount = BigInt(b.oracleConfig.denominatedAmount);
         } catch {
-          return reply.code(400).send({
-            error: `oracleConfig.denominatedAmount must be an integer, got ${b.oracleConfig.denominatedAmount}`,
-          });
+          throw new BadRequestError(`oracleConfig.denominatedAmount must be an integer, got ${b.oracleConfig.denominatedAmount}`);
         }
         if (denominatedAmount <= 0n) {
-          return reply.code(400).send({
-            error: `oracleConfig.denominatedAmount must be positive, got ${b.oracleConfig.denominatedAmount}`,
-          });
+          throw new BadRequestError(`oracleConfig.denominatedAmount must be positive, got ${b.oracleConfig.denominatedAmount}`);
         }
+        if (denominatedAmount > I128_MAX) {
+          throw new BadRequestError(`oracleConfig.denominatedAmount is out of range for a 128-bit integer, got ${b.oracleConfig.denominatedAmount}`);
+        }
+        parsedOracleConfig = {
+          oracleContract: b.oracleConfig.oracleContract,
+          priceAsset: b.oracleConfig.priceAsset,
+          maxAgeSecs: BigInt(maxAgeSecs),
+          denominatedAmount,
+        };
       }
 
       const xdr = await buildInvokeTransaction({
@@ -373,22 +631,18 @@ export function buildServer() {
           cooperative: b.cooperative,
           warehouseOperator: b.warehouseOperator,
           token: b.token,
-          totalAmount: BigInt(b.totalAmount),
+          totalAmount,
           advance1Bps: b.advance1Bps,
           advance2Bps: b.advance2Bps,
-          claimWindowSecs: BigInt(b.claimWindowSecs),
-          remainderWindowSecs: BigInt(b.remainderWindowSecs),
-          deliveryWindowSecs: BigInt(b.deliveryWindowSecs),
+          // The parsed numbers, not the raw body values: Number("3.6e3")
+          // is a perfectly valid 3600-second window, but BigInt("3.6e3")
+          // throws -- validation and encoding must agree on the value.
+          claimWindowSecs: BigInt(claimWindowSecs),
+          remainderWindowSecs: BigInt(remainderWindowSecs),
+          deliveryWindowSecs: BigInt(deliveryWindowSecs),
           contractedQuantity: b.contractedQuantity,
           gradePriceBps: b.gradePriceBps,
-          oracleConfig: b.oracleConfig
-            ? {
-                oracleContract: b.oracleConfig.oracleContract,
-                priceAsset: b.oracleConfig.priceAsset,
-                maxAgeSecs: BigInt(b.oracleConfig.maxAgeSecs),
-                denominatedAmount: BigInt(b.oracleConfig.denominatedAmount),
-              }
-            : null,
+          oracleConfig: parsedOracleConfig,
         }),
       });
       return { xdr };
@@ -401,8 +655,14 @@ export function buildServer() {
       const { contractId, method } = req.params;
       requireValidContractId(contractId);
       if (!NO_ARG_METHODS.has(method)) {
-        return reply.code(400).send({ error: `unknown or unsupported method: ${method}` });
+        throw new BadRequestError(`unknown or unsupported method: ${method}`);
       }
+      // The generic no-arg route is what resolve_dispute and
+      // expire_dispute_window go through (along with every other no-arg
+      // lifecycle transition). A malformed sourcePublicKey used to reach
+      // server.getAccount() in the SDK and come back an opaque 500 --
+      // same bug class as the contract ID above (issue #205).
+      requireValidPublicKey(req.body.sourcePublicKey, "sourcePublicKey");
       const xdr = await buildInvokeTransaction({
         contractId,
         method,
@@ -426,6 +686,7 @@ export function buildServer() {
       const { contractId } = req.params;
       requireValidContractId(contractId);
       requireValidPublicKey(req.body.newBuyer, "newBuyer");
+      requireValidPublicKey(req.body.sourcePublicKey, "sourcePublicKey");
 
       const xdr = await buildInvokeTransaction({
         contractId,
@@ -451,11 +712,12 @@ export function buildServer() {
     requireValidContractId(contractId);
     const { deliveredQuantity, gradeIndex } = req.body;
     if (!Number.isInteger(deliveredQuantity) || deliveredQuantity < 0) {
-      return reply.code(400).send({ error: `deliveredQuantity must be a non-negative integer, got ${deliveredQuantity}` });
+      throw new BadRequestError(`deliveredQuantity must be a non-negative integer, got ${deliveredQuantity}`);
     }
     if (!Number.isInteger(gradeIndex) || gradeIndex < 0) {
-      return reply.code(400).send({ error: `gradeIndex must be a non-negative integer, got ${gradeIndex}` });
+      throw new BadRequestError(`gradeIndex must be a non-negative integer, got ${gradeIndex}`);
     }
+    requireValidPublicKey(req.body.sourcePublicKey, "sourcePublicKey");
 
     const unsignedXdr = await buildInvokeTransaction({
       contractId,
@@ -482,6 +744,7 @@ export function buildServer() {
       const { contractId } = req.params;
       requireValidContractId(contractId);
       requireValidPublicKey(req.body.flagger, "flagger");
+      requireValidPublicKey(req.body.sourcePublicKey, "sourcePublicKey");
 
       const xdr = await buildInvokeTransaction({
         contractId,
@@ -530,21 +793,26 @@ export function buildServer() {
     requireValidContractId(contractId);
     const { members } = req.body;
     if (!Array.isArray(members) || members.length === 0) {
-      return reply.code(400).send({ error: "members must be a non-empty array" });
+      throw new BadRequestError("members must be a non-empty array");
     }
     let totalBps = 0;
     for (const m of members) {
-      if (typeof m.phoneNumber !== "string" || m.phoneNumber.trim().length === 0) {
-        return reply.code(400).send({ error: "every member needs a non-empty phoneNumber" });
+      // `m?.` not `m.`: a JSON array can hold null/numbers/strings, and a
+      // null element used to crash on `.phoneNumber` (TypeError → 500)
+      // before this check ever ran (issue #203). Optional chaining makes
+      // every non-object element fail the same clear 400 instead.
+      if (typeof m?.phoneNumber !== "string" || m.phoneNumber.trim().length === 0) {
+        throw new BadRequestError("every member needs a non-empty phoneNumber");
       }
       if (!Number.isInteger(m.shareBps) || m.shareBps < 0 || m.shareBps > 10_000) {
-        return reply.code(400).send({ error: `shareBps must be an integer between 0 and 10000, got ${m.shareBps}` });
+        throw new BadRequestError(`shareBps must be an integer between 0 and 10000, got ${m.shareBps}`);
       }
       totalBps += m.shareBps;
     }
     if (totalBps > 10_000) {
-      return reply.code(400).send({ error: `members' shareBps sum to ${totalBps}, over the 10000 bps ceiling` });
+      throw new BadRequestError(`members' shareBps sum to ${totalBps}, over the 10000 bps ceiling`);
     }
+    requireValidPublicKey(req.body.sourcePublicKey, "sourcePublicKey");
 
     const staged = stageAllocationMembers(members);
     const unsignedXdr = await buildInvokeTransaction({
@@ -581,6 +849,16 @@ export function buildServer() {
   // for this commitment -- a valid state, not an error (see
   // getOracleConfig's doc comment for why this differs from
   // /allocation's "let AllocationNotSet propagate" convention).
+  //
+  // Audited for the #204 bad-input sweep: contractId is the only
+  // caller-supplied value this route (and /oracle-rate below) carries,
+  // and requireValidContractId already answers a malformed one with a
+  // clear 400 before anything touches the SDK or the chain -- consistent
+  // with every other read route, no fix needed. A well-formed but
+  // unknown/dead contract ID is a chain-read failure, not bad input, and
+  // deliberately still propagates (same convention as getCommitment on
+  // GET /commitments/:contractId). The tests for both routes in
+  // test/server.test.ts lock the 400 behavior in.
   app.get<{ Params: { contractId: string } }>("/commitments/:contractId/oracle-config", async (req) => {
     requireValidContractId(req.params.contractId);
     const config = await getOracleConfig(req.params.contractId);
@@ -615,11 +893,11 @@ export function buildServer() {
   app.delete<{ Params: { memberHash: string } }>("/allocation-members/:memberHash", async (req, reply) => {
     const { memberHash } = req.params;
     if (!/^[0-9a-f]{64}$/i.test(memberHash)) {
-      return reply.code(400).send({ error: "memberHash must be a 64-character hex string (32 bytes)" });
+      throw new BadRequestError("memberHash must be a 64-character hex string (32 bytes)");
     }
     const found = await eraseAllocationMember(memberHash.toLowerCase());
     if (!found) {
-      return reply.code(404).send({ error: `no allocation member with hash ${memberHash}` });
+      throw new NotFoundError(`no allocation member with hash ${memberHash}`);
     }
     return { erased: true };
   });
@@ -793,7 +1071,24 @@ export function buildServer() {
   }>("/commitments/:contractId/tx/propose/:proposalId/sign", async (req) => {
     const { contractId, proposalId } = req.params;
     requireValidContractId(contractId);
+    // Audited for the #202 bad-input sweep. Two values used to reach
+    // infrastructure unfiltered: a non-UUID proposalId made Postgres
+    // throw `invalid input syntax for type uuid` (500), and a
+    // missing/non-string/malformed signedEntryXdr was persisted as-is,
+    // only to explode later inside finalizeMultiPartyProposal's
+    // fromXDR() when the last entry was signed (500 at a completely
+    // different request, no less). Both are caller input and are now
+    // checked here as clear 400s before the lookup or any write.
+    requireValidUuid(proposalId, "proposalId");
     requireValidPublicKey(req.body.signerPublicKey, "signerPublicKey");
+    if (typeof req.body.signedEntryXdr !== "string" || req.body.signedEntryXdr.trim().length === 0) {
+      throw new BadRequestError("signedEntryXdr must be a non-empty string");
+    }
+    try {
+      xdr.SorobanAuthorizationEntry.fromXDR(req.body.signedEntryXdr, "base64");
+    } catch {
+      throw new BadRequestError("signedEntryXdr is not a valid base64 Soroban authorization entry");
+    }
 
     const proposal = await getProposalById(proposalId);
     if (!proposal || proposal.contract_id !== contractId) {
@@ -842,7 +1137,7 @@ export function buildServer() {
       allocationContractId?: string;
       allocationMembers?: StagedAllocationMember[];
     };
-  }>("/transactions/submit", async (req) => {
+  }>("/transactions/submit", async (req, reply) => {
     // Validated before submitting, not after: a bad refreshContractId
     // shouldn't leave the caller wondering whether their (real, funds-
     // moving) transaction went through or not because the response came
@@ -854,49 +1149,72 @@ export function buildServer() {
       requireValidContractId(req.body.allocationContractId);
     }
     const result = await submitSignedTransaction(req.body.xdr);
-    // Best-effort, same reasoning as completeProposalId/allocationMembers
-    // below (and GET /commitments/:contractId's equivalent refresh): this
-    // whole block is a post-submission cache refresh, not the point of
-    // this endpoint — the real, funds-moving submission already
-    // succeeded above. A transient live-chain-read or Postgres failure
-    // here used to turn an already-successful submission into a 500,
-    // inconsistent with every other best-effort side effect in this same
-    // handler; fixed to match.
-    if (req.body.refreshContractId) {
-      const refreshContractId = req.body.refreshContractId;
-      await getCommitment(refreshContractId)
-        .then((commitment) =>
-          upsertCommitment(refreshContractId, commitment).then(({ previousStatus }) =>
-            applyReputationConsequences(refreshContractId, previousStatus, commitment),
-          ),
-        )
-        .catch((err: unknown) => {
-          req.log.warn({ err }, "failed to refresh commitments cache after submit");
-        });
+
+    // The network accepted the transaction but confirmation outlived the
+    // poll window. Persist the hash and every side-effect field so
+    // GET /transactions/:hash can report the real outcome later and apply
+    // them exactly once on the first SUCCESS. A persistence failure is
+    // logged but still answered 202: the transaction is already on-chain,
+    // so a 500 here would repeat the exact lie this change removes.
+    if (result.status === "PENDING") {
+      await createPendingSubmission({
+        hash: result.hash,
+        refreshContractId: req.body.refreshContractId,
+        completeProposalId: req.body.completeProposalId,
+        allocationContractId: req.body.allocationContractId,
+        allocationMembers: req.body.allocationMembers,
+      }).catch((err: unknown) => {
+        req.log.error(
+          { err },
+          "failed to persist pending submission; GET /transactions/:hash will not be able to report it",
+        );
+      });
+      return reply.code(202).send({ status: "PENDING", hash: result.hash });
     }
-    // Marks the proposal finished so a stale "ready to finalize" state
-    // doesn't linger for other viewers once the cancel actually landed.
-    // Best-effort: a failure here shouldn't mask that the real,
-    // funds-moving submission above already succeeded.
-    if (req.body.completeProposalId) {
-      await markCompleted(req.body.completeProposalId).catch((err: unknown) => {
-        req.log.warn({ err }, "failed to mark multisig proposal completed");
+
+    await applySubmitSideEffects(req.log, req.body);
+    return result;
+  });
+
+  /**
+   * The follow-up for a PENDING submit. Polls the chain for the hash and
+   * returns the same three-state vocabulary the submit route uses. The
+   * first observation of SUCCESS atomically claims the stored side-effect
+   * fields, so exactly one poll applies them even if a frontend polls
+   * twice (or from two tabs) at once. Terminal rows are answered from
+   * Postgres without touching the chain again.
+   */
+  app.get<{ Params: { hash: string } }>("/transactions/:hash", async (req) => {
+    requireValidTransactionHash(req.params.hash);
+    const hash = req.params.hash.toLowerCase();
+
+    const pending = await getPendingSubmission(hash);
+    if (!pending) {
+      throw new NotFoundError(`no pending submission with hash ${hash}`);
+    }
+    if (pending.status !== "pending") {
+      return { status: pending.status === "success" ? "SUCCESS" : "FAILED", hash };
+    }
+
+    const status = await getTransactionStatus(hash);
+    if (status === "PENDING") {
+      return { status, hash };
+    }
+    if (status === "FAILED") {
+      await markPendingSubmissionFailed(hash);
+      return { status, hash };
+    }
+
+    const claimed = await claimPendingSubmissionSuccess(hash);
+    if (claimed) {
+      await applySubmitSideEffects(req.log, {
+        refreshContractId: claimed.refresh_contract_id ?? undefined,
+        completeProposalId: claimed.complete_proposal_id ?? undefined,
+        allocationContractId: claimed.allocation_contract_id ?? undefined,
+        allocationMembers: claimed.allocation_members ?? undefined,
       });
     }
-    // Persists the phone-number mapping only now that set_allocation has
-    // actually landed on-chain -- see stageAllocationMembers's doc
-    // comment for why this waits until here instead of writing at
-    // /tx/set-allocation build time. Best-effort, same reasoning as
-    // completeProposalId above: the on-chain write already succeeded,
-    // don't mask that behind an off-chain persistence failure.
-    if (req.body.allocationContractId && req.body.allocationMembers) {
-      await recordAllocationMembers(req.body.allocationContractId, req.body.allocationMembers).catch(
-        (err: unknown) => {
-          req.log.warn({ err }, "failed to persist allocation member phone numbers");
-        },
-      );
-    }
-    return result;
+    return { status, hash };
   });
 
   // Live chain read — the source of truth, per PRD §17. Refreshes the
@@ -913,7 +1231,27 @@ export function buildServer() {
     return serializeCommitment(commitment);
   });
 
-  app.get("/commitments", async () => listCommitments());
+  app.get<{ Querystring: { limit?: string; offset?: string } }>("/commitments", async (req, reply) => {
+  // Number(undefined) and Number("abc") are both NaN -- never nullish --
+  // so the previous `Number(req.query.limit) ?? 20` never fell back: a
+  // bare GET /commitments sent LIMIT NaN to Postgres and 500'd with
+  // "invalid input syntax for type bigint". That's the exact call
+  // buyer-app/coop-pwa make (no query string at all), so the list route
+  // was broken for them. Non-finite or out-of-range values now fall back
+  // to the documented defaults instead of reaching the driver. A finite
+  // limit is also clamped to MAX_PAGE_SIZE: falling back on bad values
+  // alone still left a caller free to ask for limit=1000000, which is the
+  // unbounded read issue #225 was filed against.
+  const parsedLimit = Number(req.query.limit);
+  const parsedOffset = Number(req.query.offset);
+  const limit =
+    Number.isFinite(parsedLimit) && parsedLimit > 0
+      ? Math.min(Math.floor(parsedLimit), MAX_PAGE_SIZE)
+      : DEFAULT_PAGE_SIZE;
+  const offset = Number.isFinite(parsedOffset) && parsedOffset >= 0 ? Math.floor(parsedOffset) : 0;
+  const commitments = await listCommitments({ limit, offset });
+  return reply.send(commitments);
+});
 
   // Read-only: a party's current reputation standing (strikes, whether
   // they're barred, and why). Returns a "clean" default rather than 404

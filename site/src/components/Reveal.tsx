@@ -6,15 +6,25 @@ interface RevealProps {
   as?: ElementType;
   delay?: number;
   className?: string;
+  tabIndex?: number;
+  "aria-label"?: string;
+  [key: string]: any;
 }
 
-export function Reveal({ children, as: Tag = "div", delay = 0, className = "" }: RevealProps) {
+export function Reveal({
+  children,
+  as: Tag = "div",
+  delay = 0,
+  className = "",
+  ...rest
+}: RevealProps) {
   const { ref, inView } = useInView();
   return (
     <Tag
       ref={ref}
       className={`reveal ${inView ? "in-view" : ""} ${className}`.trim()}
       style={delay ? { transitionDelay: `${delay}ms` } : undefined}
+      {...rest}
     >
       {children}
     </Tag>

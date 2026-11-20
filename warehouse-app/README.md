@@ -16,14 +16,48 @@ these three apps; see `buyer-app/README.md`), Freighter for signing.
 
 ## Setup
 
+Requires Node.js 24 (what CI uses — see
+`.github/workflows/warehouse-app.yml`). `npm run dev` genuinely does
+work on Node 20.19+ (vite 8's own floor; verified in a clean checkout),
+and the repo root's `engines` range says `^20.19.0 || >=22.12.0` — but
+`npm test` cannot run there: vitest 5 wants
+`^22.12.0 || ^24.0.0 || >=26.0.0` and jsdom 30 wants
+`^22.22.2 || ^24.15.0 || >=26.0.0`, so on Node 20 the test worker dies
+loading undici before a single test runs (`no tests`, non-zero exit —
+verified too). Install Node 24 and none of that matters.
+
 ```
-npm install
+npm ci
 cp .env.example .env   # only needed if the API isn't on localhost:3000
 npm run dev
 ```
 
-Needs `api/` running (`cd ../api && npm run dev`) and reachable at
-`VITE_API_URL` (defaults to `http://localhost:3000`).
+Needs `api/` running and reachable at `VITE_API_URL` (defaults to
+`http://localhost:3000`). On a fresh clone the bare
+`cd ../api && npm run dev` is not enough — it fails with
+`sh: 1: tsx: not found` until the API's own dependencies are installed.
+The API's full
+prerequisites live in [`../api/README.md`](../api/README.md)'s Setup
+section; short version, from the repository root:
+
+```
+cd api
+npm install
+cp .env.example .env
+npm run migrate   # needs PostgreSQL; api/README.md has a Docker one-liner
+npm run dev
+```
+
+Then one more undocumented hop, and it fails *silently*: with
+`CORS_ORIGINS` left empty (the `api/.env.example` default), the API
+deliberately sends no CORS headers to any origin — so both servers can
+be up, `curl http://localhost:3000/commitments` can return 200, and
+every fetch from this app's browser tab is still blocked. Neither `curl`
+nor this app's test suite enforces CORS, so nothing else tells you. Set
+`CORS_ORIGINS=http://localhost:5173` in `api/.env` before starting the
+API (restart it if it's already running), and add whatever origin Vite
+actually binds to if 5173 was taken. Why CORS is opt-in at all:
+[`../api/README.md`](../api/README.md)'s CORS section.
 
 ## What's real vs. deferred
 
@@ -84,3 +118,13 @@ reader (this project's own stated rule — see the main repo's
 time too — see `buyer-app/README.md`'s "Grade price schedule + FX/oracle
 fields" entry. Still correctly not this app's job either way —
 `mark_checkpoint`/`confirm_delivery` never touch oracle config.
+
+## Accessibility assertions in component tests
+
+`src/a11y.ts` exports `expectNoA11yViolations(container)`, which runs
+axe-core against a rendered component. To cover a new component, take the
+`container` from the existing `render(...)` in its test and end the test
+with `await expectNoA11yViolations(container);` for each state that
+matters (empty, error, pending, ready). `color-contrast` is disabled
+because jsdom can't compute it; contrast stays a manual and Lighthouse
+check (#145, #152).

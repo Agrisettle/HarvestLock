@@ -3,6 +3,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { CommitmentDetail } from "./CommitmentDetail";
 import type { CommitmentDetail as CommitmentDetailType } from "../api";
+import { expectNoA11yViolations } from "../a11y";
 
 const baseCommitment: CommitmentDetailType = {
   status: "Locked",
@@ -65,11 +66,11 @@ describe("CommitmentDetail", () => {
     expect(screen.getAllByText("not yet opened")).toHaveLength(2);
   });
 
-  it("formats a real deadline as a localized date, not the raw unix seconds", () => {
+  it("formats a real deadline in UTC with an explicit timezone label", () => {
     const commitment = { ...baseCommitment, advance1_deadline: "1788245397" };
     render(<CommitmentDetail commitment={commitment} contractId="CXXX" {...noopProps} />);
     expect(screen.queryByText("1788245397")).not.toBeInTheDocument();
-    expect(screen.getByText(new Date(1788245397 * 1000).toLocaleString())).toBeInTheDocument();
+    expect(screen.getByText("1 Sept 2026, 06:49 UTC")).toBeInTheDocument();
   });
 
   it("reflects claimed vs. expired vs. pending tranche state distinctly", () => {
@@ -83,9 +84,10 @@ describe("CommitmentDetail", () => {
     expect(screen.getByText("expired, reclaimable")).toBeInTheDocument();
   });
 
-  it("renders the current status badge", () => {
-    render(<CommitmentDetail commitment={{ ...baseCommitment, status: "Settled" }} contractId="CXXX" {...noopProps} />);
+  it("renders the current status badge", async () => {
+    const { container } = render(<CommitmentDetail commitment={{ ...baseCommitment, status: "Settled" }} contractId="CXXX" {...noopProps} />);
     expect(screen.getByText("Settled")).toHaveAttribute("data-status", "Settled");
+    await expectNoA11yViolations(container);
   });
 });
 
@@ -108,10 +110,16 @@ describe("CommitmentDetail's claim action", () => {
     expect(screen.queryByText("Action")).not.toBeInTheDocument();
   });
 
-  it("offers Claim for an open, unclaimed, unexpired tranche when connected as the cooperative", () => {
+  it("shows the total in USDC units and the claim window in hours, not raw stroops/seconds", () => {
+    render(<CommitmentDetail commitment={baseCommitment} contractId="CXXX" {...noopProps} walletAddress={null} />);
+    expect(screen.getByText("100.00")).toBeInTheDocument();
+    expect(screen.getByText("1 hour")).toBeInTheDocument();
+  });
+
+  it("offers Claim for an open, unclaimed, unexpired tranche when connected as the cooperative", async () => {
     const futureDeadline = String(Math.floor(Date.now() / 1000) + 3600);
     const commitment = { ...baseCommitment, advance1_deadline: futureDeadline };
-    render(
+    const { container } = render(
       <CommitmentDetail
         commitment={commitment}
         contractId="CXXX"
@@ -120,6 +128,7 @@ describe("CommitmentDetail's claim action", () => {
       />,
     );
     expect(screen.getByRole("button", { name: "Claim" })).toBeInTheDocument();
+    await expectNoA11yViolations(container);
   });
 
   it("does not offer Claim for a tranche that hasn't opened yet (deadline 0)", () => {
@@ -203,7 +212,7 @@ describe("CommitmentDetail's claim action", () => {
         contractId="CXXX"
         {...noopProps}
         walletAddress={baseCommitment.cooperative}
-        claimError="claim_advance_1 -> 500: something went wrong"
+        claimError="something went wrong"
       />,
     );
     expect(screen.getByText(/something went wrong/)).toBeInTheDocument();

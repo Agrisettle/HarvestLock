@@ -1,6 +1,7 @@
 import { Address, Contract, Operation, TransactionBuilder, BASE_FEE, rpc, xdr } from "@stellar/stellar-sdk";
 import { server, networkPassphrase } from "./rpc.js";
 import { withRetry } from "./retry.js";
+import { contractErrorFromSimulation } from "../errors.js";
 
 /**
  * Builds the pieces needed to stage a multi-party contract call (`cancel`
@@ -102,7 +103,13 @@ export async function buildMultiPartyProposal(opts: {
 
   const sim = await withRetry(() => server.simulateTransaction(tx));
   if (rpc.Api.isSimulationError(sim)) {
-    throw new Error(`simulation failed for ${opts.method}: ${sim.error}`);
+    // Same typed rejection the single-signer build path uses: a cancel /
+    // reassign / resolve proposal rejected by the state machine is a 409
+    // with the contract's code, not an opaque 500.
+    throw (
+      contractErrorFromSimulation(opts.method, sim.error) ??
+      new Error(`simulation failed for ${opts.method}: ${sim.error}`)
+    );
   }
   const assembled = rpc.assembleTransaction(tx, sim).build();
   const op = assembled.operations[0];

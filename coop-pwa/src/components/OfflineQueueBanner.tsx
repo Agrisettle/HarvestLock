@@ -1,4 +1,6 @@
 import type { QueuedClaim } from "../offlineQueue";
+import { useI18n } from "../i18n";
+import { AddressChip } from "./AddressChip";
 
 /**
  * Surfaces claims that got queued because the device had no network at
@@ -15,33 +17,57 @@ import type { QueuedClaim } from "../offlineQueue";
 export function OfflineQueueBanner({
   queuedClaims,
   retryingId,
+  retryErrors = {},
   onRetry,
+  onDismiss,
 }: {
   queuedClaims: QueuedClaim[];
   retryingId: number | null;
+  /** Why a claim's last retry failed, keyed by queue id. */
+  retryErrors?: Record<number, string>;
   onRetry: (claim: QueuedClaim) => void;
+  onDismiss?: (claim: QueuedClaim) => void;
 }) {
+  const { t, tPlural } = useI18n();
+
   if (queuedClaims.length === 0) return null;
 
   return (
     <div className="offline-queue-banner">
       <p className="offline-queue-summary">
-        {queuedClaims.length} claim{queuedClaims.length === 1 ? "" : "s"} couldn't reach the network and{" "}
-        {queuedClaims.length === 1 ? "is" : "are"} waiting to retry.
+        {tPlural("offline.claimsSummary", queuedClaims.length)}
       </p>
       <ul className="offline-queue-list">
         {queuedClaims.map((claim) => (
           <li key={claim.id}>
+            {/* AddressChip, not the raw ID: a contract ID is 56
+                characters with no break opportunity in it, and
+                `.contract-id` only has a rule under `.commitment-row`
+                and `.detail-header`, so here it was simply full-width
+                text. On a 360px screen that pushed Retry 264px off the
+                right edge -- the control was unreachable, not just
+                ugly. The chip truncates and keeps the full value in a
+                title tooltip. */}
             <span className="offline-queue-item-label">
-              Advance {claim.tranche} — <span className="contract-id">{claim.contractId}</span>
+              {t("offline.advanceLabel", { tranche: claim.tranche })}<AddressChip address={claim.contractId} />
             </span>
             <button
               className="action-button secondary"
               onClick={() => onRetry(claim)}
               disabled={retryingId !== null}
             >
-              {retryingId === claim.id ? "Retrying…" : "Retry"}
+              {retryingId === claim.id ? t("offline.retrying") : t("offline.retry")}
             </button>
+            {retryErrors[claim.id] && onDismiss && (
+              <button className="action-button secondary" onClick={() => onDismiss(claim)} disabled={retryingId !== null}>
+                {t("offline.dismiss")}
+              </button>
+            )}
+            {retryErrors[claim.id] && (
+              <div className="error-banner" role="alert">
+                {retryErrors[claim.id]}
+              </div>
+            )}
           </li>
         ))}
       </ul>

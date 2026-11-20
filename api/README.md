@@ -8,6 +8,13 @@ warehouse receipt attestation intake, plus SDP integration (deployed, not
 forked — PRD §17.1). None of that last group is built yet — see `HANDOFF.md`
 for what's real today versus still ahead.
 
+Every contract `Status` and `Error` variant a caller can see — a `status`
+field's value, or an `Error(Contract, #N)` rejection — is decoded into
+plain English in [`../docs/contract-glossary.md`](../docs/contract-glossary.md).
+Rejected calls also return the numeric `code` and that glossary `name` as
+structured fields (see “Contract rejections” below), so a frontend can
+branch on the code instead of parsing a diagnostic string.
+
 ## Architecture: the API never holds a party's private key
 
 Every write (`lock`, `claim_advance_1`, `settle`, ...) is split into two
@@ -59,6 +66,15 @@ entries) with the same table and the same sign/finalize logic — neither
 `src/stellar/multiParty.ts`'s propose/finalize functions nor the sign
 route care how many pending entries a proposal has, they just iterate
 the array.
+
+A Mermaid sequence diagram of the full three-party `reassign_buyer` walk
+(propose → each other party signs → finalize → submit), with per-step
+file/line references and the enforced edge cases, is in
+[`docs/reassign-buyer-sequence.md`](./docs/reassign-buyer-sequence.md).
+The two-party `cancel` walk is in
+[`docs/cancel-sequence.md`](./docs/cancel-sequence.md), and the
+`flag_dispute` → `resolve_dispute` / `expire_dispute_window` flow is in
+[`docs/dispute-sequence.md`](./docs/dispute-sequence.md).
 
 1. **Propose** — `POST /commitments/:contractId/tx/cancel/propose { proposerPublicKey }`
    or `POST /commitments/:contractId/tx/reassign-buyer/propose { proposerPublicKey, newBuyer }`.
@@ -141,9 +157,18 @@ the system. `GET /parties/:address/standing` exposes the read side.
 
 ## Endpoints, as of this writing
 
+The OpenAPI 3.1 description is in [`openapi.yaml`](./openapi.yaml). It is
+checked against the route registrations in `src/server.ts`; update it in
+the same change whenever an endpoint or request/response shape changes.
+
+A Postman/Insomnia collection with a request for every route lives in
+[`postman/`](./postman/README.md); `test/postmanCollection.test.ts` fails if it
+drifts from `src/server.ts`.
+
 | Method | Path | What it does |
 |---|---|---|
 | GET | `/health` | Liveness check. |
+| GET | `/version` | Build-time commit SHA and UTC build timestamp. Does not depend on Postgres. |
 | POST | `/commitments/deploy` | Deploys a fresh, uninitialized escrow contract instance. Deployer-paid, no party auth. |
 | POST | `/commitments/:contractId/tx/initialize` | Builds unsigned `initialize` XDR. Must be signed by the intended buyer. Address fields are validated (`StrKey`) before building. Optionally takes `oracleConfig` (PRD §16.3 oracle staleness bound — see below); omit or pass `null` for a plain deal that needs no conversion. |
 | POST | `/commitments/:contractId/tx/reassign-buyer` | Builds unsigned `reassign_buyer` XDR. Needs three-party auth — see above. |
@@ -162,9 +187,10 @@ the system. `GET /parties/:address/standing` exposes the read side.
 | DELETE | `/allocation-members/:memberHash` | NDPA s.34 erasure: nulls the phone number behind an on-chain hash. Idempotent. See below. |
 | GET | `/commitments/:contractId/oracle-config` | Live on-chain read of the configured oracle (address, price asset, max quote age). `{"config": null}` if `initialize` never set one — a valid state, not an error. See below. |
 | GET | `/commitments/:contractId/oracle-rate` | A genuinely live cross-contract call to the configured Reflector oracle on every request, never cached. Fails (500, contract error propagated) if no oracle is configured, the oracle doesn't quote that asset, or the quote is older than the configured bound. See below. |
-| POST | `/transactions/submit` | Submits a signed envelope, polls for confirmation, optionally refreshes the Postgres cache (`refreshContractId`), marks a multisig proposal completed (`completeProposalId`), and/or persists a staged allocation ledger's phone numbers (`allocationContractId`/`allocationMembers`) now that the on-chain call is confirmed. |
-| GET | `/commitments/:contractId` | Live read straight from chain (source of truth), refreshes the cache as a side effect. Also applies any reputation consequence from a fresh transition into `Defaulted`/`Forfeited` — see above. |
-| GET | `/commitments` | Lists the Postgres-cached mirror — the only way to list commitments at all, since the chain has no such query. |
+| POST | `/transactions/submit` | Submits a signed envelope, polls for confirmation, optionally refreshes the Postgres cache (`refreshContractId`), marks a multisig proposal completed (`completeProposalId`), and/or persists a staged allocation ledger's phone numbers (`allocationContractId`/`allocationMembers`) now that the on-chain call is confirmed. If confirmation takes longer than the 30-second poll window, returns **202** `{status: "PENDING", hash}` instead of a 500 — see “Slow transactions” below. |
+| GET | `/transactions/:hash` | Follow-up for a 202: polls the chain and returns `{status, hash}` with `PENDING`, `SUCCESS`, or `FAILED`. On the first `SUCCESS`, applies the pending submission's stored side effects exactly once. `:hash` must be 64 hex characters. |
+| GET | `/commitments/:contractId` | Live read straight from chain (source of truth), refreshes the cache as a side effect. Also applies any reputation consequence observed for a `Defaulted`/`Forfeited` commitment, idempotently via `standing_events`' UNIQUE `(contract_id, event_type)` — see above. |
+| GET | `/commitments` | Lists the Postgres-cached mirror — the only way to list commitments at all, since the chain has no such query. Paginated: `?limit=&offset=`, default page size 20, limit clamped to 100 (`DEFAULT_PAGE_SIZE`/`MAX_PAGE_SIZE` in `src/db/commitments.ts`); unusable values fall back to the defaults rather than erroring. Response is a bare array — clients treat a full page as "maybe more", not "done". Ordered `created_at DESC, id`, so pages partition the set with no skipped or duplicated rows across page edges. |
 | GET | `/parties/:address/standing` | A party's current reputation: strike count, whether they're barred, and why. Returns a clean default (not 404) for an address with no history. |
 
 ### Shortfall/grade adjustment (PRD §7)
@@ -255,8 +281,9 @@ configured oracle on every single request — it is never cached, since
 serving a stale rate from this API's own cache would defeat the entire
 point of the staleness bound the contract itself enforces. A missing
 oracle, an asset the oracle doesn't quote, or a quote older than
-`maxAgeSecs` all surface as a 500 with the contract's own error
-propagated through, not a quietly-wrong number.
+`maxAgeSecs` surfaces as a 409 with the contract's own code/name (or a
+404 if the commitment's contract was never initialized), not a
+quietly-wrong number and not an opaque 500.
 
 **`settle`'s payout math genuinely consumes this now.** PRD §4.2 names
 three different options for who bears FX risk between lock-in and
@@ -309,23 +336,420 @@ other deadline-triggered function (`settle`, `expire_remainder_window`,
 detail, including a documented, deliberate limitation: freezing `status`
 doesn't pause any other deadline already ticking on the commitment.
 
-## Setup
+## CORS
+
+The API does not reflect arbitrary browser `Origin` headers. Set
+`CORS_ORIGINS` to a comma-separated list of exact origins (scheme, host,
+and optional port; no paths or wildcards) when the frontend deployment
+domains are known. Until then, cross-origin browser access is disabled;
+same-origin requests and non-browser clients are unaffected. Local Vite
+development can opt in with an origin such as `http://localhost:5173`.
+
+CORS only controls whether browsers expose responses to scripts. It is not
+authentication or a substitute for the contract's signature checks.
+
+## Rate limiting — and what a 429 actually looks like (for frontends/backoff)
+
+Every route is rate-limited globally, per client IP: **100 requests per
+rolling minute** (`@fastify/rate-limit`, registered in `src/server.ts`;
+skipped under `NODE_ENV=test` so test suites' rapid-fire requests don't
+trip it). This section documents the *observed* wire behavior — verified
+by running the server and bursting past the limit with `curl`, not read
+off the plugin's docs — because three frontends poll this API and need to
+back off correctly instead of hammering it.
+
+The 100/minute value is an explicit initial budget for the current
+transaction flow. A single-signer transaction normally spends two API
+requests: build the unsigned XDR, then submit the wallet-signed XDR;
+wallet signing itself is local. A staged three-party transaction spends
+at most four: propose, collect two other parties' signatures, then submit.
+That leaves capacity for up to 25 staged transactions per minute before
+polling. Each active proposal's 10-second waiting-state poll costs six
+requests per minute, so the theoretical ceiling is lower when several
+flows are waiting at once. All callers sharing one egress IP (for example,
+users behind the same NAT) share this budget. This is a starting abuse
+control setting, not a measured production capacity claim; review it
+against pilot traffic before launch, and use a shared limiter store if
+multiple API instances need a coordinated per-IP limit.
+
+**Yes, a 429 carries `Retry-After`.** A request past the limit gets:
 
 ```
+HTTP/1.1 429 Too Many Requests
+x-ratelimit-limit: 100
+x-ratelimit-remaining: 0
+x-ratelimit-reset: 60
+retry-after: 60
+content-type: application/json; charset=utf-8
+
+{"statusCode":429,"error":"Too Many Requests","message":"Rate limit exceeded, retry in 1 minute"}
+```
+
+What a client should key off:
+
+- **`retry-after`** — whole **seconds remaining in the current window**,
+  recomputed per response and observed counting down in real time (e.g.
+  8, then 3 five seconds later). It is not a fixed constant and not a
+  "cooldown from now" — it's time until this client's window resets, so
+  sleep that long and then retry. Once the window expires, the very next
+  request succeeds with a fresh budget (observed: 200 with
+  `x-ratelimit-remaining: 99` immediately after expiry).
+- **`x-ratelimit-remaining` / `x-ratelimit-reset`** — also present on
+  *successful* responses (`x-ratelimit-remaining` counts down from 99),
+  so a well-behaved client can throttle proactively *before* ever
+  hitting a 429 rather than discovering the limit the hard way.
+- **The 429 body** is the same `{statusCode, error, message}` shape as
+  every other error in this API (see `setErrorHandler` in
+  `src/server.ts`) — no special-casing needed on the parse path.
+- **The limit is per client IP, shared across all routes** — it is not
+  per endpoint and not per frontend. Budget for transaction requests
+  and 10-second proposal polls together; multiple frontends from the
+  same NAT'd egress IP share one budget. Don't retry a 429 immediately or on a fixed
+  short interval — wait the advertised `retry-after` (jitter optional
+  but harmless).
+
+One historical footnote worth knowing, since it's why this section
+exists: the limiter registration in `src/server.ts` used **not** to be
+awaited, and `@fastify/rate-limit` attaches itself via an `onRoute`
+hook, which Fastify only fires for routes defined *after* the plugin
+body runs — an un-awaited `app.register()` defers that body until boot,
+i.e. after every route was already defined. The practical result was
+that the limiter silently never engaged on any route: bursts well past
+100 requests produced no 429 and not a single `x-ratelimit-*` header.
+Registration is now awaited (`await app.register(rateLimit, ...)`), and
+`test/server.test.ts` carries a regression test that builds an instance
+with the limiter enabled and asserts the 429 + `retry-after` behavior
+above, so this can't quietly break again.
+
+## Contract rejections — 409 with a structured `contractError`
+
+A simulation that comes back with `HostError: Error(Contract, #N)` is an
+ordinary state-machine rejection (wrong status for that method, an advance
+already claimed, and so on), not a server fault. Instead of the opaque 500
+every bare `Error` used to get, the API returns **409 Conflict** with the
+glossary code and name as fields:
+
+```json
+{
+  "statusCode": 409,
+  "error": "Conflict",
+  "message": "contract rejected claim_advance_1: AlreadyClaimed (Error(Contract, #8))",
+  "contractError": { "code": 8, "name": "AlreadyClaimed" }
+}
+```
+
+`code` and `name` mirror
+[`../docs/contract-glossary.md`](../docs/contract-glossary.md) codes 1–38.
+The contract only appends codes, so a newer code the API's table doesn't
+know yet still comes back structured as
+`{"code": N, "name": "UnknownContractError"}` rather than a 500. Frontends
+should branch on `contractError.code` (or display `name`) instead of
+parsing `message`. Staged multi-party propose calls (`cancel`,
+`reassign_buyer`, `resolve_dispute`) get the same 409 shape when the
+contract rejects them.
+
+On **read** routes, asking for a contract that has no instance on the
+configured network, or one that exists but was never initialized (#2), is a
+**404 Not Found** instead — the resource genuinely isn't there:
+
+```json
+{
+  "statusCode": 404,
+  "error": "Not Found",
+  "message": "contract C... is not initialized (NotInitialized, Error(Contract, #2))",
+  "contractError": { "code": 2, "name": "NotInitialized" }
+}
+```
+
+A missing instance has no contract code, so it returns
+`"contractError": {"code": null, "name": "ContractNotFound"}`.
+
+Everything that is *not* a contract rejection — RPC unreachable, a read
+timeout, `fetch failed`, a malformed SDK response — stays a 5xx with no
+`contractError` field. A 409 or 404 is therefore always a contract/business
+rule; a 5xx still means the API or its network dependency is actually in
+trouble. (A *submission* that misses its confirmation poll is different:
+the network already accepted it, so that returns 202 — see “Slow
+transactions” below.)
+
+## Slow transactions — 202 `PENDING` and `GET /transactions/:hash`
+
+`POST /transactions/submit` sends the envelope and then polls
+`getTransaction` for up to 30 seconds. Testnet inclusion can take longer
+than that (see “Known testnet flakiness” in `HANDOFF.md`), and the
+transaction is already accepted by the network when the poll gives up.
+Telling the caller that was a failure invited them to retry an action
+that may already have happened.
+
+Instead, a slow confirmation now returns **202 Accepted**:
+
+```json
+{ "status": "PENDING", "hash": "ab12…" }
+```
+
+The API persists the hash and the request's side-effect fields
+(`refreshContractId`, `completeProposalId`, `allocationContractId`,
+`allocationMembers`) in `pending_submissions` (migration
+`007_pending_submissions.sql`). Poll:
+
+```sh
+curl -s "$API/transactions/$HASH" | jq
+# {"status":"PENDING","hash":"…"}      → still not included; poll again
+# {"status":"SUCCESS","hash":"…"}      → landed
+# {"status":"FAILED","hash":"…"}       → on chain, but failed
+```
+
+The first poll that sees `SUCCESS` atomically claims the row and applies
+the stored side effects **exactly once** — the same cache refresh,
+`markCompleted`, and allocation phone-number persistence a 200 response
+applies. Later polls answer from Postgres without re-running them.
+`FAILED` applies nothing. A hash that was never reported pending is a
+404; a malformed hash (not 64 hex characters) is a 400.
+
+This is specifically about *inclusion latency*, not acceptance: if the
+network rejects the envelope outright (`sendTransaction` returns
+`ERROR`), that still throws. And if a `PENDING` transaction later lands
+but fails, `GET` reports `FAILED`. Neither is disguised as success.
+
+## Setup
+
+Requires Node.js 20.19+ (or 22.12+) and PostgreSQL. To run a local
+PostgreSQL 16 instance with the credentials used by `.env.example`:
+
+```sh
+docker run --name harvestlock-postgres \
+  -e POSTGRES_PASSWORD=harvestlock \
+  -e POSTGRES_DB=harvestlock \
+  -p 5432:5432 -d postgres:16
+```
+
+Wait for PostgreSQL to accept connections before running the migration:
+`docker exec harvestlock-postgres pg_isready -U postgres -d harvestlock`.
+The container's default user is `postgres`, matching the example
+`DATABASE_URL`. If you already have PostgreSQL, create the `harvestlock`
+database and set `DATABASE_URL` in `.env` to match your local credentials.
+
+From the repository root:
+
+```
+cd api
 npm install
-cp .env.example .env   # fill in DATABASE_URL, ESCROW_WASM_HASH, DEPLOYER_SECRET_KEY
+cp .env.example .env
 npm run migrate
 npm run dev
 ```
+
+`DATABASE_URL` is required for the migration and normal API reads. The
+server can start without `ESCROW_WASM_HASH` and `DEPLOYER_SECRET_KEY`, but
+both are required by `POST /commitments/deploy`.
 
 `ESCROW_WASM_HASH` is the SHA-256 of the built escrow WASM — get it via
 `sha256sum` on `HarvestLock-Contracts/target/wasm32v1-none/release/harvestlock_escrow.wasm`,
 or cross-check against a deployed instance with
 `stellar contract fetch --id <CONTRACT_ID> --network testnet`.
 
+## Curl-only cookbook (nothing but curl, plus `stellar-cli` to sign)
+
+For an integrator who doesn't have Node tooling installed. Every **read**
+here is plain `curl`. Every **write** is: `curl` builds the unsigned
+transaction → the party's own key signs it → `curl` submits it. Signing uses
+[`stellar-cli`](https://developers.stellar.org/docs/tools/cli) — a
+standalone binary, not Node tooling — which is fine for the single-signer
+paths below. The one thing curl + `stellar-cli` alone *cannot* complete is a
+staged multi-party call (`cancel`, `reassign_buyer`, `resolve_dispute`),
+because each other party has to sign a single Soroban **auth entry**, not a
+whole envelope — that needs a wallet exposing `signAuthEntry` (Freighter) or
+the SDK; the per-step curl shapes are still shown in §7. Any rejection that
+comes back as `Error(Contract, #N)` is decoded in
+[`../docs/contract-glossary.md`](../docs/contract-glossary.md), and the same
+HTTP response carries `contractError: {code, name}` — see “Contract
+rejections” above.
+
+Shell variables used throughout:
+
+```sh
+API=http://localhost:3000   # or wherever the API you're calling runs
+TOKEN=CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC  # testnet native XLM (Stellar Asset Contract)
+```
+
+`jq` is used below to pull fields out of responses; any JSON tool works — or
+just read the output by eye.
+
+### 1. Liveness
+
+```sh
+curl -s "$API/health"
+# {"ok":true,"checks":{"api":"ok","database":"ok"}}   (503 if the DB is down)
+```
+
+### 2. Three funded testnet identities
+
+```sh
+stellar keys generate buyer        --network testnet --fund
+stellar keys generate cooperative  --network testnet --fund
+stellar keys generate warehouse    --network testnet --fund
+
+BUYER=$(stellar keys address buyer)
+COOPERATIVE=$(stellar keys address cooperative)
+WAREHOUSE=$(stellar keys address warehouse)
+
+# for §7
+stellar keys generate incoming-buyer --network testnet --fund
+NEW_BUYER=$(stellar keys address incoming-buyer)
+```
+
+The `--fund` flag hits friendbot; the raw equivalent, if you already have
+G-addresses, is `curl -s "https://friendbot.stellar.org/?addr=$BUYER"`.
+Addresses must be *funded/created* accounts — an unfunded key fails
+on-chain with a storage error, not a signature error.
+
+### 3. Deploy a fresh escrow instance
+
+One contract instance = one commitment. Deployer-paid; no party auth.
+
+```sh
+CID=$(curl -s -X POST "$API/commitments/deploy" | jq -r .contractId)
+echo "$CID"
+```
+
+### 4. Initialize it (buyer signs)
+
+```sh
+curl -s -X POST "$API/commitments/$CID/tx/initialize" \
+  -H 'content-type: application/json' \
+  -d "{
+    \"buyer\": \"$BUYER\",
+    \"cooperative\": \"$COOPERATIVE\",
+    \"warehouseOperator\": \"$WAREHOUSE\",
+    \"token\": \"$TOKEN\",
+    \"totalAmount\": \"1000000000\",
+    \"advance1Bps\": 1500,
+    \"advance2Bps\": 2000,
+    \"claimWindowSecs\": \"86400\",
+    \"remainderWindowSecs\": \"604800\",
+    \"deliveryWindowSecs\": \"10368000\",
+    \"contractedQuantity\": 1000,
+    \"gradePriceBps\": [10000],
+    \"sourcePublicKey\": \"$BUYER\"
+  }" | jq -r .xdr > /tmp/init.xdr
+
+stellar tx sign --network testnet --sign-with-key buyer < /tmp/init.xdr > /tmp/init.signed.xdr
+
+curl -s -X POST "$API/transactions/submit" \
+  -H 'content-type: application/json' \
+  -d "{\"xdr\": \"$(cat /tmp/init.signed.xdr)\", \"refreshContractId\": \"$CID\"}"
+# {"status":"SUCCESS","hash":"..."}
+```
+
+Window bounds are enforced API-side before anything is built: `claimWindowSecs`
+1 h–90 d, `remainderWindowSecs` 1 h–30 d, `deliveryWindowSecs` 1 d–365 d.
+`oracleConfig` is optional — omit it for a plain deal (see the oracle
+section above).
+
+Built transactions carry a short time bound (60 s; 300 s for a finalized
+proposal), so sign and submit promptly, or rebuild the XDR.
+
+### 5. Lock the deposit (buyer signs)
+
+`lock` is one of the no-argument lifecycle methods, so it uses the generic
+`/tx/:method` route. Only the deposit (`advance1Bps + advance2Bps`) is
+escrowed here; the remainder is funded later via `fund_remainder`.
+
+```sh
+curl -s -X POST "$API/commitments/$CID/tx/lock" \
+  -H 'content-type: application/json' \
+  -d "{\"sourcePublicKey\": \"$BUYER\"}" | jq -r .xdr > /tmp/lock.xdr
+
+stellar tx sign --network testnet --sign-with-key buyer < /tmp/lock.xdr > /tmp/lock.signed.xdr
+
+curl -s -X POST "$API/transactions/submit" \
+  -H 'content-type: application/json' \
+  -d "{\"xdr\": \"$(cat /tmp/lock.signed.xdr)\", \"refreshContractId\": \"$CID\"}"
+```
+
+Other no-arg methods work the same way, e.g.
+`/tx/claim_advance_1` (sign with the cooperative key),
+`/tx/fund_remainder`, `/tx/settle` (permissionless). Argument-taking
+methods have their own routes: `/tx/confirm-delivery`,
+`/tx/flag-dispute`, `/tx/set-allocation`, `/tx/reassign-buyer`. Optional
+`oracleConfig` on `initialize` (for FX settlement) takes
+`{oracleContract, priceAsset, maxAgeSecs, denominatedAmount}` — see §6's
+read routes and the oracle section above.
+
+### 6. Read state (pure curl)
+
+```sh
+curl -s "$API/commitments/$CID" | jq          # live chain read (source of truth)
+curl -s "$API/commitments?limit=10" | jq      # Postgres-cached list
+curl -s "$API/commitments/$CID/allocation" | jq
+curl -s "$API/commitments/$CID/oracle-config" | jq
+curl -s "$API/parties/$BUYER/standing" | jq
+```
+
+After a successful lock, the live read's `status` is `Locked` (glossary:
+[`../docs/contract-glossary.md`](../docs/contract-glossary.md)).
+
+### 7. Staged multi-party calls — curl can start and finish, not sign the middle
+
+`reassign_buyer` (three parties), `cancel` (two), and `resolve_dispute`
+(three) are staged: a proposal row is created, each other party signs their
+own auth entry from their own wallet, then the proposer finalizes through
+the **existing** `/transactions/submit`. curl does the propose, the polling,
+and the finalize; the one `<signed entry XDR>` placeholder has to come from
+an auth-entry-capable wallet. Full diagram:
+[`docs/reassign-buyer-sequence.md`](./docs/reassign-buyer-sequence.md).
+
+```sh
+# Propose (only the current buyer may propose a reassignment)
+curl -s -X POST "$API/commitments/$CID/tx/reassign-buyer/propose" \
+  -H 'content-type: application/json' \
+  -d "{\"proposerPublicKey\": \"$BUYER\", \"newBuyer\": \"$NEW_BUYER\"}" > /tmp/proposal.json
+
+PROPOSAL_ID=$(jq -r .id /tmp/proposal.json)
+jq -r '.pending_entries[] | .address + " " + .entry_xdr' /tmp/proposal.json
+
+# Poll from any viewer (poll every ~10 s while waiting)
+curl -s "$API/commitments/$CID/tx/reassign-buyer/propose" | jq
+
+# Each pending signer: wallet signs ITS OWN entry_xdr (Freighter signAuthEntry,
+# not signTransaction), then posts it back
+curl -s -X POST "$API/commitments/$CID/tx/propose/$PROPOSAL_ID/sign" \
+  -H 'content-type: application/json' \
+  -d "{\"signerPublicKey\": \"$COOPERATIVE\", \"signedEntryXdr\": \"<signed entry XDR>\"}" | jq
+
+# Repeat for the incoming buyer. Once all entries are signed, status flips to
+# "ready" and ready_xdr appears:
+curl -s "$API/commitments/$CID/tx/reassign-buyer/propose" \
+  | jq -r .proposal.ready_xdr > /tmp/ready.xdr
+
+# The proposer signs ready_xdr classically and submits with
+# completeProposalId so the proposal stops showing as active:
+stellar tx sign --network testnet --sign-with-key buyer < /tmp/ready.xdr > /tmp/ready.signed.xdr
+curl -s -X POST "$API/transactions/submit" \
+  -H 'content-type: application/json' \
+  -d "{\"xdr\": \"$(cat /tmp/ready.signed.xdr)\", \"refreshContractId\": \"$CID\", \"completeProposalId\": \"$PROPOSAL_ID\"}"
+```
+
+### 8. What the common failures mean
+
+| Response | Meaning |
+|---|---|
+| `202` | `POST /transactions/submit` only: the network accepted the transaction but confirmation missed the 30 s poll window. Body is `{status: "PENDING", hash}`; poll `GET /transactions/:hash`. Not a failure. |
+| `400` | Malformed contract ID / address / transaction hash, out-of-range window, unknown method — rejected before any network call. |
+| `403` | A business rule: wrong party proposing, or a barred buyer/cooperative on `initialize`. |
+| `429` | Rate limit (100 req/min per IP, global). Sleep the `retry-after` seconds — it's the time left in the current window, not a fixed cooldown. See the rate-limiting section above. |
+| `409` | The contract rejected the action (e.g. wrong status for that method). The body carries `contractError: {code, name}`; find `N` in [`../docs/contract-glossary.md`](../docs/contract-glossary.md) — see “Contract rejections” above. |
+| `404` | A read against a contract that isn't on this network, or exists but was never initialized (#2). Also carries `contractError`. |
+| `500` | A genuine infrastructure failure — RPC unreachable, a read timeout, or an unexpected SDK error. No `contractError` field; retrying may help. |
+
+CORS is a browser concern only — curl doesn't enforce it, so a curl call
+succeeding says nothing about whether a browser frontend's origin is
+allow-listed (see the CORS section above).
+
 ## Testing
 
-`npm test` runs five suites, all against real infrastructure: `stellar.test.ts`
+`npm test` runs every suite under `test/`, all against real infrastructure
+except where noted: `stellar.test.ts`
 (**live Stellar testnet**, no mocks, same discipline as the contracts
 repo) deploys real throwaway contract instances and builds/submits real
 `initialize`/`lock`/`cancel`/`reassign_buyer` transactions — `cancel`
@@ -399,6 +823,25 @@ point of salting per member, not per contract), `recordAllocationMembers`/
 number, and `eraseAllocationMember` is idempotent and leaves
 `share_bps`/`member_hash` untouched.
 
+`test/errors.test.ts` is a network-free suite: it parses
+captured-format Soroban diagnostics (`HostError: Error(Contract, #8)` with
+and without an appended event log) and checks every glossary code 1–38
+against its name, that an unknown future code stays structured, and that a
+diagnostic with no contract code (a transport failure) is left alone so it
+can stay a 5xx. `server.test.ts` additionally drives a real route with the
+builder stubbed to throw a contract rejection (asserting the 409 +
+`contractError` body) and a real read through the RPC boundary (asserting
+#2 and a missing instance both become 404).
+
+`server.test.ts` also covers issue #405's slow-transaction path without
+the network: `submitSignedTransaction` is driven with fake timers past
+its 30 s deadline and must return `PENDING` rather than throw; the submit
+route then returns 202 with the hash; and `GET /transactions/:hash` is
+polled twice against a stubbed SUCCESS/FAILED `getTransaction`, asserting
+the stored side effects run exactly once (and never on FAILED). That
+suite is real-Postgres, like `reputation.test.ts` and
+`allocationMembers.test.ts` — no live chain calls.
+
 Two real bugs worth knowing about, found while building the allocation
 ledger, both now fixed: `nativeToScVal`'s automatic object-to-map
 inference picks the wrong numeric type for a plain JS number
@@ -412,14 +855,22 @@ which the live end-to-end test caught as a failed assertion, not a crash.
 ## What's not built yet
 
 - The voucher/SDP pieces mentioned above — nothing exists for these yet.
+  See [`../docs/sdp-integration-plan.md`](../docs/sdp-integration-plan.md)
+  (issue #4) for the decided integration shape and its prerequisites.
 - Auth/sessions for the frontends — out of scope for MVP per PRD, but the
-  data model shouldn't assume a single user (see `TASKS.md`).
+  data model shouldn't assume a single user (see `TASKS.md`). The model is
+  now decided on paper in
+  [`../docs/identity-session-model.md`](../docs/identity-session-model.md)
+  (issue #5); it is not implemented.
 - No endpoint refreshes the Postgres cache for a contract nobody has
   called `GET /commitments/:contractId` on recently — there's no
   background poller yet, so the list view can go stale for commitments no
   one has viewed. Acceptable for now, worth revisiting once there's real
   usage. The reputation consequences above inherit the exact same gap,
-  for the exact same reason.
+  for the exact same reason. Revisited 18 Oct 2026 (#186) and kept as-is;
+  see `../docs/audits/2026-10-18-commitments-cache-refresh-revisit.md`
+  for the evidence, revisit triggers, and the pre-scoped smallest version
+  of the job.
 - The appeals process behind reputation's bar: the contact
   (`samuelojetunde898@gmail.com`) is documented on `site/roles.html`;
   there's no inbox automation or reinstatement workflow here yet,

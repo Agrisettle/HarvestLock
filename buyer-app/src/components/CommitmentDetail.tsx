@@ -4,13 +4,20 @@ import { CancelSection } from "./CancelSection";
 import { ReassignBuyerSection } from "./ReassignBuyerSection";
 import { DisputeSection } from "./DisputeSection";
 import { AddressChip } from "./AddressChip";
+import { formatDuration, formatTokenAmount } from "../amount";
+
+const deadlineFormatter = new Intl.DateTimeFormat("en-GB", {
+  dateStyle: "medium",
+  timeStyle: "short",
+  timeZone: "UTC",
+});
 
 function formatDeadline(unixSecs: string): string {
   const n = Number(unixSecs);
   // The contract stores 0 as "unset" — release_advance_N hasn't run yet,
   // so no claim window exists to show. Not an error, not epoch-1970.
   if (n === 0) return "not yet opened";
-  return new Date(n * 1000).toLocaleString();
+  return `${deadlineFormatter.format(new Date(n * 1000))} UTC`;
 }
 
 function formatBps(bps: number): string {
@@ -87,10 +94,16 @@ export function CommitmentDetail({
 
       <p className="pending-summary">{pendingSummary(commitment)}</p>
 
-      {actionError && <div className="error-banner">{actionError}</div>}
+      {actionError && <div className="error-banner" role="alert">{actionError}</div>}
 
       {action && (
-        <button className="action-button" onClick={() => onAction(action)} disabled={actionInFlight}>
+        <button
+          type="button"
+          className="action-button"
+          onClick={() => onAction(action)}
+          disabled={actionInFlight}
+          aria-busy={actionInFlight}
+        >
           {actionInFlight
             ? action === "lock"
               ? "Locking…"
@@ -118,7 +131,7 @@ export function CommitmentDetail({
       <dl className="party-grid">
         <div>
           <dt>Total locked</dt>
-          <dd>{commitment.total_amount}</dd>
+          <dd>{formatTokenAmount(commitment.total_amount)}</dd>
         </div>
         <div>
           <dt>Cooperative</dt>
@@ -146,34 +159,36 @@ export function CommitmentDetail({
         </div>
         <div>
           <dt>Claim window</dt>
-          <dd>{commitment.claim_window_secs}s</dd>
+          <dd>{formatDuration(commitment.claim_window_secs)}</dd>
         </div>
       </dl>
 
-      <table className="tranches">
-        <thead>
-          <tr>
-            <th>Tranche</th>
-            <th>Share</th>
-            <th>Claim deadline</th>
-            <th>State</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>Advance 1</td>
-            <td>{formatBps(commitment.advance1_bps)}</td>
-            <td>{formatDeadline(commitment.advance1_deadline)}</td>
-            <td>{claimState(commitment.advance1_claimed, commitment.advance1_expired)}</td>
-          </tr>
-          <tr>
-            <td>Advance 2</td>
-            <td>{formatBps(commitment.advance2_bps)}</td>
-            <td>{formatDeadline(commitment.advance2_deadline)}</td>
-            <td>{claimState(commitment.advance2_claimed, commitment.advance2_expired)}</td>
-          </tr>
-        </tbody>
-      </table>
+      <div className="tranches-scroll" role="region" aria-label="Tranche schedule" tabIndex={0}>
+        <table className="tranches">
+          <thead>
+            <tr>
+              <th scope="col">Tranche</th>
+              <th scope="col">Share</th>
+              <th scope="col">Claim deadline</th>
+              <th scope="col">State</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row">Advance 1</th>
+              <td>{formatBps(commitment.advance1_bps)}</td>
+              <td>{formatDeadline(commitment.advance1_deadline)}</td>
+              <td>{claimState(commitment.advance1_claimed, commitment.advance1_expired)}</td>
+            </tr>
+            <tr>
+              <th scope="row">Advance 2</th>
+              <td>{formatBps(commitment.advance2_bps)}</td>
+              <td>{formatDeadline(commitment.advance2_deadline)}</td>
+              <td>{claimState(commitment.advance2_claimed, commitment.advance2_expired)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

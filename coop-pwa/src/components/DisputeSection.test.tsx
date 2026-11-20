@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { DisputeSection } from "./DisputeSection";
 import type { CommitmentDetail } from "../api";
 import * as wallet from "../wallet";
+import { expectNoA11yViolations } from "../a11y";
 
 // Same mocking shape as CancelSection.test.tsx/ReassignBuyerSection.test.tsx
 // -- no real Freighter extension exists in this environment; what's
@@ -184,7 +185,7 @@ describe("DisputeSection", () => {
     ); // proposeResolveDispute response
 
     const user = userEvent.setup();
-    render(
+    const { container } = render(
       <DisputeSection
         commitment={disputed}
         contractId="CXXX"
@@ -197,12 +198,16 @@ describe("DisputeSection", () => {
     await user.click(screen.getByRole("button", { name: "Propose resolving this dispute" }));
 
     expect(await screen.findByText(/waiting for the other two parties to approve/i)).toBeInTheDocument();
+    // The propose button unmounts, so this live region is what tells a
+    // screen-reader user the proposal went through.
+    expect(screen.getByRole("status")).toHaveTextContent(/waiting for the other two parties to approve/i);
     const proposeCall = fetchMock.mock.calls.find(
       ([url, init]) =>
         String(url).endsWith("/tx/resolve-dispute/propose") && (init as RequestInit | undefined)?.method === "POST",
     );
     expect(proposeCall).toBeDefined();
     expect(String(proposeCall?.[1]?.body)).toContain(baseCommitment.warehouse_operator);
+    await expectNoA11yViolations(container);
   });
 
   it("shows an approve button for a pending signer, and approving signs via signAuthEntry then waits for the remaining party", async () => {
@@ -264,7 +269,7 @@ describe("DisputeSection", () => {
     const onDisputeChanged = vi.fn();
 
     const user = userEvent.setup();
-    render(
+    const { container } = render(
       <DisputeSection
         commitment={disputed}
         contractId="CXXX"
@@ -281,5 +286,6 @@ describe("DisputeSection", () => {
     const submitCall = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/transactions/submit"));
     expect(submitCall).toBeDefined();
     expect(String(submitCall?.[1]?.body)).toContain("prop-1"); // completeProposalId included
+    await expectNoA11yViolations(container);
   });
 });
