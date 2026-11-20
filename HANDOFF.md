@@ -50,6 +50,25 @@ budget check pass. The five lockfile-sync jobs also leave their lockfiles
 unchanged with the current Node 24/npm 11 workflow; the older Node 20/npm 10
 check with `--legacy-peer-deps` incorrectly rewrote peer-dependency entries.
 
+## Manual Freighter QA Verification (Issues #61, #62, #63, #64) — 20 Nov 2026
+
+End-to-end Manual Freighter QA on Stellar Testnet executed and documented across the four target on-chain flows:
+- **#61 (`coop-pwa`):** Approve a dispute resolution (`DisputeSection.tsx` -> `handleApprove`, signing `signAuthEntry` on a pending Soroban auth entry).
+- **#62 (`coop-pwa`):** Finalize a ready dispute resolution (`DisputeSection.tsx` -> `handleFinalize`, classic envelope signing on `ready_xdr` and submitting to restore on-chain status to `dispute_pre_status`).
+- **#63 (`warehouse-app`):** Mark mid-season checkpoint (`CommitmentDetail.tsx` & `App.tsx` -> `handleMarkCheckpoint`, transitioning commitment from `Advance1Released` to `CheckpointPassed`).
+- **#64 (`warehouse-app`):** Confirm delivery (`ConfirmDeliveryForm.tsx` & `App.tsx` -> `handleConfirmDelivery`, recording delivered quantity and grade index, moving commitment from `ReadyForDelivery` to `Delivered`).
+
+Detailed execution runbook, prerequisite mapping, verification matrices, popup review field details, rejection handling checks, and state reconciliation reports are stored in:
+- [`docs/qa/manual-freighter-qa-runbook.md`](./docs/qa/manual-freighter-qa-runbook.md)
+- [`docs/qa/issue-61-approve-dispute-resolution.md`](./docs/qa/issue-61-approve-dispute-resolution.md)
+- [`docs/qa/issue-62-finalize-dispute-resolution.md`](./docs/qa/issue-62-finalize-dispute-resolution.md)
+- [`docs/qa/issue-63-mark-mid-season-checkpoint.md`](./docs/qa/issue-63-mark-mid-season-checkpoint.md)
+- [`docs/qa/issue-64-confirm-delivery.md`](./docs/qa/issue-64-confirm-delivery.md)
+
+Two UX gaps surfaced during manual verification and documented as bug reports:
+1. `warehouse-app`'s action buttons (`mark_checkpoint` and `ConfirmDeliveryForm`) silently no-op when clicked without a connected wallet instead of alerting or prompting connection.
+2. `coop-pwa`'s `DisputeSection.tsx` relies on component-local `justApproved` state, causing the "Approved — waiting" indicator to reset on a browser page reload.
+
 ## Next steps
 
 Check `SPRINT.md`'s day-by-day checklist first — it's the live tracker for this week. Beyond the sprint window, `ROADMAP.md` Phase 0 Track B (contracts) and the API/frontend work implied by Phase 1 are the source of truth.
