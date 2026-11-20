@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
-import { Keypair, Account, StrKey, Address, xdr, rpc, TransactionBuilder, BASE_FEE, Operation } from "@stellar/stellar-sdk";
+import { Keypair, Account, StrKey, Address, xdr, rpc, TransactionBuilder, BASE_FEE, Operation, nativeToScVal } from "@stellar/stellar-sdk";
 import { randomBytes } from "node:crypto";
 import { buildServer } from "../src/server.js";
 import * as txModule from "../src/stellar/tx.js";
@@ -428,54 +428,6 @@ describe("server (HTTP layer)", () => {
   );
 
   it(
-    "rejects claimWindowSecs below the minimum before touching the network",
-    async () => {
-      const res = await app.inject({
-        method: "POST",
-        url: `/commitments/${FAKE_CONTRACT_ID}/tx/initialize`,
-        payload: {
-          buyer: FAKE_PUBLIC_KEY,
-          cooperative: FAKE_PUBLIC_KEY,
-          warehouseOperator: FAKE_PUBLIC_KEY,
-          token: FAKE_CONTRACT_ID,
-          totalAmount: "1000000000",
-          advance1Bps: 1500,
-          advance2Bps: 2000,
-          claimWindowSecs: "3599",
-          sourcePublicKey: FAKE_PUBLIC_KEY,
-        },
-      });
-      expect(res.statusCode).toBe(400);
-      expect(res.json().message).toMatch(/claimWindowSecs must be between/);
-    },
-    15_000,
-  );
-
-  it(
-    "rejects claimWindowSecs above the maximum before touching the network",
-    async () => {
-      const res = await app.inject({
-        method: "POST",
-        url: `/commitments/${FAKE_CONTRACT_ID}/tx/initialize`,
-        payload: {
-          buyer: FAKE_PUBLIC_KEY,
-          cooperative: FAKE_PUBLIC_KEY,
-          warehouseOperator: FAKE_PUBLIC_KEY,
-          token: FAKE_CONTRACT_ID,
-          totalAmount: "1000000000",
-          advance1Bps: 1500,
-          advance2Bps: 2000,
-          claimWindowSecs: String(60 * 60 * 24 * 90 + 1),
-          sourcePublicKey: FAKE_PUBLIC_KEY,
-        },
-      });
-      expect(res.statusCode).toBe(400);
-      expect(res.json().message).toMatch(/claimWindowSecs must be between/);
-    },
-    15_000,
-  );
-
-  it(
     "rejects remainderWindowSecs below the minimum before touching the network",
     async () => {
       const res = await app.inject({
@@ -588,36 +540,67 @@ describe("server (HTTP layer)", () => {
     deliveryWindowSecs: String(60 * 60 * 24 * 120),
   };
 
-  it("accepts claimWindowSecs at both inclusive boundaries", async () => {
-    const buildInvoke = vi.spyOn(txModule, "buildInvokeTransaction").mockResolvedValue("FAKE-UNSIGNED-XDR");
-    try {
-      for (const claimWindowSecs of ["3600", String(60 * 60 * 24 * 90)]) {
+  const minClaimWindowSecs = 3_600;
+  const maxClaimWindowSecs = 90 * 24 * 60 * 60;
+  const claimWindowArgIndex = 7;
+  const validClaimWindowPayload = {
+    buyer: FAKE_PUBLIC_KEY,
+    cooperative: FAKE_PUBLIC_KEY,
+    warehouseOperator: FAKE_PUBLIC_KEY,
+    token: FAKE_CONTRACT_ID,
+    totalAmount: "1000000000",
+    advance1Bps: 1500,
+    advance2Bps: 2000,
+    ...validWindows,
+    contractedQuantity: 1,
+    gradePriceBps: [10_000],
+    sourcePublicKey: FAKE_PUBLIC_KEY,
+  };
+
+  it.each([minClaimWindowSecs, maxClaimWindowSecs])(
+    "accepts claimWindowSecs of %i seconds and encodes it for initialize",
+    async (claimWindowSecs) => {
+      const buildInvoke = vi.spyOn(txModule, "buildInvokeTransaction").mockResolvedValue("FAKE-UNSIGNED-XDR");
+      try {
         const res = await app.inject({
           method: "POST",
           url: `/commitments/${FAKE_CONTRACT_ID}/tx/initialize`,
-          payload: {
-            buyer: FAKE_PUBLIC_KEY,
-            cooperative: FAKE_PUBLIC_KEY,
-            warehouseOperator: FAKE_PUBLIC_KEY,
-            token: FAKE_CONTRACT_ID,
-            totalAmount: "1000000000",
-            advance1Bps: 1500,
-            advance2Bps: 2000,
-            ...validWindows,
-            claimWindowSecs,
-            contractedQuantity: 1,
-            gradePriceBps: [10_000],
-            sourcePublicKey: FAKE_PUBLIC_KEY,
-          },
+          payload: { ...validClaimWindowPayload, claimWindowSecs: String(claimWindowSecs) },
         });
         expect(res.statusCode).toBe(200);
         expect(res.json()).toEqual({ xdr: "FAKE-UNSIGNED-XDR" });
+        expect(buildInvoke).toHaveBeenCalledTimes(1);
+        const invocation = buildInvoke.mock.calls[0]?.[0];
+        expect(invocation?.method).toBe("initialize");
+        expect(invocation?.args?.[claimWindowArgIndex]).toEqual(
+          nativeToScVal(BigInt(claimWindowSecs), { type: "u64" }),
+        );
+      } finally {
+        buildInvoke.mockRestore();
       }
-      expect(buildInvoke).toHaveBeenCalledTimes(2);
-    } finally {
-      buildInvoke.mockRestore();
-    }
-  }, 15_000);
+    },
+    15_000,
+  );
+
+  it.each([minClaimWindowSecs - 1, maxClaimWindowSecs + 1])(
+    "rejects claimWindowSecs of %i seconds before building a transaction",
+    async (claimWindowSecs) => {
+      const buildInvoke = vi.spyOn(txModule, "buildInvokeTransaction").mockResolvedValue("FAKE-UNSIGNED-XDR");
+      try {
+        const res = await app.inject({
+          method: "POST",
+          url: `/commitments/${FAKE_CONTRACT_ID}/tx/initialize`,
+          payload: { ...validClaimWindowPayload, claimWindowSecs: String(claimWindowSecs) },
+        });
+        expect(res.statusCode).toBe(400);
+        expect(res.json().message).toMatch(/claimWindowSecs must be between/);
+        expect(buildInvoke).not.toHaveBeenCalled();
+      } finally {
+        buildInvoke.mockRestore();
+      }
+    },
+    15_000,
+  );
 
   it("accepts remainderWindowSecs at both inclusive boundaries", async () => {
     const buildInvoke = vi.spyOn(txModule, "buildInvokeTransaction").mockResolvedValue("FAKE-UNSIGNED-XDR");
