@@ -55,7 +55,7 @@ export function HowItWorks() {
           </p>
         </Reveal>
 
-        <ol className="steps" role="list">
+        <ol className="steps" role="list" aria-label="Seven contract lifecycle states">
           {steps.map((s, i) => (
             <Reveal
               as="li"
@@ -63,6 +63,7 @@ export function HowItWorks() {
               delay={i * 70}
               className="step"
               tabIndex={0}
+              aria-label={`Step ${String(i + 1).padStart(2, "0")}: ${s.state} (${s.fn})`}
             >
               <div className="step-marker" aria-hidden="true">
                 <span className="mono">{String(i + 1).padStart(2, "0")}</span>
@@ -70,7 +71,9 @@ export function HowItWorks() {
               <div className="step-body">
                 <div className="step-head">
                   <h3>{s.state}</h3>
-                  <code className="step-fn">{s.fn}</code>
+                  <code className="step-fn" aria-label={`Contract function: ${s.fn}`}>
+                    {s.fn}
+                  </code>
                 </div>
                 <p>{s.body}</p>
               </div>
