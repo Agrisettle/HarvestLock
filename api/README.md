@@ -192,6 +192,11 @@ drifts from `src/server.ts`.
 | GET | `/commitments/:contractId` | Live read straight from chain (source of truth), refreshes the cache as a side effect. Also applies any reputation consequence observed for a `Defaulted`/`Forfeited` commitment, idempotently via `standing_events`' UNIQUE `(contract_id, event_type)` — see above. |
 | GET | `/commitments` | Lists the Postgres-cached mirror — the only way to list commitments at all, since the chain has no such query. Paginated: `?limit=&offset=`, default page size 20, limit clamped to 100 (`DEFAULT_PAGE_SIZE`/`MAX_PAGE_SIZE` in `src/db/commitments.ts`); unusable values fall back to the defaults rather than erroring. Response is a bare array — clients treat a full page as "maybe more", not "done". Ordered `created_at DESC, id`, so pages partition the set with no skipped or duplicated rows across page edges. |
 | GET | `/parties/:address/standing` | A party's current reputation: strike count, whether they're barred, and why. Returns a clean default (not 404) for an address with no history. |
+| GET | `/commitments/:contractId/notifications` | Member SMS delivery counts per event (issue #7). Counts only, never a recipient, phone number or member hash. See "Member SMS notifications" below. |
+| GET | `/kyb/config` | Buyer KYB settings: `enforcement` (`off`/`enforce`), `trustedAnchors`, `validityDays`. See "Buyer KYB via anchor verification" below. |
+| POST | `/kyb/challenge` | `{account, anchorDomain}` → the trusted anchor's SEP-10 challenge, validated by this API before it is returned, for the buyer's wallet to sign. Rate limited. |
+| POST | `/kyb/verify` | `{account, anchorDomain, transaction}` (the signed challenge) → exchanges it with the anchor, reads SEP-12 `GET /customer`, records the status. Rate limited. |
+| GET | `/kyb/buyers/:address` | `{verified, current, latest}`: the verification in force (if any) and the most recent check of any outcome. |
 
 ### Shortfall/grade adjustment (PRD §7)
 
@@ -335,6 +340,85 @@ other deadline-triggered function (`settle`, `expire_remainder_window`,
 `HarvestLock-Contracts/HANDOFF.md`'s Deployment 10 for the contract-level
 detail, including a documented, deliberate limitation: freezing `status`
 doesn't pause any other deadline already ticking on the commitment.
+
+### Member SMS notifications (PRD §6/§13, issue #7)
+
+Farmers are SMS-only (no app), so allocated members are texted when
+their commitment reaches a point that matters to them, using the
+reviewed copy in `../docs/sms-templates.md` (English, Yoruba, Hausa,
+Igbo, selected by `SMS_LOCALE`). The six events: `advance_released`
+(once per tranche), `checkpoint_marked`, `delivery_confirmed`,
+`dispute_flagged` / `dispute_resolved` (numbered, since a commitment can
+be disputed more than once), and `settlement_complete`.
+
+- **Same shape as reputation.** It is observation-triggered from the
+  same two places (`GET /commitments/:id`, and submit's
+  `refreshContractId`), through one shared `observeCommitment` helper.
+  It has the same staleness caveat as the cache. Exactly-once comes from
+  `sms_events`' UNIQUE constraint, never from `previousStatus`
+  (migration `008_sms_notifications.sql`, `src/notifications.ts`).
+- **No backfill spam.** The first time the API ever sees a contract
+  that is already past `Draft`, the events it implies are recorded as
+  `suppressed` and not sent.
+- **Recipients and erasure.** Every allocated member whose phone number
+  is still on file. The outbox stores no phone numbers: each message
+  points at its `allocation_members` row and the number is read only at
+  send time. An NDPA erasure therefore also cancels any unsent message,
+  which is recorded as `skipped`. Numbers are normalized to Nigerian
+  international format, and unusable ones are skipped with a reason,
+  never guessed. Texting the cooperative lead is out of scope until #5
+  gives the API a cooperative-to-phone binding.
+- **Delivery.** Recording is awaited. Sending is started but not
+  awaited, so a slow gateway never slows a read or turns a successful
+  submission into an error. Messages are claimed before any network call
+  (two runs never send the same one). `sent` is terminal. Failures retry
+  on later observations, up to 5 attempts, then become `failed`.
+- **Gateway.** `SMS_PROVIDER=log` (the default) sends nothing and logs
+  each message with the number redacted to its last four digits.
+  `SMS_PROVIDER=termii` sends for real (PRD §17 names Termii for its
+  handling of Nigeria's DND registry, so `TERMII_CHANNEL` defaults to
+  `dnd`). It needs `TERMII_API_KEY` and `TERMII_SENDER_ID`, and the API refuses to boot without them rather
+  than silently falling back to logging. **Not yet verified against a
+  live Termii key:** check delivery on MTN/Airtel/Glo/9mobile, `dnd`
+  channel approval for the sender ID, and UCS-2 billing of the accented
+  copy before first real use (see `src/sms/provider.ts`).
+
+### Buyer KYB via anchor verification (PRD §4.5, issue #11)
+
+HarvestLock runs no KYB of its own. The PRD requires buyers to have
+"existing anchor SEP-12 verification", so the proof is a **trusted,
+licensed anchor's own SEP-12 record** for the buyer's Stellar account,
+read by this API directly. Getting it uses the same "build unsigned →
+party's wallet signs → API submits" shape as every write here, applied
+to SEP-10:
+
+1. `POST /kyb/challenge`: the API fetches the anchor's SEP-10 challenge
+   and validates it (anchor `SIGNING_KEY` signature, home domain,
+   web-auth domain, and sequence 0, so it can never be submitted) before
+   returning it. A buyer is never asked to sign anything else.
+2. The buyer signs it in their own wallet (`buyer-app`'s "Business
+   verification" step).
+3. `POST /kyb/verify`: the API exchanges the signed challenge for the
+   anchor's JWT itself, immediately calls SEP-12 `GET /customer` with
+   it, records the status in `buyer_verifications` (migration
+   `009_buyer_verifications.sql`, append-only), and discards the token.
+   The API never accepts a token from a client, which is why it does
+   not need the anchor's JWT signing secret to trust the result.
+
+`ACCEPTED` counts for `KYB_VALIDITY_DAYS` (default 182, the PRD's "buyers
+every six months"). Only anchors still in `KYB_TRUSTED_ANCHORS` count, so
+de-listing an anchor stops its past verdicts counting without rewriting
+history. The allowlist is checked before any outbound request, so these
+routes cannot be used to fetch arbitrary hosts.
+
+**Enforcement is off by default** (`KYB_ENFORCEMENT=off`): verification
+is available and recorded but never required, so testnet and dev work
+keep running with a bare wallet. With `KYB_ENFORCEMENT=enforce`, an
+unverified buyer gets a 403 from `tx/initialize`, and so does an
+unverified `newBuyer` on both `tx/reassign-buyer` routes (PRD §4.8: the
+position transfers only "to another KYB-verified buyer"). The API
+refuses to boot with `enforce` and no trusted anchor. For testnet,
+`testanchor.stellar.org` (SDF's reference anchor) implements SEP-1/10/12.
 
 ## CORS
 
@@ -857,6 +941,12 @@ which the live end-to-end test caught as a failed assertion, not a crash.
 - The voucher/SDP pieces mentioned above — nothing exists for these yet.
   See [`../docs/sdp-integration-plan.md`](../docs/sdp-integration-plan.md)
   (issue #4) for the decided integration shape and its prerequisites.
+- SMS to the cooperative lead (members only today, see "Member SMS
+  notifications"), per-member SMS language (one deployment-wide
+  `SMS_LOCALE` today), and a live-key verification of the Termii path.
+- Buyer KYB is anchor-SEP-12 only. The rest of the PRD's Tier 2 buyer
+  checks (CAC, principal officers, sanctions screening on every
+  transaction above a threshold) are not built here.
 - Auth/sessions for the frontends — out of scope for MVP per PRD, but the
   data model shouldn't assume a single user (see `TASKS.md`). The model is
   now decided on paper in

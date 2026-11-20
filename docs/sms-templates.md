@@ -2,6 +2,9 @@
 
 > **Status:** Draft for translation and maintainer review.
 > **Applies to:** farmer/cooperative notifications sent by the Termii SMS gateway.
+> **Used by:** `api/src/sms/templates.ts` (issue #7). The code copies these tables verbatim, and
+> `api/test/notifications.test.ts` fails if the two drift apart, so edit the copy here first, then
+> mirror it there. The same applies to the Yoruba, Hausa and Igbo files.
 
 HarvestLock is SMS-first for farmers: PRD §6/§13 require a message without an
 app install, and the mainnet/UX tranche adds Yoruba, Hausa, and Igbo copies.

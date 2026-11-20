@@ -1425,6 +1425,151 @@
       ]
     },
     {
+      "name": "Notifications",
+      "description": "Member SMS delivery (issue #7). Events are recorded and sent as a side effect of live commitment reads; this folder only reads the record.",
+      "item": [
+        {
+          "name": "Get SMS notification summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/commitments/{{contractId}}/notifications",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "commitments",
+                "{{contractId}}",
+                "notifications"
+              ]
+            },
+            "description": "Per-event delivery counts (pending/sending/sent/failed/skipped) for one commitment. Counts only, never a recipient, phone number or member hash. `suppressed: true` marks an event recorded as a backfill and deliberately not sent."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Buyer KYB",
+      "description": "Buyer onboarding via anchor verification (issue #11, src/kyb.ts). Challenge → sign in the buyer's own wallet → verify. Requires KYB_TRUSTED_ANCHORS; gating only applies with KYB_ENFORCEMENT=enforce.",
+      "item": [
+        {
+          "name": "Get KYB config",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/kyb/config",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "kyb",
+                "config"
+              ]
+            },
+            "description": "Whether verification is enforced, which anchors are trusted, and how long a verification counts."
+          }
+        },
+        {
+          "name": "Build SEP-10 challenge",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/kyb/challenge",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "kyb",
+                "challenge"
+              ]
+            },
+            "description": "Fetches and validates the anchor's SEP-10 challenge for the buyer. Sign the returned `transaction` in the buyer's wallet (outside Postman), paste it into `signedKybChallengeXdr`, then run Verify.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"account\": \"{{buyer}}\",\n  \"anchorDomain\": \"{{anchorDomain}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  pm.collectionVariables.set('kybChallengeXdr', pm.response.json().transaction);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Verify buyer with anchor",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/kyb/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "kyb",
+                "verify"
+              ]
+            },
+            "description": "Submits the signed challenge to the anchor, reads the anchor's SEP-12 customer status with the resulting token (never stored), and records the result. `verified` is true only for ACCEPTED.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"account\": \"{{buyer}}\",\n  \"anchorDomain\": \"{{anchorDomain}}\",\n  \"transaction\": \"{{signedKybChallengeXdr}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Get buyer verification",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/kyb/buyers/{{buyer}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "kyb",
+                "buyers",
+                "{{buyer}}"
+              ]
+            },
+            "description": "`verified`, the verification currently in force (`current`) and the most recent check of any outcome (`latest`)."
+          }
+        }
+      ]
+    },
+    {
       "name": "Submit",
       "description": "Every write: build XDR → sign it with the party's own key → submit.",
       "item": [
@@ -1616,6 +1761,21 @@
       "key": "stagedMembers",
       "value": "",
       "description": "Set automatically by Build set-allocation XDR; paste into Submit's allocationMembers."
+    },
+    {
+      "key": "anchorDomain",
+      "value": "testanchor.stellar.org",
+      "description": "A domain listed in the API's KYB_TRUSTED_ANCHORS."
+    },
+    {
+      "key": "kybChallengeXdr",
+      "value": "",
+      "description": "Set automatically by Build SEP-10 challenge. Sign it outside Postman."
+    },
+    {
+      "key": "signedKybChallengeXdr",
+      "value": "",
+      "description": "Paste the wallet-signed SEP-10 challenge here before Verify buyer with anchor."
     }
   ]
 }
