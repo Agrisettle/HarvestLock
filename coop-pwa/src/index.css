@@ -324,7 +324,7 @@ main {
 
 .reassign-form input {
   background: var(--void);
-  border: 1px solid var(--void-line);
+  border: 1px solid var(--void-line-strong);
   color: var(--bone);
   font-family: var(--mono);
   font-size: 0.85rem;
@@ -448,7 +448,7 @@ table.allocation-table th {
   background: var(--void-raised);
   /* The row is an interactive control, so its edge needs 3:1 non-text
      contrast (WCAG 1.4.11), not the decorative --void-line. */
-  border: 1px solid var(--void-line);
+  border: 1px solid var(--void-line-strong);
   border-radius: 8px;
   cursor: pointer;
   text-align: left;
