@@ -68,20 +68,34 @@ export function CommitmentList({
 
   return (
     <div className="commitment-list">
-      <button className="refresh-button" onClick={() => downloadCsv(commitments)}>
+      <button type="button" className="refresh-button" onClick={() => downloadCsv(commitments)}>
         {t("commitmentList.downloadCsv")}
       </button>
-      {commitments.map((c) => (
-        <button key={c.id} className="commitment-row" onClick={() => onSelect(c.contract_id)}>
-          {/* copyable=false: this row is itself a <button> -- a nested
-              <button> for the copy control would be invalid HTML. */}
-          <AddressChip address={c.contract_id} copyable={false} className="contract-id" />
-          <StatusBadge status={c.status} />
-        </button>
-      ))}
+      {/* A real list so screen readers announce "list, N items" and
+          support list navigation; the rows stay native <button>s, so
+          Tab/Enter/Space work with no extra key handling. */}
+      <ul className="commitment-rows">
+        {commitments.map((c) => (
+          <li key={c.id}>
+            {/* The visible chip is truncated, so the accessible name carries
+                the full contract ID plus the status. */}
+            <button
+              type="button"
+              className="commitment-row"
+              aria-label={`${c.contract_id}, ${c.status}`}
+              onClick={() => onSelect(c.contract_id)}
+            >
+              {/* copyable=false: this row is itself a <button> -- a nested
+                  <button> for the copy control would be invalid HTML. */}
+              <AddressChip address={c.contract_id} copyable={false} className="contract-id" />
+              <StatusBadge status={c.status} />
+            </button>
+          </li>
+        ))}
+      </ul>
       {loadMoreError && <div className="error-banner" role="alert">{loadMoreError}</div>}
       {hasMore && onLoadMore && (
-        <button className="refresh-button" onClick={onLoadMore} disabled={loadingMore}>
+        <button type="button" className="refresh-button" onClick={onLoadMore} disabled={loadingMore} aria-busy={loadingMore}>
           {loadingMore ? t("commitmentList.loadingMore") : t("commitmentList.loadMore")}
         </button>
       )}
