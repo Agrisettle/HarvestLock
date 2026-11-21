@@ -245,7 +245,7 @@ main {
 
 .reassign-form input {
   background: var(--void);
-  border: 1px solid var(--void-line-strong);
+  border: 1px solid var(--void-line);
   color: var(--bone);
   font-family: var(--mono);
   font-size: 0.85rem;

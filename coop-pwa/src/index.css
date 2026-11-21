@@ -324,7 +324,7 @@ main {
 
 .reassign-form input {
   background: var(--void);
-  border: 1px solid var(--void-line-strong);
+  border: 1px solid var(--void-line);
   color: var(--bone);
   font-family: var(--mono);
   font-size: 0.85rem;
@@ -430,15 +430,6 @@ table.allocation-table th {
   gap: 8px;
 }
 
-.commitment-rows {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
 .commitment-row {
   display: flex;
   align-items: center;
@@ -446,9 +437,7 @@ table.allocation-table th {
   gap: 12px;
   padding: 12px 14px;
   background: var(--void-raised);
-  /* The row is an interactive control, so its edge needs 3:1 non-text
-     contrast (WCAG 1.4.11), not the decorative --void-line. */
-  border: 1px solid var(--void-line-strong);
+  border: 1px solid var(--void-line);
   border-radius: 8px;
   cursor: pointer;
   text-align: left;
@@ -457,9 +446,8 @@ table.allocation-table th {
   width: 100%;
 }
 
-.commitment-row:hover,
-.commitment-row:focus-visible {
-  border-color: var(--gold-bright);
+.commitment-row:hover {
+  border-color: var(--pine);
 }
 
 .commitment-row .contract-id {

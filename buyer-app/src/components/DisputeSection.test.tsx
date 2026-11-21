@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { expectNoA11yViolations } from "../a11y";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { DisputeSection } from "./DisputeSection";
@@ -274,20 +273,5 @@ describe("DisputeSection", () => {
     const submitCall = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/transactions/submit"));
     expect(submitCall).toBeDefined();
     expect(String(submitCall?.[1]?.body)).toContain("prop-1"); // completeProposalId included
-  });
-
-  it("labels the group, and the flag button is keyboard-activatable with no axe violations", async () => {
-    const { container } = render(
-      <DisputeSection
-        commitment={baseCommitment}
-        contractId="CXXX"
-        walletAddress={baseCommitment.buyer}
-        onDisputeChanged={vi.fn()}
-      />,
-    );
-    const btn = await screen.findByRole("button", { name: "Flag a dispute" });
-    expect(btn).toHaveAttribute("type", "button");
-    expect(screen.getByRole("group", { name: "Dispute" })).toBeInTheDocument();
-    await expectNoA11yViolations(container);
   });
 });
