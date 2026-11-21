@@ -58,6 +58,25 @@ buyer-proposed cancellation, #57 finalize a ready cancellation, and #58
 approve a buyer-reassignment proposal (cooperative side). Per-issue write-ups
 ready to post as issue comments live alongside it in `docs/qa/`.
 
+## Manual Freighter QA — warehouse-app dispute lifecycle (#65–#68), 21 Nov 2026
+
+End-to-end Manual Freighter QA on Stellar Testnet executed and documented across the four sequential dispute lifecycle flows in `warehouse-app`:
+- **#65 (`warehouse-app`):** Flag a dispute (`DisputeSection.tsx` -> `handleFlag`, single-signer `flag_dispute` transaction envelope, moving commitment from `Locked` to `Disputed`).
+- **#66 (`warehouse-app`):** Propose resolving a dispute (`DisputeSection.tsx` -> `handlePropose`, off-chain API multi-party staging creating proposal in DB, triggers no Freighter popup).
+- **#67 (`warehouse-app`):** Approve a dispute resolution (warehouse side) (`DisputeSection.tsx` -> `handleApprove`, signing `signAuthEntry` on non-source Soroban authorization entry with 0 gas).
+- **#68 (`warehouse-app`):** Finalize a ready dispute resolution (`DisputeSection.tsx` -> `handleFinalize`, signing full multi-party envelope via `signTransactionXdr` on refreshed `ready_xdr`, unfreezing commitment back to `Locked`).
+
+Detailed execution runbook, keypair role mappings, verification matrix, popup reviews, rejection handling checks, and state reconciliation reports are stored in:
+- [`docs/qa/manual-freighter-qa-warehouse-dispute-lifecycle-65-68.md`](./docs/qa/manual-freighter-qa-warehouse-dispute-lifecycle-65-68.md)
+- [`docs/qa/issue-65-flag-dispute.md`](./docs/qa/issue-65-flag-dispute.md)
+- [`docs/qa/issue-66-propose-resolving-dispute.md`](./docs/qa/issue-66-propose-resolving-dispute.md)
+- [`docs/qa/issue-67-approve-dispute-resolution.md`](./docs/qa/issue-67-approve-dispute-resolution.md)
+- [`docs/qa/issue-68-finalize-dispute-resolution.md`](./docs/qa/issue-68-finalize-dispute-resolution.md)
+
+Two discrepancies documented as bug reports:
+1. `DisputeSection.tsx` loses "Approved — waiting" state on page reload due to component-local `justApproved` state.
+2. `DisputeSection.tsx` ready state does not show the proposer's address, leaving other parties unable to tell who must finalize.
+
 ## Manual Freighter QA umbrella (#1) & Allocation Ledger verification (#2), 20 Nov 2026
 
 `docs/qa/issue-1-manual-freighter-qa-umbrella.md` and `docs/qa/issue-2-allocation-ledger-verification.md`
