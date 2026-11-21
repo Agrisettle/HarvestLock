@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { MultisigProposal, CommitmentDetail as CommitmentDetailType } from "../api";
 import { getReassignBuyerProposal, proposeReassignBuyer, refreshReadyProposalXdr, signMultisigProposal, submitTx } from "../api";
 import { signAuthEntry, signTransactionXdr } from "../wallet";
@@ -51,7 +51,6 @@ export function ReassignBuyerSection({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [justApproved, setJustApproved] = useState(false);
-  const sectionRef = useRef<HTMLDivElement>(null);
 
   const reassignable = REASSIGNABLE_STATUSES.has(commitment.status);
 
@@ -77,11 +76,6 @@ export function ReassignBuyerSection({
     return () => clearInterval(id);
   }, [proposal?.status, refresh]);
 
-  // The control that was just activated is replaced by the next step's UI
-  // (or unmounted), which would drop keyboard focus to <body>. Park focus
-  // on the section instead so Tab continues from here.
-  const keepFocus = () => sectionRef.current?.focus();
-
   if (!walletAddress || !reassignable) return null;
 
   const isCurrentBuyer = walletAddress === commitment.buyer;
@@ -95,10 +89,7 @@ export function ReassignBuyerSection({
     setBusy(true);
     setError(null);
     proposeReassignBuyer(contractId, walletAddress!, newBuyerInput.trim())
-      .then((p) => {
-        setProposal(p);
-        keepFocus();
-      })
+      .then(setProposal)
       .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
       .finally(() => setBusy(false));
   }
@@ -113,7 +104,6 @@ export function ReassignBuyerSection({
       .then((updated) => {
         setProposal(updated);
         setJustApproved(true);
-        keepFocus();
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
       .finally(() => setBusy(false));
@@ -128,7 +118,6 @@ export function ReassignBuyerSection({
       .then((signedXdr) => submitTx(signedXdr, contractId, proposal.id))
       .then(() => {
         setProposal(null);
-        keepFocus();
         onReassigned();
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
@@ -136,11 +125,11 @@ export function ReassignBuyerSection({
   }
 
   return (
-    <div className="reassign-section" ref={sectionRef} tabIndex={-1} role="group" aria-label="Reassign buyer">
+    <div className="reassign-section">
       {error && <div className="error-banner" role="alert">{error}</div>}
 
       {!proposal && isCurrentBuyer && (
-        <form className="reassign-form" onSubmit={handlePropose} aria-busy={busy}>
+        <form className="reassign-form" onSubmit={handlePropose}>
           <label htmlFor="new-buyer-address">Reassign to a new buyer</label>
           <input
             id="new-buyer-address"
@@ -148,12 +137,7 @@ export function ReassignBuyerSection({
             onChange={(e) => setNewBuyerInput(e.target.value)}
             placeholder="G..."
             spellCheck={false}
-            autoComplete="off"
-            aria-describedby="new-buyer-address-hint"
           />
-          <span id="new-buyer-address-hint" className="sr-only">
-            Enter the Stellar address of the new buyer, starting with G.
-          </span>
           <button className="action-button secondary" type="submit" disabled={busy || !newBuyerInput.trim()}>
             {busy ? "Proposing…" : "Propose reassignment"}
           </button>
@@ -169,7 +153,7 @@ export function ReassignBuyerSection({
       {proposal?.status === "pending" && isPendingSigner && (
         <>
           <p className="cancel-status" role="status">The current buyer wants to reassign this commitment to a new buyer.</p>
-          <button type="button" className="action-button secondary" onClick={handleApprove} disabled={busy} aria-busy={busy}>
+          <button className="action-button secondary" onClick={handleApprove} disabled={busy}>
             {busy ? "Approving…" : "Approve reassignment"}
           </button>
         </>
@@ -180,7 +164,7 @@ export function ReassignBuyerSection({
       )}
 
       {proposal?.status === "ready" && proposal.proposer_address === walletAddress && (
-        <button type="button" className="action-button secondary" onClick={handleFinalize} disabled={busy} aria-busy={busy}>
+        <button className="action-button secondary" onClick={handleFinalize} disabled={busy}>
           {busy ? "Finalizing…" : "Finalize reassignment"}
         </button>
       )}
