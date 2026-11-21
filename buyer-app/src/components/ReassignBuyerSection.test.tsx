@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { expectNoA11yViolations } from "../a11y";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ReassignBuyerSection } from "./ReassignBuyerSection";
@@ -242,5 +243,21 @@ describe("ReassignBuyerSection", () => {
     await user.click(approveButton);
 
     expect(await screen.findByText("User declined to sign")).toBeInTheDocument();
+  });
+
+  it("labels the group and input, and has no axe violations in the propose form", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ proposal: null }));
+    const { container } = render(
+      <ReassignBuyerSection
+        commitment={baseCommitment}
+        contractId="CXXX"
+        walletAddress={baseCommitment.buyer}
+        onReassigned={vi.fn()}
+      />,
+    );
+    const input = await screen.findByLabelText("Reassign to a new buyer");
+    expect(input).toHaveAccessibleDescription(/Stellar address/);
+    expect(screen.getByRole("group", { name: "Reassign buyer" })).toBeInTheDocument();
+    await expectNoA11yViolations(container);
   });
 });
