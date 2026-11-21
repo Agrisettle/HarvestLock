@@ -93,7 +93,7 @@ export function CommitmentDetail({
         <AddressChip address={contractId} className="contract-id" />
       </div>
 
-      <p className="pending-summary">{pendingSummary(commitment)}</p>
+      <p className="pending-summary" role="status" aria-live="polite">{pendingSummary(commitment)}</p>
 
       {actionError && <div className="error-banner" role="alert">{actionError}</div>}
 
@@ -129,7 +129,7 @@ export function CommitmentDetail({
         onDisputeChanged={onDisputeChanged}
       />
 
-      <dl className="party-grid">
+      <dl className="party-grid" aria-label="Commitment details">
         <div>
           <dt>Total locked</dt>
           <dd>{formatTokenAmount(commitment.total_amount)}</dd>
@@ -167,7 +167,7 @@ export function CommitmentDetail({
       <FxEstimateSection commitment={commitment} contractId={contractId} />
 
       <div className="tranches-scroll" role="region" aria-label="Tranche schedule" tabIndex={0}>
-        <table className="tranches">
+        <table className="tranches" aria-label="Tranche schedule">
           <thead>
             <tr>
               <th scope="col">Tranche</th>

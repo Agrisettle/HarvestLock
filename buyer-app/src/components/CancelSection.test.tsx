@@ -312,4 +312,120 @@ describe("CancelSection", () => {
       expect(contrastRatio(signal, voidRaised)).toBeGreaterThanOrEqual(3.0); // Error banner border
     });
   });
+
+  describe("CancelSection keyboard navigation audit (Issue #75)", () => {
+    it("allows sequential tab navigation to 'Cancel this commitment' and activates with keyboard Enter", async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse({ proposal: null }));
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse({
+          id: "prop-1",
+          contract_id: "CXXX",
+          proposer_address: baseCommitment.buyer,
+          status: "pending",
+          pending_entries: [{ address: baseCommitment.cooperative, entry_xdr: "ENTRY_XDR" }],
+          ready_xdr: null,
+        }),
+      );
+
+      const user = userEvent.setup();
+      render(
+        <CancelSection
+          commitment={baseCommitment}
+          contractId="CXXX"
+          walletAddress={baseCommitment.buyer}
+          onCancelled={vi.fn()}
+        />,
+      );
+
+      const button = await screen.findByRole("button", { name: "Cancel this commitment" });
+      await user.tab();
+      expect(button).toHaveFocus();
+
+      await user.keyboard("{Enter}");
+      expect(await screen.findByText(/waiting for the other party to approve/i)).toBeInTheDocument();
+    });
+
+    it("allows keyboard navigation to 'Approve cancellation' and activates with Space key", async () => {
+      const pendingProposal = {
+        id: "prop-1",
+        contract_id: "CXXX",
+        proposer_address: baseCommitment.buyer,
+        status: "pending",
+        pending_entries: [{ address: baseCommitment.cooperative, entry_xdr: "ENTRY_XDR" }],
+        ready_xdr: null,
+      };
+      fetchMock.mockResolvedValueOnce(jsonResponse({ proposal: pendingProposal }));
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse({ ...pendingProposal, status: "ready", pending_entries: [], ready_xdr: "READY_XDR" }),
+      );
+      vi.mocked(wallet.signAuthEntry).mockResolvedValueOnce("SIGNED_ENTRY_XDR");
+
+      const user = userEvent.setup();
+      render(
+        <CancelSection
+          commitment={baseCommitment}
+          contractId="CXXX"
+          walletAddress={baseCommitment.cooperative}
+          onCancelled={vi.fn()}
+        />,
+      );
+
+      const approveBtn = await screen.findByRole("button", { name: "Approve cancellation" });
+      await user.tab();
+      expect(approveBtn).toHaveFocus();
+
+      await user.keyboard(" ");
+      expect(wallet.signAuthEntry).toHaveBeenCalledWith("ENTRY_XDR", baseCommitment.cooperative);
+      expect(await screen.findByText(/waiting for the proposer to finalize/i)).toBeInTheDocument();
+    });
+
+    it("allows keyboard navigation to 'Finalize cancellation' and activates with Enter key", async () => {
+      const readyProposal = {
+        id: "prop-1",
+        contract_id: "CXXX",
+        proposer_address: baseCommitment.buyer,
+        status: "ready",
+        pending_entries: [],
+        ready_xdr: "READY_XDR",
+      };
+      fetchMock.mockResolvedValueOnce(jsonResponse({ proposal: readyProposal }));
+      fetchMock.mockResolvedValueOnce(jsonResponse({ xdr: "FRESH_READY_XDR" }));
+      fetchMock.mockResolvedValueOnce(jsonResponse({ status: "SUCCESS", hash: "abc" }));
+      vi.mocked(wallet.signTransactionXdr).mockResolvedValueOnce("SIGNED_READY_XDR");
+
+      const onCancelled = vi.fn();
+      const user = userEvent.setup();
+      render(
+        <CancelSection
+          commitment={baseCommitment}
+          contractId="CXXX"
+          walletAddress={baseCommitment.buyer}
+          onCancelled={onCancelled}
+        />,
+      );
+
+      const finalizeBtn = await screen.findByRole("button", { name: "Finalize cancellation" });
+      await user.tab();
+      expect(finalizeBtn).toHaveFocus();
+
+      await user.keyboard("{Enter}");
+      await waitFor(() => expect(onCancelled).toHaveBeenCalled());
+    });
+
+    it("ensures no focus trap exists and interactive elements retain proper type='button'", async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse({ proposal: null }));
+      render(
+        <CancelSection
+          commitment={baseCommitment}
+          contractId="CXXX"
+          walletAddress={baseCommitment.buyer}
+          onCancelled={vi.fn()}
+        />,
+      );
+
+      const button = await screen.findByRole("button", { name: "Cancel this commitment" });
+      expect(button).toHaveAttribute("type", "button");
+      expect(button.tabIndex).toBe(0);
+    });
+  });
 });

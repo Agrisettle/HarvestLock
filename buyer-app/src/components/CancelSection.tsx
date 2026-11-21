@@ -108,7 +108,7 @@ export function CancelSection({
   const iMustApprove = proposal?.pending_entries.some((e) => e.address === walletAddress) ?? false;
 
   return (
-    <div className="cancel-section">
+    <div className="cancel-section" aria-label="Cancellation section">
       {error && <div className="error-banner" role="alert">{error}</div>}
 
       {!proposal && (
