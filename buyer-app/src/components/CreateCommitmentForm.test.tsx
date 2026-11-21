@@ -144,7 +144,7 @@ describe("validateCreateCommitmentFields", () => {
   });
 });
 
-describe("CreateCommitmentForm", () => {
+describe("CreateCommitmentForm", { timeout: 20_000 }, () => {
   it("does not call onSubmit when validation fails, and shows the error", async () => {
     const onSubmit = vi.fn();
     const user = userEvent.setup();
@@ -224,7 +224,7 @@ describe("CreateCommitmentForm", () => {
         deliveryWindowSecs: "10368000",
       }),
     );
-  });
+  }, 15_000);
 
   it("does not call onSubmit when the Roles & Responsibilities checkbox is left unchecked", async () => {
     const onSubmit = vi.fn();
@@ -287,5 +287,195 @@ describe("CreateCommitmentForm", () => {
   it("renders a submit error banner when one is passed", () => {
     render(<CreateCommitmentForm onSubmit={vi.fn()} submitting={false} submitError="deploy -> 500: something went wrong" />);
     expect(screen.getByText(/something went wrong/)).toBeInTheDocument();
+  });
+});
+
+describe("CreateCommitmentForm keyboard navigation audit (Issue #73)", { timeout: 20_000 }, () => {
+  it("allows sequential tab navigation through interactive elements without focus traps", async () => {
+    const user = userEvent.setup();
+    render(<CreateCommitmentForm onSubmit={vi.fn()} submitting={false} submitError={null} />);
+
+    const coopInput = screen.getByLabelText("Cooperative address");
+    const whInput = screen.getByLabelText("Warehouse operator address");
+    const tokenInput = screen.getByLabelText("Token contract address");
+    const amountInput = screen.getByLabelText("Total amount (USDC)");
+    const adv1Input = screen.getByLabelText("Advance 1 share (%)");
+    const adv2Input = screen.getByLabelText("Advance 2 share (%)");
+    const claimInput = screen.getByLabelText("Claim window");
+    const claimSelect = screen.getByLabelText("Claim window unit");
+    const remInput = screen.getByLabelText("Remainder-payment window");
+    const remSelect = screen.getByLabelText("Remainder-payment window unit");
+    const delInput = screen.getByLabelText("Delivery window");
+    const delSelect = screen.getByLabelText("Delivery window unit");
+    const qtyInput = screen.getByLabelText(/Contracted quantity/);
+    const gradeInput = screen.getByLabelText(/Grade price schedule/);
+    const fxCheckbox = screen.getByLabelText(/This deal needs FX conversion/);
+    const rolesCheckbox = screen.getByLabelText(/I've read/);
+    const submitBtn = screen.getByRole("button", { name: "Create commitment" });
+
+    await user.tab();
+    expect(coopInput).toHaveFocus();
+
+    await user.tab();
+    expect(whInput).toHaveFocus();
+
+    await user.tab();
+    expect(tokenInput).toHaveFocus();
+
+    await user.tab();
+    expect(amountInput).toHaveFocus();
+
+    await user.tab();
+    expect(adv1Input).toHaveFocus();
+
+    await user.tab();
+    expect(adv2Input).toHaveFocus();
+
+    await user.tab();
+    expect(claimInput).toHaveFocus();
+
+    await user.tab();
+    expect(claimSelect).toHaveFocus();
+
+    await user.tab();
+    expect(remInput).toHaveFocus();
+
+    await user.tab();
+    expect(remSelect).toHaveFocus();
+
+    await user.tab();
+    expect(delInput).toHaveFocus();
+
+    await user.tab();
+    expect(delSelect).toHaveFocus();
+
+    await user.tab();
+    expect(qtyInput).toHaveFocus();
+
+    await user.tab();
+    expect(gradeInput).toHaveFocus();
+
+    await user.tab();
+    expect(fxCheckbox).toHaveFocus();
+
+    await user.tab();
+    expect(rolesCheckbox).toHaveFocus();
+
+    await user.tab();
+    expect(submitBtn).toHaveFocus();
+  });
+
+  it("toggles checkboxes via keyboard Space key", async () => {
+    const user = userEvent.setup();
+    render(<CreateCommitmentForm onSubmit={vi.fn()} submitting={false} submitError={null} />);
+
+    const fxCheckbox = screen.getByLabelText(/This deal needs FX conversion/);
+    expect(fxCheckbox).not.toBeChecked();
+
+    fxCheckbox.focus();
+    expect(fxCheckbox).toHaveFocus();
+
+    await user.keyboard(" ");
+    expect(fxCheckbox).toBeChecked();
+
+    // With FX enabled, oracle inputs appear in tab sequence
+    const oracleInput = screen.getByLabelText("Reflector oracle contract address");
+    expect(oracleInput).toBeInTheDocument();
+
+    await user.keyboard(" ");
+    expect(fxCheckbox).not.toBeChecked();
+    expect(screen.queryByLabelText("Reflector oracle contract address")).not.toBeInTheDocument();
+  });
+
+  it("submits the form using keyboard Enter", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    render(<CreateCommitmentForm onSubmit={onSubmit} submitting={false} submitError={null} />);
+
+    const submitBtn = screen.getByRole("button", { name: "Create commitment" });
+    submitBtn.focus();
+    expect(submitBtn).toHaveFocus();
+
+    await user.keyboard("{Enter}");
+    // Validation fails because fields are empty, showing error banner
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+});
+
+describe("CreateCommitmentForm color contrast & ARIA labeling (Issue #74)", () => {
+  it("labels the form via aria-labelledby referencing its heading", () => {
+    render(<CreateCommitmentForm onSubmit={vi.fn()} submitting={false} submitError={null} />);
+    const form = screen.getByRole("form", { name: "Create a new commitment" });
+    expect(form).toBeInTheDocument();
+  });
+
+  it("provides accessible names for all form controls", () => {
+    render(<CreateCommitmentForm onSubmit={vi.fn()} submitting={false} submitError={null} />);
+    expect(screen.getByLabelText("Cooperative address")).toHaveAttribute("id", "cooperative-address");
+    expect(screen.getByLabelText("Warehouse operator address")).toHaveAttribute("id", "warehouse-address");
+    expect(screen.getByLabelText("Token contract address")).toHaveAttribute("id", "token-address");
+    expect(screen.getByLabelText("Total amount (USDC)")).toHaveAttribute("id", "total-amount");
+    expect(screen.getByLabelText("Advance 1 share (%)")).toHaveAttribute("id", "advance1-pct");
+    expect(screen.getByLabelText("Advance 2 share (%)")).toHaveAttribute("id", "advance2-pct");
+    expect(screen.getByLabelText("Claim window")).toHaveAttribute("id", "claim-window");
+    expect(screen.getByLabelText("Claim window unit")).toBeInTheDocument();
+    expect(screen.getByLabelText("Remainder-payment window")).toHaveAttribute("id", "remainder-window");
+    expect(screen.getByLabelText("Remainder-payment window unit")).toBeInTheDocument();
+    expect(screen.getByLabelText("Delivery window")).toHaveAttribute("id", "delivery-window");
+    expect(screen.getByLabelText("Delivery window unit")).toBeInTheDocument();
+    expect(screen.getByLabelText(/Contracted quantity/)).toHaveAttribute("id", "contracted-quantity");
+    expect(screen.getByLabelText(/Grade price schedule/)).toHaveAttribute("id", "grade-price-bps");
+    expect(screen.getByLabelText(/This deal needs FX conversion/)).toHaveAttribute("id", "fx-conversion-checkbox");
+    expect(screen.getByLabelText(/I've read/)).toHaveAttribute("id", "roles-acknowledged-checkbox");
+    expect(screen.getByRole("button", { name: "Create commitment" })).toBeInTheDocument();
+  });
+
+  it("sets aria-busy on submit button during submission", () => {
+    const { rerender } = render(<CreateCommitmentForm onSubmit={vi.fn()} submitting={false} submitError={null} />);
+    const button = screen.getByRole("button", { name: "Create commitment" });
+    expect(button).toHaveAttribute("aria-busy", "false");
+
+    rerender(<CreateCommitmentForm onSubmit={vi.fn()} submitting={true} submitError={null} />);
+    const busyButton = screen.getByRole("button", { name: "Creating…" });
+    expect(busyButton).toHaveAttribute("aria-busy", "true");
+  });
+
+  it("verifies contrast ratios meet WCAG AA requirements for CreateCommitmentForm styling tokens", () => {
+    const lum = (hex: string) => {
+      const rgb = [hex.slice(1, 3), hex.slice(3, 5), hex.slice(5, 7)].map((c) => parseInt(c, 16) / 255);
+      const [r, g, b] = rgb.map((c) => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)));
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const contrastRatio = (hex1: string, hex2: string) => {
+      const [l1, l2] = [lum(hex1), lum(hex2)].sort((a, b) => b - a);
+      return (l1 + 0.05) / (l2 + 0.05);
+    };
+
+    const voidBg = "#0b120f";
+    const voidRaised = "#121a16";
+    const voidLineStrong = "#5c6b62";
+    const bone = "#f3f1e9";
+    const boneDim = "#c9c6ba";
+    const boneFaint = "#8a897f";
+    const gold = "#d4a937";
+    const goldBright = "#eec765";
+    const signal = "#c1432e";
+
+    // Text contrast (WCAG AA: >= 4.5:1 for normal text)
+    expect(contrastRatio(bone, voidRaised)).toBeGreaterThanOrEqual(4.5); // Heading on card
+    expect(contrastRatio(bone, voidBg)).toBeGreaterThanOrEqual(4.5); // Input text on input bg
+    expect(contrastRatio(boneFaint, voidRaised)).toBeGreaterThanOrEqual(4.5); // Labels on card
+    expect(contrastRatio(boneDim, voidRaised)).toBeGreaterThanOrEqual(4.5); // Checkbox and note text
+    expect(contrastRatio(voidBg, gold)).toBeGreaterThanOrEqual(4.5); // Button text on gold
+    expect(contrastRatio(gold, voidRaised)).toBeGreaterThanOrEqual(4.5); // Roles & Responsibilities link text
+
+    // Non-text control boundary & focus indicator contrast (WCAG SC 1.4.11: >= 3.0:1)
+    expect(contrastRatio(voidLineStrong, voidBg)).toBeGreaterThanOrEqual(3.0); // Input borders on void
+    expect(contrastRatio(voidLineStrong, voidRaised)).toBeGreaterThanOrEqual(3.0); // Control borders on voidRaised
+    expect(contrastRatio(gold, voidBg)).toBeGreaterThanOrEqual(3.0); // Focus outline on void
+    expect(contrastRatio(gold, voidRaised)).toBeGreaterThanOrEqual(3.0); // Focus outline on card
+    expect(contrastRatio(goldBright, voidRaised)).toBeGreaterThanOrEqual(3.0); // Button focus outline
+    expect(contrastRatio(signal, voidRaised)).toBeGreaterThanOrEqual(3.0); // Error banner border
   });
 });

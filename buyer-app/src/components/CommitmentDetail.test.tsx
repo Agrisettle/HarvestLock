@@ -253,3 +253,71 @@ describe("CommitmentDetail keyboard navigation & accessibility (Issue #69)", () 
     }
   });
 });
+
+describe("CommitmentDetail color contrast & ARIA labeling (Issue #70)", () => {
+  it("marks pending summary status with role='status' and aria-live='polite'", () => {
+    render(<CommitmentDetail commitment={baseCommitment} contractId="CXXX" {...noopProps} />);
+    const status = screen.getByText(/Pending:/);
+    expect(status).toHaveAttribute("role", "status");
+    expect(status).toHaveAttribute("aria-live", "polite");
+  });
+
+  it("marks party details and tranche table with accessible names", () => {
+    render(<CommitmentDetail commitment={baseCommitment} contractId="CXXX" {...noopProps} />);
+    expect(screen.getByRole("table", { name: "Tranche schedule" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Tranche schedule" })).toBeInTheDocument();
+  });
+
+  it("ensures all controls have accessible names", () => {
+    const draft = { ...baseCommitment, status: "Draft" };
+    render(
+      <CommitmentDetail
+        commitment={draft}
+        contractId="CXXX"
+        {...noopProps}
+        walletAddress={baseCommitment.buyer}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Lock deposit" })).toBeInTheDocument();
+    const copyButtons = screen.getAllByRole("button", { name: "Copy" });
+    expect(copyButtons.length).toBeGreaterThan(0);
+  });
+
+  it("verifies contrast ratios meet WCAG AA requirements for CommitmentDetail styling tokens", () => {
+    const lum = (hex: string) => {
+      const rgb = [hex.slice(1, 3), hex.slice(3, 5), hex.slice(5, 7)].map((c) => parseInt(c, 16) / 255);
+      const [r, g, b] = rgb.map((c) => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)));
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const contrastRatio = (hex1: string, hex2: string) => {
+      const [l1, l2] = [lum(hex1), lum(hex2)].sort((a, b) => b - a);
+      return (l1 + 0.05) / (l2 + 0.05);
+    };
+
+    const voidBg = "#0b120f";
+    const voidRaised = "#121a16";
+    const bone = "#f3f1e9";
+    const boneDim = "#c9c6ba";
+    const boneFaint = "#8a897f";
+    const gold = "#d4a937";
+    const goldBright = "#eec765";
+    const signal = "#c1432e";
+    const greenBadge = "#8fd6b4";
+    const signalBadge = "#ef9c8c";
+
+    // Text contrast (WCAG AA: >= 4.5:1 for normal text)
+    expect(contrastRatio(bone, voidRaised)).toBeGreaterThanOrEqual(4.5); // Table data & dd values
+    expect(contrastRatio(boneDim, voidRaised)).toBeGreaterThanOrEqual(4.5); // Pending summary text
+    expect(contrastRatio(boneFaint, voidRaised)).toBeGreaterThanOrEqual(4.5); // Field labels & table th
+    expect(contrastRatio(voidBg, gold)).toBeGreaterThanOrEqual(4.5); // Primary action button text
+    expect(contrastRatio(goldBright, voidRaised)).toBeGreaterThanOrEqual(4.5); // Locked badge text
+    expect(contrastRatio(greenBadge, voidRaised)).toBeGreaterThanOrEqual(4.5); // Settled/Delivered badge text
+    expect(contrastRatio(signalBadge, voidRaised)).toBeGreaterThanOrEqual(4.5); // Disputed/Cancelled badge text
+
+    // Non-text control boundary & focus indicator contrast (WCAG SC 1.4.11: >= 3.0:1)
+    expect(contrastRatio(gold, voidRaised)).toBeGreaterThanOrEqual(3.0); // Focus outline on card
+    expect(contrastRatio(goldBright, voidRaised)).toBeGreaterThanOrEqual(3.0); // Focus outline on action button
+    expect(contrastRatio(signal, voidRaised)).toBeGreaterThanOrEqual(3.0); // Error banner border
+    expect(contrastRatio(boneFaint, voidRaised)).toBeGreaterThanOrEqual(3.0); // Address chip copy button border
+  });
+});

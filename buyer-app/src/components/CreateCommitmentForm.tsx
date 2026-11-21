@@ -241,8 +241,8 @@ export function CreateCommitmentForm({
   }
 
   return (
-    <form className="create-commitment-form" onSubmit={handleSubmit}>
-      <h2>Create a new commitment</h2>
+    <form className="create-commitment-form" aria-labelledby="create-commitment-heading" onSubmit={handleSubmit}>
+      <h2 id="create-commitment-heading">Create a new commitment</h2>
 
       {(validationError ?? submitError) && <div className="error-banner" role="alert">{validationError ?? submitError}</div>}
 
@@ -372,6 +372,7 @@ export function CreateCommitmentForm({
 
       <label className="consent-checkbox">
         <input
+          id="fx-conversion-checkbox"
           type="checkbox"
           checked={fields.fxConversionEnabled}
           onChange={(e) => toggleFxConversion(e.target.checked)}
@@ -430,6 +431,7 @@ export function CreateCommitmentForm({
 
       <label className="consent-checkbox">
         <input
+          id="roles-acknowledged-checkbox"
           type="checkbox"
           checked={fields.rolesAcknowledged}
           onChange={(e) => update("rolesAcknowledged", e.target.checked)}
@@ -448,7 +450,7 @@ export function CreateCommitmentForm({
         </span>
       </label>
 
-      <button type="submit" disabled={submitting}>
+      <button type="submit" disabled={submitting} aria-busy={submitting}>
         {submitting ? "Creating…" : "Create commitment"}
       </button>
     </form>

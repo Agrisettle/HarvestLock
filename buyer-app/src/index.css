@@ -7,6 +7,7 @@
   --void-raised: #121a16;
   --void-line: #23302a;
   --void-line-soft: #1a2420;
+  --void-line-strong: #5c6b62;
 
   --bone: #f3f1e9;
   --bone-dim: #c9c6ba;
@@ -276,14 +277,37 @@ main {
   margin-top: 4px;
 }
 
-.create-commitment-form input {
+.create-commitment-form input,
+.create-commitment-form select {
   background: var(--void);
-  border: 1px solid var(--void-line);
+  border: 1px solid var(--void-line-strong);
   color: var(--bone);
   font-family: var(--mono);
   font-size: 0.85rem;
   padding: 8px 10px;
   border-radius: 6px;
+  transition: border-color 0.2s ease;
+}
+
+.create-commitment-form select {
+  font-family: var(--body);
+  cursor: pointer;
+}
+
+.create-commitment-form input:focus-visible,
+.create-commitment-form select:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+  border-color: var(--gold);
+}
+
+.window-input {
+  display: flex;
+  gap: 8px;
+}
+
+.window-input input {
+  flex: 1;
 }
 
 .consent-checkbox {
@@ -301,8 +325,18 @@ main {
   flex-shrink: 0;
 }
 
+.consent-checkbox input:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
 .consent-checkbox a {
   color: var(--gold);
+}
+
+.consent-checkbox a:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
 }
 
 .create-commitment-form button {
@@ -317,6 +351,11 @@ main {
   font-weight: 600;
   font-size: 0.85rem;
   cursor: pointer;
+}
+
+.create-commitment-form button:focus-visible {
+  outline: 2px solid var(--gold-bright);
+  outline-offset: 2px;
 }
 
 .create-commitment-form button:disabled {
