@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { MultisigProposal, CommitmentDetail as CommitmentDetailType } from "../api";
 import {
   buildFlagDisputeTx,
@@ -67,6 +67,7 @@ export function DisputeSection({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [justApproved, setJustApproved] = useState(false);
+  const sectionRef = useRef<HTMLDivElement>(null);
 
   const disputed = commitment.status === "Disputed";
   const disputable = DISPUTABLE_STATUSES.has(commitment.status);
@@ -93,6 +94,10 @@ export function DisputeSection({
     return () => clearInterval(id);
   }, [proposal?.status, refresh]);
 
+  // The activated control is replaced by the next step's UI (or unmounted),
+  // which would drop keyboard focus to <body>; park it on the section.
+  const keepFocus = () => sectionRef.current?.focus();
+
   if (!walletAddress || !isParty(commitment, walletAddress)) return null;
   if (!disputed && !disputable) return null;
 
@@ -102,7 +107,10 @@ export function DisputeSection({
     buildFlagDisputeTx(contractId, walletAddress!, walletAddress!)
       .then(({ xdr }) => signTransactionXdr(xdr, walletAddress!))
       .then((signedXdr) => submitTx(signedXdr, contractId))
-      .then(() => onDisputeChanged())
+      .then(() => {
+        keepFocus();
+        onDisputeChanged();
+      })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
       .finally(() => setBusy(false));
   }
@@ -111,7 +119,10 @@ export function DisputeSection({
     setBusy(true);
     setError(null);
     proposeResolveDispute(contractId, walletAddress!)
-      .then(setProposal)
+      .then((p) => {
+        setProposal(p);
+        keepFocus();
+      })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
       .finally(() => setBusy(false));
   }
@@ -126,6 +137,7 @@ export function DisputeSection({
       .then((updated) => {
         setProposal(updated);
         setJustApproved(true);
+        keepFocus();
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
       .finally(() => setBusy(false));
@@ -140,6 +152,7 @@ export function DisputeSection({
       .then((signedXdr) => submitTx(signedXdr, contractId, proposal.id))
       .then(() => {
         setProposal(null);
+        keepFocus();
         onDisputeChanged();
       })
       .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
@@ -150,21 +163,21 @@ export function DisputeSection({
   const iAmProposer = proposal?.proposer_address === walletAddress;
 
   return (
-    <div className="dispute-section">
+    <div className="dispute-section" ref={sectionRef} tabIndex={-1} role="group" aria-label="Dispute">
       {error && <div className="error-banner" role="alert">{error}</div>}
 
       {!disputed && (
-        <button className="action-button secondary" onClick={handleFlag} disabled={busy}>
+        <button type="button" className="action-button secondary" onClick={handleFlag} disabled={busy} aria-busy={busy}>
           {busy ? "Flagging…" : "Flag a dispute"}
         </button>
       )}
 
       {disputed && !proposal && (
         <>
-          <p className="cancel-status">
+          <p className="cancel-status" role="status">
             This commitment is disputed — every other action is frozen until it's resolved.
           </p>
-          <button className="action-button secondary" onClick={handlePropose} disabled={busy}>
+          <button type="button" className="action-button secondary" onClick={handlePropose} disabled={busy} aria-busy={busy}>
             {busy ? "Proposing…" : "Propose resolving this dispute"}
           </button>
         </>
@@ -177,7 +190,7 @@ export function DisputeSection({
       {proposal?.status === "pending" && isPendingSigner && (
         <>
           <p className="cancel-status" role="status">A party wants to resolve this dispute and resume normal processing.</p>
-          <button className="action-button secondary" onClick={handleApprove} disabled={busy}>
+          <button type="button" className="action-button secondary" onClick={handleApprove} disabled={busy} aria-busy={busy}>
             {busy ? "Approving…" : "Approve resolution"}
           </button>
         </>
@@ -188,7 +201,7 @@ export function DisputeSection({
       )}
 
       {proposal?.status === "ready" && iAmProposer && (
-        <button className="action-button secondary" onClick={handleFinalize} disabled={busy}>
+        <button type="button" className="action-button secondary" onClick={handleFinalize} disabled={busy} aria-busy={busy}>
           {busy ? "Finalizing…" : "Finalize resolution"}
         </button>
       )}
