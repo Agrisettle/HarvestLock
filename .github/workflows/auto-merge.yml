@@ -500,6 +500,15 @@ jobs:
 
             # ── all required checks passed → diff review, then merge ──
             echo "  all required checks passed"
+            # Merging one PR moves main, and GitHub then reports every other
+            # PR as UNKNOWN until it recomputes. Wait for the real answer
+            # (up to ~2 min) instead of skipping the PR until the next sweep.
+            for _ in $(seq 1 12); do
+              [ "${MERGEABLE}" = "UNKNOWN" ] || break
+              sleep 10
+              MERGEABLE="$(gh pr view "${PR}" --repo "${REPO}" \
+                --json mergeable --jq .mergeable 2>/dev/null || echo UNKNOWN)"
+            done
             [ "${MERGEABLE}" = "MERGEABLE" ] || {
               echo "  not mergeable (${MERGEABLE}) — will retry"; continue; }
 
