@@ -75,6 +75,13 @@ resolves nor rejects, it hangs forever — fixed with a timeout wrapper
 around every Freighter call, see `wallet.ts`. Manual QA with a real
 Freighter install is still a real gap before calling this fully proven.
 
+The claim flow now follows a `202 PENDING` submit through
+`GET /transactions/:hash` before refreshing chain state (`src/api.ts`), and
+the offline queue is only used for failures before a successful submit.
+QA write-ups and the remaining real-extension checklist are in
+`docs/qa/issue-52-claim-advance-1.md` and
+`docs/qa/issue-53-claim-advance-2.md`.
+
 **Cancel this commitment** (`src/components/CancelSection.tsx`, added
 2 Sept 2026, later same day): the staged multi-party propose/sign/finalize
 UX for `cancel()` — see `api/HANDOFF.md`. Either party (buyer or

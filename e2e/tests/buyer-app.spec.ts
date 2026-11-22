@@ -8,9 +8,19 @@ import {
   SKIP_REASON,
   buyerKeypair,
   cooperativeKeypair,
+  warehouseKeypair,
 } from "./helpers/env";
 import { connectInjectedWallet, setInjectedSigningRejected } from "./helpers/freighter";
-import { deployAndInitialize, ensureFunded, getCommitment, getReassignBuyerProposal } from "./helpers/api";
+import {
+  deployAndInitialize,
+  ensureFunded,
+  flagDispute,
+  getCommitment,
+  getReassignBuyerProposal,
+  getResolveDisputeProposal,
+  proposeResolveDispute,
+  submitMethod,
+} from "./helpers/api";
 
 /**
  * Issue #198: one real end-to-end smoke test for buyer-app. Unlike this
@@ -183,4 +193,74 @@ test("#45 proposes reassigning the buyer position end to end", async ({ page }) 
   // Still the old buyer until the cooperative approves and the current
   // buyer finalizes.
   expect((await getCommitment(contractId)).buyer).toBe(buyer.publicKey());
+});
+
+/**
+ * Issues #50/#51: the two non-proposing parties approve the staged
+ * resolve_dispute auth entries from buyer-app, then the proposer finalizes
+ * the ready envelope. Everything except the extension is real here: real
+ * API, real testnet, real contracts, and Freighter's real postMessage
+ * channel backed by throwaway keypairs.
+ */
+test("#50/#51 approves and finalizes a dispute resolution end to end", async ({ page }) => {
+  const buyer = buyerKeypair();
+  const cooperative = cooperativeKeypair();
+  const warehouse = warehouseKeypair();
+
+  await Promise.all([
+    ensureFunded(buyer.publicKey()),
+    ensureFunded(cooperative.publicKey()),
+    ensureFunded(warehouse.publicKey()),
+  ]);
+  const contractId = await deployAndInitialize({ buyer, cooperative, warehouse });
+  await submitMethod(contractId, "lock", buyer);
+  await flagDispute(contractId, warehouse);
+  await proposeResolveDispute(contractId, buyer);
+
+  // Approver #1: the cooperative, with a declined attempt first (#50's
+  // rejection-handling half).
+  await connectInjectedWallet(page, cooperative);
+  await page.goto("/");
+  await connectAndLookUp(page, cooperative.publicKey(), contractId);
+  const approveButton = page.getByRole("button", { name: "Approve resolution" });
+  await expect(approveButton).toBeVisible({ timeout: 120_000 });
+
+  await setInjectedSigningRejected(page, true);
+  await approveButton.click();
+  await expect(page.locator(".dispute-section .error-banner")).toContainText("The user rejected this request.");
+  expect((await getResolveDisputeProposal(contractId)).proposal!.pending_entries).toHaveLength(2);
+
+  await setInjectedSigningRejected(page, false);
+  await approveButton.click();
+  await expect(page.locator(".dispute-section")).toContainText(
+    "Approved — waiting for the remaining party to approve too.",
+  );
+
+  // Approver #2: the warehouse operator, whose wallet is a different party
+  // and therefore a different signed auth entry.
+  const warehousePage = await page.context().newPage();
+  const warehouseWallet = await connectInjectedWallet(warehousePage, warehouse);
+  await warehousePage.goto("/");
+  await connectAndLookUp(warehousePage, warehouse.publicKey(), contractId);
+  await warehousePage.getByRole("button", { name: "Approve resolution" }).click();
+  await expect
+    .poll(async () => (await getResolveDisputeProposal(contractId)).proposal!.status, { timeout: 120_000 })
+    .toBe("ready");
+  expect(warehouseWallet.signRequests).toContain("SUBMIT_AUTH_ENTRY");
+  expect((await getCommitment(contractId)).status).toBe("Disputed");
+
+  // Finalize (#51) as the proposer. The UI keeps the ready action until the
+  // parent's live chain read shows the dispute is actually over.
+  const buyerPage = await page.context().newPage();
+  const buyerWallet = await connectInjectedWallet(buyerPage, buyer);
+  await buyerPage.goto("/");
+  await connectAndLookUp(buyerPage, buyer.publicKey(), contractId);
+  await expect(buyerPage.getByRole("button", { name: "Finalize resolution" })).toBeVisible({ timeout: 120_000 });
+  await buyerPage.getByRole("button", { name: "Finalize resolution" }).click();
+
+  await expect(buyerPage.locator(".detail-header .badge")).toHaveText("Locked", { timeout: 120_000 });
+  expect(buyerWallet.signRequests).toContain("SUBMIT_TRANSACTION");
+  const commitment = await getCommitment(contractId);
+  expect(commitment.status).toBe("Locked");
+  expect(commitment.dispute_pre_status).toBe("Draft");
 });

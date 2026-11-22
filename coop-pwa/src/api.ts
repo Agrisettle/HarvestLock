@@ -184,9 +184,53 @@ export function buildFlagDisputeTx(contractId: string, flagger: string, sourcePu
   return post<{ xdr: string }>(`/commitments/${encodeURIComponent(contractId)}/tx/flag-dispute`, { flagger, sourcePublicKey }, { retry: true });
 }
 
+/** Mirrors api/src/server.ts's submit endpoint vocabulary. A 202 PENDING
+ * response means the network accepted the envelope but confirmation outlived
+ * the API's poll window — the transaction is not a failure, and the caller
+ * must follow GET /transactions/:hash before trusting the UI's chain state. */
 export interface SubmitResult {
-  status: "SUCCESS" | "FAILED";
+  status: "SUCCESS" | "FAILED" | "PENDING";
   hash: string;
+}
+
+/** The follow-up a PENDING submit requires. The API applies the deferred
+ * cache/proposal side effects on the first successful observation, so
+ * polling here is what makes the UI match the chain. */
+export function getTransactionStatus(hash: string): Promise<SubmitResult> {
+  return get<SubmitResult>(`/transactions/${encodeURIComponent(hash)}`);
+}
+
+/**
+ * Polls a PENDING transaction to a terminal state. Bounded so a hash that
+ * never resolves surfaces an actionable message instead of leaving the
+ * action stuck in "Claiming…" forever. Interval/attempts are injectable for
+ * tests; production uses the API's own ~30 s confirmation window as a guide.
+ */
+export async function waitForTransaction(
+  hash: string,
+  {
+    attempts = 20,
+    intervalMs = 1_500,
+    sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
+  }: { attempts?: number; intervalMs?: number; sleep?: (ms: number) => Promise<void> } = {},
+): Promise<SubmitResult> {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const result = await getTransactionStatus(hash);
+    if (result.status !== "PENDING") return result;
+    if (attempt < attempts - 1) await sleep(intervalMs);
+  }
+  throw new Error(`Transaction ${hash} is still pending — check its status again shortly`);
+}
+
+/** Turns a terminal-or-pending submit answer into a single success check for
+ * callers that must not refresh chain state until the write is confirmed. */
+export function assertSubmitted(result: SubmitResult): void {
+  if (result.status === "PENDING") {
+    throw new Error(`Transaction ${result.hash} is still pending — check its status again shortly`);
+  }
+  if (result.status === "FAILED") {
+    throw new Error(`Transaction ${result.hash} failed on chain`);
+  }
 }
 
 /** Submits a signed envelope. `refreshContractId` also refreshes the API's Postgres cache; `completeProposalId` marks a staged cancellation proposal finished; `allocationContractId`/`allocationMembers` persists a staged allocation ledger's phone numbers now that `set_allocation` is confirmed on-chain. */

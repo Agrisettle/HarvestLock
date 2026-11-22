@@ -70,6 +70,42 @@ test("claims advance tranche 1 end to end through the real API and testnet", asy
   expect(commitment.advance1_expired).toBe(false);
 });
 
+/** Issue #53 is the tranche-2 twin of the #52 claim above. The button is
+ * wired separately in CommitmentDetail, so this drives it through the real
+ * browser/API/testnet path rather than inferring it from tranche 1. */
+test("claims advance tranche 2 end to end through the real API and testnet", async ({ page }) => {
+  const buyer = buyerKeypair();
+  const cooperative = cooperativeKeypair();
+  const warehouse = warehouseKeypair();
+
+  await Promise.all([
+    ensureFunded(buyer.publicKey()),
+    ensureFunded(cooperative.publicKey()),
+    ensureFunded(warehouse.publicKey()),
+  ]);
+
+  const contractId = await deployAndInitialize({ buyer, cooperative, warehouse });
+  await submitMethod(contractId, "lock", buyer);
+  await submitMethod(contractId, "release_advance_1", warehouse);
+  await submitMethod(contractId, "claim_advance_1", cooperative);
+  await submitMethod(contractId, "mark_checkpoint", warehouse);
+  await submitMethod(contractId, "release_advance_2", warehouse);
+
+  await connectInjectedWallet(page, cooperative);
+  await page.goto("/");
+  await connectAndLookUp(page, cooperative.publicKey(), contractId);
+
+  const advance2Row = page.locator(".tranches tbody tr").nth(1);
+  await expect(advance2Row).toContainText("pending", { timeout: 120_000 });
+  await advance2Row.getByRole("button", { name: "Claim", exact: true }).click();
+  await expect(advance2Row.getByText("claimed")).toBeVisible({ timeout: 120_000 });
+
+  const commitment = await getCommitment(contractId);
+  expect(commitment.advance1_claimed).toBe(true);
+  expect(commitment.advance2_claimed).toBe(true);
+  expect(commitment.advance2_expired).toBe(false);
+});
+
 /** Connects the injected wallet and opens `contractId` — the shared first UI steps of every flow below. */
 async function connectAndLookUp(page: Page, publicKey: string, contractId: string): Promise<void> {
   await page.getByRole("button", { name: "Connect wallet" }).click();

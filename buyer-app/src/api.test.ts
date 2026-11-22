@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { getCommitment, submitTx, buildTx, deployCommitment } from "./api";
+import { getCommitment, submitTx, buildTx, deployCommitment, getTransactionStatus, waitForTransaction, assertSubmitted } from "./api";
 
 /**
  * These three apps each keep their own copy of api.ts rather than
@@ -131,5 +131,47 @@ describe("api transient-network retry", () => {
 
     await expect(getCommitment("CABC")).rejects.toThrow("/commitments/CABC -> 500: boom");
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+/** Finalize can answer 202 while the Soroban RPC confirmation is still in
+ * flight; the UI follows the hash before declaring the dispute resolved. */
+describe("pending transaction follow-up", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("reads the hash through GET /transactions/:hash", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(ok({ status: "SUCCESS", hash: "abc123" }));
+
+    await expect(getTransactionStatus("abc123")).resolves.toEqual({ status: "SUCCESS", hash: "abc123" });
+    expect(fetch).toHaveBeenCalledWith("http://localhost:3000/transactions/abc123");
+  });
+
+  it("polls PENDING until the chain reports SUCCESS", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(ok({ status: "PENDING", hash: "abc123" }))
+      .mockResolvedValueOnce(ok({ status: "SUCCESS", hash: "abc123" }));
+    const sleep = vi.fn().mockResolvedValue(undefined);
+
+    await expect(waitForTransaction("abc123", { attempts: 5, intervalMs: 50, sleep })).resolves.toEqual({
+      status: "SUCCESS",
+      hash: "abc123",
+    });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives up with an actionable message when the hash never settles", async () => {
+    vi.mocked(fetch).mockResolvedValue(ok({ status: "PENDING", hash: "abc123" }));
+
+    await expect(waitForTransaction("abc123", { attempts: 3, intervalMs: 0, sleep: vi.fn() })).rejects.toThrow(
+      /still pending/,
+    );
+    expect(() => assertSubmitted({ status: "PENDING", hash: "abc123" })).toThrow("still pending");
   });
 });

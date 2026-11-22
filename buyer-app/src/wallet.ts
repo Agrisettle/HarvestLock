@@ -31,15 +31,19 @@ function throwIfError(error: FreighterError | undefined): void {
   }
 }
 
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+const NO_EXTENSION_MESSAGE = "No response from Freighter — is the extension installed and unlocked?";
+const SIGNING_TIMEOUT_MESSAGE =
+  "Freighter didn't respond to the signing request in time — check the extension popup before retrying";
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message = NO_EXTENSION_MESSAGE): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
   return Promise.race([
-    promise,
-    new Promise<T>((_, reject) =>
-      setTimeout(
-        () => reject(new Error("No response from Freighter — is the extension installed and unlocked?")),
-        timeoutMs,
-      ),
-    ),
+    promise.finally(() => {
+      if (timer !== undefined) clearTimeout(timer);
+    }),
+    new Promise<T>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+    }),
   ]);
 }
 
@@ -65,6 +69,7 @@ export async function signTransactionXdr(xdr: string, address: string): Promise<
   const result = await withTimeout(
     freighterApi.signTransaction(xdr, { address, networkPassphrase: NETWORK_PASSPHRASE }),
     60_000, // a human reviewing/approving in the extension's own UI can reasonably take a while
+    SIGNING_TIMEOUT_MESSAGE,
   );
   throwIfError(result.error);
   return result.signedTxXdr;
@@ -84,6 +89,7 @@ export async function signAuthEntry(entryXdr: string, address: string): Promise<
   const result = await withTimeout(
     freighterApi.signAuthEntry(entryXdr, { address, networkPassphrase: NETWORK_PASSPHRASE }),
     60_000, // same reasoning as signTransactionXdr's timeout
+    SIGNING_TIMEOUT_MESSAGE,
   );
   throwIfError(result.error);
   if (!result.signedAuthEntry) {

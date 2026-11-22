@@ -37,7 +37,9 @@ const READ_CACHE_TTL_MS = Number(process.env.READ_CACHE_TTL_MS ?? 5_000);
 const readCache = new Map<string, { value: unknown; expiresAt: number }>();
 const inFlight = new Map<string, Promise<unknown>>();
 
-/** Test hook: drop every cached/in-flight read. */
+/** Drop every cached/in-flight read. Called after a confirmed write so the
+ * post-submit refresh can't serve a pre-write snapshot from the 5 s cache;
+ * also useful as a test hook. */
 export function clearReadCache(): void {
   readCache.clear();
   inFlight.clear();

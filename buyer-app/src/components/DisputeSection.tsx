@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MultisigProposal, CommitmentDetail as CommitmentDetailType } from "../api";
 import {
+  assertSubmitted,
   buildFlagDisputeTx,
   getResolveDisputeProposal,
   proposeResolveDispute,
   refreshReadyProposalXdr,
   signMultisigProposal,
   submitTx,
+  waitForTransaction,
 } from "../api";
 import { signAuthEntry, signTransactionXdr } from "../wallet";
 
@@ -68,17 +70,31 @@ export function DisputeSection({
   const [error, setError] = useState<string | null>(null);
   const [justApproved, setJustApproved] = useState(false);
   const sectionRef = useRef<HTMLDivElement>(null);
+  // The 10 s poll and a signature POST can be in flight at the same time
+  // (Freighter's popup alone can stay open for 60 s). Sequence the reads so a
+  // GET that started before a local mutation can't re-offer an already-signed
+  // auth entry, which would just produce a confusing duplicate-signature 400.
+  const refreshSeq = useRef(0);
 
   const disputed = commitment.status === "Disputed";
   const disputable = DISPUTABLE_STATUSES.has(commitment.status);
 
+  const invalidatePendingRefresh = () => {
+    refreshSeq.current += 1;
+  };
+
   const refresh = useCallback(() => {
     if (!disputed) {
+      invalidatePendingRefresh();
       setProposal(null);
+      setJustApproved(false);
       return;
     }
+    const seq = ++refreshSeq.current;
     getResolveDisputeProposal(contractId)
-      .then((res) => setProposal(res.proposal))
+      .then((res) => {
+        if (seq === refreshSeq.current) setProposal(res.proposal);
+      })
       .catch(() => {
         // Best-effort — a failed poll shouldn't break the rest of the page.
       });
@@ -107,7 +123,9 @@ export function DisputeSection({
     buildFlagDisputeTx(contractId, walletAddress!, walletAddress!)
       .then(({ xdr }) => signTransactionXdr(xdr, walletAddress!))
       .then((signedXdr) => submitTx(signedXdr, contractId))
-      .then(() => {
+      .then((answer) => (answer.status === "PENDING" ? waitForTransaction(answer.hash) : answer))
+      .then((result) => {
+        assertSubmitted(result);
         keepFocus();
         onDisputeChanged();
       })
@@ -120,6 +138,7 @@ export function DisputeSection({
     setError(null);
     proposeResolveDispute(contractId, walletAddress!)
       .then((p) => {
+        invalidatePendingRefresh();
         setProposal(p);
         keepFocus();
       })
@@ -135,6 +154,7 @@ export function DisputeSection({
     signAuthEntry(myEntry.entry_xdr, walletAddress!)
       .then((signedEntryXdr) => signMultisigProposal(contractId, proposal!.id, walletAddress!, signedEntryXdr))
       .then((updated) => {
+        invalidatePendingRefresh();
         setProposal(updated);
         setJustApproved(true);
         keepFocus();
@@ -150,8 +170,13 @@ export function DisputeSection({
     refreshReadyProposalXdr(contractId, proposal.id)
       .then(({ xdr }) => signTransactionXdr(xdr, walletAddress!))
       .then((signedXdr) => submitTx(signedXdr, contractId, proposal.id))
-      .then(() => {
-        setProposal(null);
+      .then((answer) => (answer.status === "PENDING" ? waitForTransaction(answer.hash) : answer))
+      .then((result) => {
+        assertSubmitted(result);
+        invalidatePendingRefresh();
+        // Keep the ready proposal on screen until the parent's chain read
+        // replaces the disputed commitment. Clearing it first flashes
+        // "Propose resolving this dispute" for a dispute that just landed.
         keepFocus();
         onDisputeChanged();
       })
