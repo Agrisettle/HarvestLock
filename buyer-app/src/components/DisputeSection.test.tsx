@@ -238,6 +238,77 @@ describe("DisputeSection", () => {
     expect(await screen.findByText(/waiting for the remaining party to approve too/i)).toBeInTheDocument();
   });
 
+  it.each(["cooperative", "warehouse_operator"] as const)(
+    "lets the %s approve as a pending signer, not just the buyer",
+    async (role) => {
+      const approver = baseCommitment[role];
+      const disputed = { ...baseCommitment, status: "Disputed", dispute_pre_status: "Locked" };
+      const pendingProposal = {
+        id: "prop-1",
+        contract_id: "CXXX",
+        method: "resolve_dispute",
+        proposer_address: baseCommitment.buyer,
+        status: "pending",
+        pending_entries: [
+          { address: approver, entry_xdr: `${role.toUpperCase()}_ENTRY_XDR` },
+          { address: baseCommitment.buyer === approver ? baseCommitment.cooperative : baseCommitment.buyer, entry_xdr: "OTHER_ENTRY_XDR" },
+        ],
+        ready_xdr: null,
+      };
+      fetchMock.mockResolvedValueOnce(jsonResponse({ proposal: pendingProposal }));
+      fetchMock.mockResolvedValueOnce(jsonResponse({ ...pendingProposal, pending_entries: [] }));
+      vi.mocked(wallet.signAuthEntry).mockResolvedValueOnce(`SIGNED_${role.toUpperCase()}_ENTRY`);
+
+      const user = userEvent.setup();
+      render(
+        <DisputeSection
+          commitment={disputed}
+          contractId="CXXX"
+          walletAddress={approver}
+          onDisputeChanged={vi.fn()}
+        />,
+      );
+
+      await user.click(await screen.findByRole("button", { name: "Approve resolution" }));
+
+      expect(wallet.signAuthEntry).toHaveBeenCalledWith(`${role.toUpperCase()}_ENTRY_XDR`, approver);
+      const signCall = fetchMock.mock.calls.find(([url]) => String(url).includes("/sign"));
+      expect(String(signCall?.[1]?.body)).toContain(`SIGNED_${role.toUpperCase()}_ENTRY`);
+      expect(String(signCall?.[1]?.body)).toContain(approver);
+    },
+  );
+
+  it("shows a rejection banner and leaves the proposal untouched when the auth-entry signature is declined", async () => {
+    const disputed = { ...baseCommitment, status: "Disputed", dispute_pre_status: "Locked" };
+    const pendingProposal = {
+      id: "prop-1",
+      contract_id: "CXXX",
+      method: "resolve_dispute",
+      proposer_address: baseCommitment.buyer,
+      status: "pending",
+      pending_entries: [{ address: baseCommitment.cooperative, entry_xdr: "COOP_ENTRY_XDR" }],
+      ready_xdr: null,
+    };
+    fetchMock.mockResolvedValueOnce(jsonResponse({ proposal: pendingProposal }));
+    vi.mocked(wallet.signAuthEntry).mockRejectedValueOnce(new Error("User declined access"));
+
+    const user = userEvent.setup();
+    render(
+      <DisputeSection
+        commitment={disputed}
+        contractId="CXXX"
+        walletAddress={baseCommitment.cooperative}
+        onDisputeChanged={vi.fn()}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Approve resolution" }));
+
+    expect(await screen.findByText("User declined access")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Approve resolution" })).toBeEnabled();
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/sign"))).toBe(false);
+  });
+
   it("shows a finalize button when ready and the connected wallet is the proposer, and finalizing signs + submits + calls onDisputeChanged", async () => {
     const disputed = { ...baseCommitment, status: "Disputed", dispute_pre_status: "Locked" };
     const readyProposal = {
@@ -274,6 +345,79 @@ describe("DisputeSection", () => {
     const submitCall = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/transactions/submit"));
     expect(submitCall).toBeDefined();
     expect(String(submitCall?.[1]?.body)).toContain("prop-1"); // completeProposalId included
+  });
+
+  it("shows a rejection banner and never submits when the finalize signature is declined", async () => {
+    const disputed = { ...baseCommitment, status: "Disputed", dispute_pre_status: "Locked" };
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        proposal: {
+          id: "prop-1",
+          contract_id: "CXXX",
+          method: "resolve_dispute",
+          proposer_address: baseCommitment.cooperative,
+          status: "ready",
+          pending_entries: [],
+          ready_xdr: "READY_XDR",
+        },
+      }),
+    );
+    fetchMock.mockResolvedValueOnce(jsonResponse({ xdr: "FRESH_READY_XDR" }));
+    vi.mocked(wallet.signTransactionXdr).mockRejectedValueOnce(new Error("User declined to sign"));
+
+    const user = userEvent.setup();
+    render(
+      <DisputeSection
+        commitment={disputed}
+        contractId="CXXX"
+        walletAddress={baseCommitment.cooperative}
+        onDisputeChanged={vi.fn()}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Finalize resolution" }));
+
+    expect(await screen.findByText("User declined to sign")).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/transactions/submit"))).toBe(false);
+  });
+
+  it("keeps the ready proposal on screen until a 202 PENDING finalize settles", async () => {
+    const disputed = { ...baseCommitment, status: "Disputed", dispute_pre_status: "Locked" };
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        proposal: {
+          id: "prop-1",
+          contract_id: "CXXX",
+          method: "resolve_dispute",
+          proposer_address: baseCommitment.cooperative,
+          status: "ready",
+          pending_entries: [],
+          ready_xdr: "READY_XDR",
+        },
+      }),
+    );
+    fetchMock.mockResolvedValueOnce(jsonResponse({ xdr: "FRESH_READY_XDR" }));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ status: "PENDING", hash: "hash123" }), // submit returns 202
+    );
+    fetchMock.mockResolvedValueOnce(jsonResponse({ status: "SUCCESS", hash: "hash123" }));
+    vi.mocked(wallet.signTransactionXdr).mockResolvedValueOnce("SIGNED_READY_XDR");
+    const onDisputeChanged = vi.fn();
+
+    const user = userEvent.setup();
+    render(
+      <DisputeSection
+        commitment={disputed}
+        contractId="CXXX"
+        walletAddress={baseCommitment.cooperative}
+        onDisputeChanged={onDisputeChanged}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Finalize resolution" }));
+
+    await waitFor(() => expect(onDisputeChanged).toHaveBeenCalled());
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/transactions/hash123"))).toBe(true);
   });
 
   it("labels the group, and the flag button is keyboard-activatable with no axe violations", async () => {

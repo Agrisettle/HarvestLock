@@ -4,7 +4,14 @@ import rateLimit from "@fastify/rate-limit";
 import { STATUS_CODES } from "node:http";
 import { getBuildInfo } from "./buildInfo.js";
 import { StrKey, Address, nativeToScVal, xdr } from "@stellar/stellar-sdk";
-import { getAllocation, getCommitment, getOracleConfig, getOracleRate, type Commitment } from "./stellar/client.js";
+import {
+  clearReadCache,
+  getAllocation,
+  getCommitment,
+  getOracleConfig,
+  getOracleRate,
+  type Commitment,
+} from "./stellar/client.js";
 import { assertDeployerBalance, deployContractInstance, initializeArgs } from "./stellar/deploy.js";
 import { buildInvokeTransaction, submitSignedTransaction, getTransactionStatus } from "./stellar/tx.js";
 import { upsertCommitment, listCommitments, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from "./db/commitments.js";
@@ -159,6 +166,11 @@ async function applySubmitSideEffects(
 ): Promise<void> {
   if (effects.refreshContractId) {
     const refreshContractId = effects.refreshContractId;
+    // A read from moments before the submit can still be in the 5 s read
+    // cache (particularly with an injected wallet that signs instantly).
+    // Dropping it here makes the post-submit refresh a real chain read, so
+    // the API's own cache and the frontend both see the committed state.
+    clearReadCache();
     await getCommitment(refreshContractId)
       .then((commitment) => observeCommitment(log, refreshContractId, commitment, notifications))
       .catch((err: unknown) => {

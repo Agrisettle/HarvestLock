@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  assertSubmitted,
   getCommitment,
   listCommitments,
   buildTx,
   submitTx,
+  waitForTransaction,
   type CommitmentDetail as CommitmentDetailType,
   type CommitmentSummary,
 } from "./api";
@@ -34,6 +36,10 @@ function AppContent() {
 
   const [lookupInput, setLookupInput] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // A Freighter popup can be open for a minute. Keep the contract the claim
+  // started against so its late refresh can't overwrite another commitment's
+  // detail just because the user selected a different row in the meantime.
+  const selectedIdRef = useRef<string | null>(null);
   const [detail, setDetail] = useState<CommitmentDetailType | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -103,6 +109,7 @@ function AppContent() {
 
   const loadDetail = useCallback(
     (contractId: string) => {
+      selectedIdRef.current = contractId;
       setSelectedId(contractId);
       setDetailLoading(true);
       setDetailError(null);
@@ -125,6 +132,7 @@ function AppContent() {
 
   const handleConnectWallet = useCallback(() => {
     setWalletError(null);
+    setClaimError(null);
     connectWallet()
       .then(setWalletAddress)
       .catch((err: unknown) => setWalletError(err instanceof Error ? err.message : String(err)));
@@ -138,27 +146,58 @@ function AppContent() {
   // isOfflineError specifically means "the request never reached the
   // network at all" (a fetch TypeError, not a rejection the server
   // actually returned) -- see offlineQueue.ts for why that's the one
-  // case this queues the *intent* instead of just failing.
+  // case this queues the *intent* instead of just failing. The queue is
+  // only valid before submit succeeds: after that the claim may already
+  // be on-chain, and retrying it would just hit AlreadyClaimed.
   const handleClaim = useCallback(
-    (tranche: 1 | 2) => {
+    async (tranche: 1 | 2) => {
       if (!selectedId || !walletAddress) return;
+      const contractId = selectedId;
       setClaimError(null);
       setClaimingTranche(tranche);
       const method = tranche === 1 ? "claim_advance_1" : "claim_advance_2";
-      buildTx(selectedId, method, walletAddress)
-        .then(({ xdr }) => signTransactionXdr(xdr, walletAddress))
-        .then((signedXdr) => submitTx(signedXdr, selectedId))
-        .then(() => getCommitment(selectedId))
-        .then(setDetail)
-        .catch((err: unknown) => {
-          if (isOfflineError(err)) {
-            return enqueueClaim(selectedId, tranche).then(refreshQueue);
-          }
+      let submitted = false;
+      try {
+        const { xdr } = await buildTx(contractId, method, walletAddress);
+        const signedXdr = await signTransactionXdr(xdr, walletAddress);
+        const answer = await submitTx(signedXdr, contractId);
+        submitted = true;
+        // The API answers 202 while the Soroban RPC confirmation is still
+        // outrunning its poll window. Refreshing on that answer would show
+        // pre-claim state and skip the cache/proposal side effects the API
+        // applies when GET /transactions/:hash first sees SUCCESS.
+        const result = answer.status === "PENDING" ? await waitForTransaction(answer.hash) : answer;
+        assertSubmitted(result);
+      } catch (err) {
+        if (!submitted && isOfflineError(err)) {
+          await enqueueClaim(contractId, tranche);
+          refreshQueue();
+        } else {
           setClaimError(err instanceof Error ? err.message : String(err));
-        })
-        .finally(() => setClaimingTranche(null));
+        }
+        setClaimingTranche(null);
+        return;
+      }
+
+      // A failed read after a confirmed write is a different problem, not
+      // an offline claim to retry. Keep the success separate so the queue
+      // never claims a transaction that already landed.
+      try {
+        const refreshed = await getCommitment(contractId);
+        if (selectedIdRef.current === contractId) setDetail(refreshed);
+        else refreshList();
+      } catch (err) {
+        setClaimError(
+          t("app.detailError", {
+            contractId,
+            message: err instanceof Error ? err.message : String(err),
+          }),
+        );
+      } finally {
+        setClaimingTranche(null);
+      }
     },
-    [selectedId, walletAddress, refreshQueue],
+    [selectedId, walletAddress, refreshQueue, refreshList, t],
   );
 
   // Same build -> sign -> submit shape as handleClaim, run against a
@@ -179,12 +218,19 @@ function AppContent() {
       buildTx(claim.contractId, method, walletAddress)
         .then(({ xdr }) => signTransactionXdr(xdr, walletAddress))
         .then((signedXdr) => submitTx(signedXdr, claim.contractId))
-        .then(() => removeQueuedClaim(claim.id))
+        .then((answer) => (answer.status === "PENDING" ? waitForTransaction(answer.hash) : answer))
+        .then((result) => {
+          assertSubmitted(result);
+          return removeQueuedClaim(claim.id);
+        })
         .then(() => {
           refreshQueue();
-          if (claim.contractId === selectedId) {
-            getCommitment(claim.contractId).then(setDetail).catch(() => {});
-          }
+          getCommitment(claim.contractId)
+            .then((refreshed) => {
+              if (selectedIdRef.current === claim.contractId) setDetail(refreshed);
+              else refreshList();
+            })
+            .catch(() => {});
         })
         .catch((err: unknown) => {
           if (isOfflineError(err)) return; // still offline -- leave it queued, say nothing new
@@ -196,7 +242,7 @@ function AppContent() {
         })
         .finally(() => setRetryingId(null));
     },
-    [walletAddress, selectedId, refreshQueue],
+    [walletAddress, refreshQueue, refreshList],
   );
 
   const dismissQueuedClaim = useCallback(

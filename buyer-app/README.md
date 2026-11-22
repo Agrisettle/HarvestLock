@@ -218,5 +218,12 @@ reached by stubbing Freighter's page messaging, which never signs
 anything and doesn't replace the manual Freighter QA issues. `axe-core`
 is now a dev dependency here too, as in the other two apps.
 
+**Dispute approve/finalize QA** (issues #50/#51): `DisputeSection` now
+follows a `202 PENDING` finalize submit through `GET /transactions/:hash`
+and sequences its 10 s proposal poll against signature POSTs, so a stale
+GET can't re-offer an already-signed auth entry. Write-ups and the remaining
+real-extension checklist are in `docs/qa/issue-50-approve-dispute-resolution.md`
+and `docs/qa/issue-51-finalize-dispute-resolution.md`.
+
 **Deferred**: auth, ERP integration (see above) — neither exists yet,
 don't assume it does.

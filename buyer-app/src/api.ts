@@ -155,9 +155,45 @@ export function buildInitializeTx(contractId: string, fields: InitializeFields):
   return post<{ xdr: string }>(`/commitments/${encodeURIComponent(contractId)}/tx/initialize`, fields, { retry: true });
 }
 
+/** Mirrors api/src/server.ts's submit endpoint vocabulary. PENDING means the
+ * envelope was accepted but confirmation outlived the API's poll window; the
+ * UI must follow GET /transactions/:hash before treating the write as done. */
 export interface SubmitResult {
-  status: "SUCCESS" | "FAILED";
+  status: "SUCCESS" | "FAILED" | "PENDING";
   hash: string;
+}
+
+/** Follow-up for a PENDING submit: the API applies the deferred cache and
+ * completeProposalId side effects when this endpoint first sees SUCCESS. */
+export function getTransactionStatus(hash: string): Promise<SubmitResult> {
+  return get<SubmitResult>(`/transactions/${encodeURIComponent(hash)}`);
+}
+
+/** Bounded polling of a PENDING hash; attempts/interval are injectable so
+ * tests don't need to wait out the real confirmation window. */
+export async function waitForTransaction(
+  hash: string,
+  {
+    attempts = 20,
+    intervalMs = 1_500,
+    sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
+  }: { attempts?: number; intervalMs?: number; sleep?: (ms: number) => Promise<void> } = {},
+): Promise<SubmitResult> {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const result = await getTransactionStatus(hash);
+    if (result.status !== "PENDING") return result;
+    if (attempt < attempts - 1) await sleep(intervalMs);
+  }
+  throw new Error(`Transaction ${hash} is still pending — check its status again shortly`);
+}
+
+export function assertSubmitted(result: SubmitResult): void {
+  if (result.status === "PENDING") {
+    throw new Error(`Transaction ${result.hash} is still pending — check its status again shortly`);
+  }
+  if (result.status === "FAILED") {
+    throw new Error(`Transaction ${result.hash} failed on chain`);
+  }
 }
 
 /** Submits a signed envelope. `refreshContractId` also refreshes the API's Postgres cache; `completeProposalId` marks a staged cancellation proposal finished. */

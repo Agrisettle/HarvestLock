@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { ApiError, getCommitment, submitTx, buildTx } from "./api";
+import { ApiError, getCommitment, submitTx, buildTx, getTransactionStatus, waitForTransaction, assertSubmitted } from "./api";
 
 /**
  * These three apps each keep their own copy of api.ts rather than
@@ -154,5 +154,58 @@ describe("api transient-network retry", () => {
 
     await expect(getCommitment("CABC")).rejects.toThrow("Request failed (500)");
     expect(fetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+/** A 202 PENDING submit is normal on a slow testnet: the UI must follow the
+ * hash to a terminal state instead of refreshing on the optimistic answer. */
+describe("pending transaction follow-up", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("reads the hash through GET /transactions/:hash", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(ok({ status: "SUCCESS", hash: "abc123" }));
+
+    await expect(getTransactionStatus("abc123")).resolves.toEqual({ status: "SUCCESS", hash: "abc123" });
+    expect(fetch).toHaveBeenCalledWith("http://localhost:3000/transactions/abc123");
+  });
+
+  it("polls PENDING until the chain reports SUCCESS", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(ok({ status: "PENDING", hash: "abc123" }))
+      .mockResolvedValueOnce(ok({ status: "PENDING", hash: "abc123" }))
+      .mockResolvedValueOnce(ok({ status: "SUCCESS", hash: "abc123" }));
+    const sleep = vi.fn().mockResolvedValue(undefined);
+
+    await expect(waitForTransaction("abc123", { attempts: 5, intervalMs: 50, sleep })).resolves.toEqual({
+      status: "SUCCESS",
+      hash: "abc123",
+    });
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(sleep).toHaveBeenCalledTimes(2);
+  });
+
+  it("surfaces a terminal FAILED instead of refreshing on it", async () => {
+    vi.mocked(fetch).mockResolvedValue(ok({ status: "FAILED", hash: "abc123" }));
+
+    await expect(waitForTransaction("abc123", { attempts: 3, intervalMs: 0, sleep: vi.fn() })).resolves.toEqual({
+      status: "FAILED",
+      hash: "abc123",
+    });
+    expect(() => assertSubmitted({ status: "FAILED", hash: "abc123" })).toThrow("failed on chain");
+  });
+
+  it("gives up with an actionable message when the hash never settles", async () => {
+    vi.mocked(fetch).mockResolvedValue(ok({ status: "PENDING", hash: "abc123" }));
+
+    await expect(
+      waitForTransaction("abc123", { attempts: 3, intervalMs: 0, sleep: vi.fn() }),
+    ).rejects.toThrow(/still pending/);
+    expect(fetch).toHaveBeenCalledTimes(3);
   });
 });

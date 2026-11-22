@@ -287,6 +287,152 @@ describe("App", () => {
     expect(submitCall?.[1]?.body).toContain("SIGNED_XDR");
   });
 
+  it("claims tranche 2 through the same build -> sign -> submit -> refresh path", async () => {
+    const openDetail: CommitmentDetail = { ...detail, advance2_deadline: String(Math.floor(Date.now() / 1000) + 3600) };
+    const claimedDetail: CommitmentDetail = { ...openDetail, advance2_claimed: true };
+
+    fetchMock.mockResolvedValueOnce(jsonResponse([summary]));
+    fetchMock.mockResolvedValueOnce(jsonResponse(openDetail));
+    fetchMock.mockResolvedValueOnce(jsonResponse({ proposal: null })); // CancelSection poll
+    fetchMock.mockResolvedValueOnce(jsonResponse({ proposal: null })); // ReassignBuyerSection poll
+    fetchMock.mockResolvedValueOnce(allocationNotSetResponse());
+    fetchMock.mockResolvedValueOnce(jsonResponse({ xdr: "UNSIGNED_XDR_2" }));
+    fetchMock.mockResolvedValueOnce(jsonResponse({ status: "SUCCESS", hash: "abc" }));
+    fetchMock.mockResolvedValueOnce(jsonResponse(claimedDetail));
+
+    vi.mocked(wallet.connectWallet).mockResolvedValueOnce(detail.cooperative);
+    vi.mocked(wallet.signTransactionXdr).mockResolvedValueOnce("SIGNED_XDR_2");
+
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Connect wallet" }));
+    await user.click(await screen.findByTitle(summary.contract_id));
+    const claimButtons = await screen.findAllByRole("button", { name: "Claim" });
+    expect(claimButtons).toHaveLength(1);
+    await user.click(claimButtons[0]);
+
+    expect((await screen.findAllByText("claimed")).length).toBeGreaterThan(0);
+    expect(wallet.signTransactionXdr).toHaveBeenCalledWith("UNSIGNED_XDR_2", detail.cooperative);
+    const buildCall = fetchMock.mock.calls.find(([url]) => String(url).includes("/tx/claim_advance_2"));
+    expect(buildCall).toBeDefined();
+  });
+
+  it("follows a 202 PENDING submit to SUCCESS before refreshing the UI", async () => {
+    const openDetail: CommitmentDetail = { ...detail, advance1_deadline: String(Math.floor(Date.now() / 1000) + 3600) };
+    const claimedDetail: CommitmentDetail = { ...openDetail, advance1_claimed: true };
+
+    fetchMock.mockResolvedValueOnce(jsonResponse([summary]));
+    fetchMock.mockResolvedValueOnce(jsonResponse(openDetail));
+    fetchMock.mockResolvedValueOnce(jsonResponse({ proposal: null }));
+    fetchMock.mockResolvedValueOnce(jsonResponse({ proposal: null }));
+    fetchMock.mockResolvedValueOnce(allocationNotSetResponse());
+    fetchMock.mockResolvedValueOnce(jsonResponse({ xdr: "UNSIGNED_XDR" }));
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 202, json: () => Promise.resolve({ status: "PENDING", hash: "hash123" }) } as Response);
+    fetchMock.mockResolvedValueOnce(jsonResponse({ status: "PENDING", hash: "hash123" }));
+    fetchMock.mockResolvedValueOnce(jsonResponse({ status: "SUCCESS", hash: "hash123" }));
+    fetchMock.mockResolvedValueOnce(jsonResponse(claimedDetail));
+
+    vi.mocked(wallet.connectWallet).mockResolvedValueOnce(detail.cooperative);
+    vi.mocked(wallet.signTransactionXdr).mockResolvedValueOnce("SIGNED_XDR");
+
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Connect wallet" }));
+    await user.click(await screen.findByTitle(summary.contract_id));
+    await user.click(await screen.findByRole("button", { name: "Claim" }));
+
+    // The real 1.5 s poll interval is deliberately used here, so allow for
+    // it rather than asserting inside findByText's 1 s default.
+    expect(await screen.findByText("claimed", undefined, { timeout: 5000 })).toBeInTheDocument();
+    const urls = fetchMock.mock.calls.map(([url]) => String(url));
+    const pollIndex = urls.findIndex((url) => url.includes("/transactions/hash123"));
+    expect(pollIndex).toBeGreaterThan(-1);
+    // The chain read that produced "claimed" must come after the hash poll,
+    // not straight off the optimistic 202 answer.
+    expect(urls.findIndex((url, i) => i > pollIndex && url.includes("/commitments/"))).toBeGreaterThan(pollIndex);
+  });
+
+  it("does not write a late claim refresh over a different commitment selected while Freighter was open", async () => {
+    const openDetail: CommitmentDetail = { ...detail, advance1_deadline: String(Math.floor(Date.now() / 1000) + 3600) };
+    const claimedDetail: CommitmentDetail = { ...openDetail, advance1_claimed: true };
+    const secondSummary: CommitmentSummary = {
+      ...summary,
+      id: "row-2",
+      contract_id: "CSECONDCONTRACT",
+      buyer_address: "GBUYER2",
+    };
+    const secondDetail: CommitmentDetail = { ...detail, buyer: "GBUYER2" };
+
+    let firstDetailReads = 0;
+    fetchMock.mockImplementation((url: string | URL) => {
+      const u = String(url);
+      if (u.includes("/commitments?")) return Promise.resolve(jsonResponse([summary, secondSummary]));
+      if (u.includes("/tx/cancel/propose") || u.includes("/tx/reassign-buyer/propose")) {
+        return Promise.resolve(jsonResponse({ proposal: null }));
+      }
+      if (u.includes("/allocation")) return Promise.resolve(allocationNotSetResponse());
+      if (u.includes("/tx/claim_advance_1")) return Promise.resolve(jsonResponse({ xdr: "UNSIGNED_XDR" }));
+      if (u.includes("/transactions/submit")) return Promise.resolve(jsonResponse({ status: "SUCCESS", hash: "abc" }));
+      if (u.includes(summary.contract_id)) {
+        firstDetailReads += 1;
+        return Promise.resolve(jsonResponse(firstDetailReads === 1 ? openDetail : claimedDetail));
+      }
+      if (u.includes(secondSummary.contract_id)) return Promise.resolve(jsonResponse(secondDetail));
+      throw new Error(`unexpected fetch: ${u}`);
+    });
+
+    let finishSigning: (xdr: string) => void = () => {};
+    vi.mocked(wallet.connectWallet).mockResolvedValueOnce(detail.cooperative);
+    vi.mocked(wallet.signTransactionXdr).mockImplementationOnce(
+      () => new Promise<string>((resolve) => { finishSigning = resolve; }),
+    );
+
+    const user = userEvent.setup();
+    const { container } = render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Connect wallet" }));
+    await user.click(await screen.findByTitle(summary.contract_id));
+    await user.click(await screen.findByRole("button", { name: "Claim" }));
+    await waitFor(() => expect(wallet.signTransactionXdr).toHaveBeenCalled());
+
+    // The user switches rows while the signing popup is still open.
+    await user.click(await screen.findByTitle(secondSummary.contract_id));
+    finishSigning("SIGNED_XDR");
+
+    await waitFor(() =>
+      expect(container.querySelector(".party-grid [title='GBUYER2']")).toBeInTheDocument(),
+    );
+    expect(container.querySelector(".party-grid [title='GBUYER']")).not.toBeInTheDocument();
+  });
+
+  it("does not queue an already-submitted claim when the post-submit refresh fails", async () => {
+    const openDetail: CommitmentDetail = { ...detail, advance1_deadline: String(Math.floor(Date.now() / 1000) + 3600) };
+
+    fetchMock.mockResolvedValueOnce(jsonResponse([summary]));
+    fetchMock.mockResolvedValueOnce(jsonResponse(openDetail));
+    fetchMock.mockResolvedValueOnce(jsonResponse({ proposal: null }));
+    fetchMock.mockResolvedValueOnce(jsonResponse({ proposal: null }));
+    fetchMock.mockResolvedValueOnce(allocationNotSetResponse());
+    fetchMock.mockResolvedValueOnce(jsonResponse({ xdr: "UNSIGNED_XDR" }));
+    fetchMock.mockResolvedValueOnce(jsonResponse({ status: "SUCCESS", hash: "abc" }));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse({ statusCode: 500, error: "Internal Server Error", message: "rpc unavailable" }, false),
+    );
+
+    vi.mocked(wallet.connectWallet).mockResolvedValueOnce(detail.cooperative);
+    vi.mocked(wallet.signTransactionXdr).mockResolvedValueOnce("SIGNED_XDR");
+
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Connect wallet" }));
+    await user.click(await screen.findByTitle(summary.contract_id));
+    await user.click(await screen.findByRole("button", { name: "Claim" }));
+
+    expect(await screen.findByText(/Unable to load commitment/)).toBeInTheDocument();
+    expect(screen.queryByText(/couldn't reach the network/)).not.toBeInTheDocument();
+    expect(await listQueuedClaims()).toEqual([]);
+  });
+
   it("shows a claim error banner, not a crash, if signing is rejected", async () => {
     const openDetail: CommitmentDetail = { ...detail, advance1_deadline: String(Math.floor(Date.now() / 1000) + 3600) };
 
