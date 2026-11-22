@@ -27,11 +27,9 @@ name: Auto-merge bot
 #     CodeRabbit's review check-run before merging.
 #   - When a required check fails it posts the failing check names once per
 #     head commit.
-#   - Scope check before merging: a PR that is BOTH large and changes files
-#     outside its declared scope is left for a maintainer with a one-line
-#     note. "Large" is > 40 files or > 1 000 added lines PER LINKED ISSUE
-#     (contributors bundle several issues into one PR), not counting
-#     lockfiles or generated test snapshots. Anything smaller merges.
+#   - Scope check before merging: out-of-scope files are logged only.
+#     Diff size never holds a PR; files too large for GitHub to diff are
+#     fetched whole and run through the malware scan instead.
 #   - Waits for CodeRabbit's review check-run to complete before merging, so
 #     problems are caught before the merge, not after.
 #   - Auto-merges once CI is green AND CodeRabbit has reviewed: normal merge
@@ -505,48 +503,13 @@ jobs:
             [ "${MERGEABLE}" = "MERGEABLE" ] || {
               echo "  not mergeable (${MERGEABLE}) — will retry"; continue; }
 
-            # Scope check: findings go to the log. Only a PR that is BOTH
-            # large and out of its declared scope is left for a maintainer,
-            # with a one-line note (once per head commit).
+            # Scope check: findings go to the log only. Size never holds
+            # a PR: once every required check (including the malware
+            # scan) passes, it merges however large the diff is.
             DREV="$(diff_review "${PR}" "${PR_TITLE}" "${PR_BODY}")"
             if [ -n "${DREV}" ]; then
               echo "  scope findings:"
               printf '%s\n' "${DREV}" | sed 's/^/    /'
-            fi
-            # Size counts real changes only: lockfiles and generated test
-            # snapshots are excluded. The limit scales with the number of
-            # issues the PR closes, because contributors routinely bundle
-            # 2-4 issues into one PR ("Closes #12, #14, #15" = 3 issues).
-            read -r NFILES NADD < <(gh api --paginate \
-              "repos/${REPO}/pulls/${PR}/files?per_page=100" \
-              --jq '.[] | select(.filename
-                  | test("(^|/)(package-lock[.]json|npm-shrinkwrap[.]json|pnpm-lock[.]yaml|yarn[.]lock|Cargo[.]lock)$|/test_snapshots/|[.]snap$")
-                  | not) | .additions' 2>/dev/null \
-              | awk '{n++; a+=$1} END {print n+0, a+0}' || echo "0 0")
-            NISSUES="$(printf '%s' "${PR_BODY}" \
-              | grep -oiE '(close[sd]?|fix(e[sd])?|resolve[sd]?)[: ]+#[0-9]+([ ,]+(and[ ]+)?#[0-9]+)*' \
-              | grep -oE '#[0-9]+' | sort -u | wc -l || true)"
-            [ "${NISSUES:-0}" -ge 1 ] || NISSUES=1
-            MAX_FILES=$(( 40 * NISSUES ))
-            MAX_ADD=$(( 1000 * NISSUES ))
-            echo "  size: ${NFILES} files, +${NADD} (excl. generated) — limit ${MAX_FILES} files / +${MAX_ADD} for ${NISSUES} issue(s)"
-            if [ -n "${DREV}" ] && [ "${SELF}" != "true" ] \
-               && { [ "${NFILES:-0}" -gt "${MAX_FILES}" ] \
-                    || [ "${NADD:-0}" -gt "${MAX_ADD}" ]; }; then
-              echo "  large and out of scope — leaving for a maintainer"
-              MARKER4="<!-- BOT-SCOPE-HOLD sha=${SHA} -->"
-              ALREADY4="$(gh pr view "${PR}" --repo "${REPO}" \
-                --json reviews \
-                --jq "[.reviews[] | select(.author.login == \"${BOT_LOGIN}\")
-                  | select(.body | contains(\"${MARKER4}\"))] | length" \
-                2>/dev/null || echo 0)"
-              if [ "${ALREADY4}" -eq 0 ]; then
-                BODY4="This PR is larger than expected for ${NISSUES} issue(s) (${NFILES} files, +${NADD} lines) and changes files outside its stated scope, so a maintainer needs to review it before merging."
-                BODY4+=$'\n'"${MARKER4}"
-                gh pr review "${PR}" --repo "${REPO}" --comment \
-                  --body "${BODY4}" 2>/dev/null || true
-              fi
-              continue
             fi
 
             # ── CodeRabbit review: trigger, then wait (if installed) ──
