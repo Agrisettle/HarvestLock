@@ -5,7 +5,7 @@ per frontend, each walking the app's defining user journey end to end:
 
 | Spec | Journey | What it proves |
 | --- | --- | --- |
-| `tests/buyer-app.spec.ts` | Buyer creates a commitment (#198); proposes reassigning the buyer position (#45) | The create form's deploy → initialize → sign → submit → read-back loop works against the real API and chain; the staged reassignment proposal reaches the API and the incoming buyer's `signAuthEntry` approval lands |
+| `tests/buyer-app.spec.ts` | Buyer creates a commitment (#198), proposes reassignment (#45), settles a Delivered commitment (#41), and proposes/approves/finalizes cancellation (#42–44) | The create/settle flows complete against the real API and chain; cancellation proposals stage the right parties, auth-entry rejection is recoverable, and a refreshed ready envelope finalizes to the on-chain state |
 | `tests/coop-pwa.spec.ts` | Cooperative claims advance tranche 1 (#199); records an allocation ledger (#54); flags a dispute (#59); proposes resolving one (#60) | The claim loop against a real Locked-and-released commitment; `set_allocation` persists hashes/shares with no phone number; `flag_dispute` flips the chain status; a resolution proposal stages the other two parties and their approval signs |
 | `tests/warehouse-app.spec.ts` | Warehouse operator confirms a delivery | The confirm form's submit lands a real partial delivery with the entered quantity and settlement maths |
 
@@ -15,6 +15,12 @@ error, the UI must surface it and reset, and the chain must stay unchanged.
 `docs/qa/manual-freighter-qa-45-54-59-60.md` is the accompanying write-up,
 including what a real extension popup is expected to show and the manual
 checklist that remains.
+
+Buyer-app settlement and cancellation coverage for issues #41–44 is described
+in `docs/qa/issue-41-44-buyer-freighter-workflows.md`. The cooperative's
+cancellation proposal is approved by the buyer and finalized by the proposer;
+the test also rejects the buyer's first auth-entry signing request before
+retrying it.
 
 ## Why these exist when the apps already have test suites
 

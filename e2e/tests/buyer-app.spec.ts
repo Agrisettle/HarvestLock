@@ -13,8 +13,10 @@ import {
 import { connectInjectedWallet, setInjectedSigningRejected } from "./helpers/freighter";
 import {
   deployAndInitialize,
+  confirmDelivery,
   ensureFunded,
   flagDispute,
+  getCancelProposal,
   getCommitment,
   getReassignBuyerProposal,
   getResolveDisputeProposal,
@@ -102,6 +104,15 @@ async function connectAndLookUp(page: Page, publicKey: string, contractId: strin
   await expect(page.locator(".wallet-address")).toContainText(publicKey.slice(0, 4));
   await page.locator("#contract-lookup").fill(contractId);
   await page.getByRole("button", { name: "Look up" }).click();
+}
+
+async function createCancellableCommitment() {
+  const buyer = buyerKeypair();
+  const cooperative = cooperativeKeypair();
+  const warehouse = Keypair.random();
+  await Promise.all([ensureFunded(buyer.publicKey()), ensureFunded(cooperative.publicKey())]);
+  const contractId = await deployAndInitialize({ buyer, cooperative, warehouse });
+  return { buyer, cooperative, contractId };
 }
 
 /**
@@ -263,4 +274,110 @@ test("#50/#51 approves and finalizes a dispute resolution end to end", async ({ 
   const commitment = await getCommitment(contractId);
   expect(commitment.status).toBe("Locked");
   expect(commitment.dispute_pre_status).toBe("Draft");
+});
+
+/**
+ * Issue #41: settle a real Delivered commitment from buyer-app. The only
+ * substituted piece is the extension; the action, API, Soroban contract,
+ * testnet XLM, and read-back all run for real.
+ */
+test("#41 settles a Delivered commitment end to end", async ({ page }) => {
+  test.setTimeout(180_000);
+  const buyer = buyerKeypair();
+  const cooperative = cooperativeKeypair();
+  const warehouse = warehouseKeypair();
+  const unrelated = Keypair.random();
+
+  await Promise.all(
+    [buyer, cooperative, warehouse, unrelated].map((party) => ensureFunded(party.publicKey())),
+  );
+  const contractId = await deployAndInitialize({ buyer, cooperative, warehouse });
+  await submitMethod(contractId, "lock", buyer);
+  await submitMethod(contractId, "release_advance_1", warehouse);
+  await submitMethod(contractId, "claim_advance_1", cooperative);
+  await submitMethod(contractId, "mark_checkpoint", warehouse);
+  await submitMethod(contractId, "release_advance_2", warehouse);
+  await submitMethod(contractId, "claim_advance_2", cooperative);
+  await submitMethod(contractId, "ready_for_delivery", cooperative);
+  await submitMethod(contractId, "fund_remainder", buyer);
+  await confirmDelivery(contractId, warehouse, 1000);
+  expect((await getCommitment(contractId)).status).toBe("Delivered");
+
+  const wallet = await connectInjectedWallet(page, unrelated);
+  await page.goto("/");
+  await connectAndLookUp(page, unrelated.publicKey(), contractId);
+  await expect(page.getByRole("button", { name: "Settle" })).toBeVisible({ timeout: 120_000 });
+  await page.getByRole("button", { name: "Settle" }).click();
+
+  await expect(page.locator(".detail-header .badge")).toHaveText("Settled", { timeout: 120_000 });
+  expect((await getCommitment(contractId)).status).toBe("Settled");
+  expect(wallet.signRequests).toContain("SUBMIT_TRANSACTION");
+});
+
+/** Issue #42: proposal is staged by the app without opening a signing request. */
+test("#42 proposes a cancellation through buyer-app", async ({ page }) => {
+  test.setTimeout(180_000);
+  const { buyer, cooperative, contractId } = await createCancellableCommitment();
+  const wallet = await connectInjectedWallet(page, buyer);
+  await page.goto("/");
+  await connectAndLookUp(page, buyer.publicKey(), contractId);
+
+  await page.getByRole("button", { name: "Cancel this commitment" }).click();
+  await expect(page.locator(".cancel-section")).toContainText(
+    "Cancellation proposed — waiting for the other party to approve.",
+  );
+
+  const { proposal } = await getCancelProposal(contractId);
+  expect(proposal?.status).toBe("pending");
+  expect(proposal?.proposer_address).toBe(buyer.publicKey());
+  expect(proposal?.pending_entries.map((entry) => entry.address)).toEqual([cooperative.publicKey()]);
+  expect(wallet.signRequests).toEqual([]);
+});
+
+/**
+ * Issues #43/#44: cooperative proposes, buyer signs their own auth entry,
+ * then the cooperative refreshes and signs the ready transaction. This
+ * uses real testnet transactions through the UI with a throwaway injected
+ * wallet; popup rendering itself still needs a real Freighter installation.
+ */
+test("#43/#44 approves and finalizes a cooperative-proposed cancellation", async ({ page }) => {
+  test.setTimeout(240_000);
+  const { buyer, cooperative, contractId } = await createCancellableCommitment();
+  const proposerWallet = await connectInjectedWallet(page, cooperative);
+  await page.goto("/");
+  await connectAndLookUp(page, cooperative.publicKey(), contractId);
+
+  await page.getByRole("button", { name: "Cancel this commitment" }).click();
+  await expect(page.locator(".cancel-section")).toContainText(
+    "Cancellation proposed — waiting for the other party to approve.",
+  );
+  const proposed = await getCancelProposal(contractId);
+  expect(proposed.proposal?.proposer_address).toBe(cooperative.publicKey());
+  expect(proposed.proposal?.pending_entries.map((entry) => entry.address)).toEqual([buyer.publicKey()]);
+  expect(proposerWallet.signRequests).toEqual([]);
+
+  const buyerPage = await page.context().newPage();
+  const buyerWallet = await connectInjectedWallet(buyerPage, buyer);
+  await buyerPage.goto("/");
+  await connectAndLookUp(buyerPage, buyer.publicKey(), contractId);
+  const approveButton = buyerPage.getByRole("button", { name: "Approve cancellation" });
+  await expect(approveButton).toBeVisible({ timeout: 120_000 });
+
+  await setInjectedSigningRejected(buyerPage, true);
+  await approveButton.click();
+  await expect(buyerPage.locator(".cancel-section .error-banner")).toContainText("The user rejected this request.");
+  expect((await getCancelProposal(contractId)).proposal?.status).toBe("pending");
+
+  await setInjectedSigningRejected(buyerPage, false);
+  await approveButton.click();
+  await expect(buyerPage.locator(".cancel-section")).toContainText("Approved — waiting for the proposer to finalize.");
+  expect((await getCancelProposal(contractId)).proposal?.status).toBe("ready");
+  expect(buyerWallet.signRequests).toEqual(["SUBMIT_AUTH_ENTRY", "SUBMIT_AUTH_ENTRY"]);
+
+  const finalizeButton = page.getByRole("button", { name: "Finalize cancellation" });
+  await expect(finalizeButton).toBeVisible({ timeout: 120_000 });
+  await finalizeButton.click();
+  await expect(page.locator(".detail-header .badge")).toHaveText("Cancelled", { timeout: 120_000 });
+  expect((await getCommitment(contractId)).status).toBe("Cancelled");
+  expect(proposerWallet.signRequests).toEqual(["SUBMIT_TRANSACTION"]);
 });
