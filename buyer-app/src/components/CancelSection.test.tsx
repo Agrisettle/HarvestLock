@@ -117,8 +117,12 @@ describe("CancelSection", () => {
     await user.click(proposeButton);
 
     expect(await screen.findByText(/waiting for the other party to approve/i)).toBeInTheDocument();
-    const proposeCall = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/tx/cancel/propose"));
+    const proposeCall = fetchMock.mock.calls.find(
+      ([url, init]) => String(url).endsWith("/tx/cancel/propose") && init?.method === "POST",
+    );
     expect(proposeCall).toBeDefined();
+    expect(proposeCall?.[1]?.method).toBe("POST");
+    expect(JSON.parse(String(proposeCall?.[1]?.body))).toEqual({ proposerPublicKey: baseCommitment.buyer });
   });
 
   it("shows an approve button when the connected wallet has a pending entry, and approving signs it via signAuthEntry", async () => {
@@ -151,6 +155,12 @@ describe("CancelSection", () => {
     await user.click(approveButton);
 
     expect(wallet.signAuthEntry).toHaveBeenCalledWith("ENTRY_XDR", baseCommitment.cooperative);
+    const signCall = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/tx/propose/prop-1/sign"));
+    expect(signCall).toBeDefined();
+    expect(JSON.parse(String(signCall?.[1]?.body))).toEqual({
+      signerPublicKey: baseCommitment.cooperative,
+      signedEntryXdr: "SIGNED_ENTRY_XDR",
+    });
     // Now ready, but this viewer isn't the proposer -- they wait, they
     // don't get a Finalize button (only the proposer does).
     expect(await screen.findByText(/waiting for the proposer to finalize/i)).toBeInTheDocument();
@@ -185,7 +195,11 @@ describe("CancelSection", () => {
     expect(wallet.signTransactionXdr).toHaveBeenCalledWith("FRESH_READY_XDR", baseCommitment.buyer);
     const submitCall = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/transactions/submit"));
     expect(submitCall).toBeDefined();
-    expect(String(submitCall?.[1]?.body)).toContain("prop-1"); // completeProposalId included
+    expect(JSON.parse(String(submitCall?.[1]?.body))).toEqual({
+      xdr: "SIGNED_READY_XDR",
+      refreshContractId: "CXXX",
+      completeProposalId: "prop-1",
+    });
   });
 
   it("shows an error banner, not a crash, if approving is rejected", async () => {

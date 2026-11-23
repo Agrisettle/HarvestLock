@@ -269,6 +269,22 @@ describe("App", () => {
 
     await waitFor(() => expect(screen.getByText("Settled")).toBeInTheDocument());
     expect(wallet.signTransactionXdr).toHaveBeenCalledWith("UNSIGNED_SETTLE_XDR", thirdPartyWallet);
+
+    const settleBuildCall = fetchMock.mock.calls.find(
+      ([url]) => String(url).endsWith(`/commitments/${encodeURIComponent(deliveredSummary.contract_id)}/tx/settle`),
+    );
+    expect(settleBuildCall).toBeDefined();
+    expect(JSON.parse(String(settleBuildCall?.[1]?.body))).toEqual({ sourcePublicKey: thirdPartyWallet });
+
+    const submitCall = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/transactions/submit"));
+    expect(submitCall).toBeDefined();
+    expect(JSON.parse(String(submitCall?.[1]?.body))).toEqual({
+      xdr: "SIGNED_SETTLE_XDR",
+      refreshContractId: deliveredSummary.contract_id,
+    });
+
+    const detailUrl = `/commitments/${encodeURIComponent(deliveredSummary.contract_id)}`;
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith(detailUrl))).toHaveLength(2);
   });
 
   it("shows an action error banner, not a crash, if signing is rejected", async () => {

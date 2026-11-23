@@ -158,6 +158,25 @@ export function submitMethod(contractId: string, method: string, signer: Keypair
   return buildSignSubmit(contractId, `/tx/${method}`, { sourcePublicKey: signer.publicKey() }, signer);
 }
 
+/** Confirms delivery as the warehouse operator with the requested delivered quantity and grade bucket. */
+export function confirmDelivery(
+  contractId: string,
+  warehouse: Keypair,
+  deliveredQuantity: number,
+  gradeIndex = 0,
+): Promise<void> {
+  return buildSignSubmit(
+    contractId,
+    "/tx/confirm-delivery",
+    {
+      deliveredQuantity,
+      gradeIndex,
+      sourcePublicKey: warehouse.publicKey(),
+    },
+    warehouse,
+  );
+}
+
 /** Live chain read through the real API — the same source of truth the apps render. */
 export function getCommitment(contractId: string): Promise<CommitmentDetail> {
   return apiRequest<CommitmentDetail>(`/commitments/${encodeURIComponent(contractId)}`);
@@ -187,6 +206,12 @@ export interface MultisigProposal {
   status: "pending" | "ready" | "completed";
   pending_entries: { address: string; entry_xdr: string }[];
   ready_xdr: string | null;
+}
+
+export function getCancelProposal(contractId: string): Promise<{ proposal: MultisigProposal | null }> {
+  return apiRequest<{ proposal: MultisigProposal | null }>(
+    `/commitments/${encodeURIComponent(contractId)}/tx/cancel/propose`,
+  );
 }
 
 /**
