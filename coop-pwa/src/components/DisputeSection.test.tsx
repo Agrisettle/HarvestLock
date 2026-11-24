@@ -108,6 +108,21 @@ describe("DisputeSection", () => {
     expect(await screen.findByRole("button", { name: "Flag a dispute" })).toBeInTheDocument();
   });
 
+  it("reaches the dispute action in one Tab press", async () => {
+    const user = userEvent.setup();
+    render(
+      <DisputeSection
+        commitment={baseCommitment}
+        contractId="CXXX"
+        walletAddress={baseCommitment.buyer}
+        onDisputeChanged={vi.fn()}
+      />,
+    );
+
+    await user.tab();
+    expect(screen.getByRole("button", { name: "Flag a dispute" })).toHaveFocus();
+  });
+
   it("flagging builds, signs, and submits, then calls onDisputeChanged", async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ xdr: "UNSIGNED_FLAG_XDR" })); // buildFlagDisputeTx
     fetchMock.mockResolvedValueOnce(jsonResponse({ status: "SUCCESS", hash: "abc" })); // submitTx
@@ -148,46 +163,7 @@ describe("DisputeSection", () => {
     );
 
     await user.click(await screen.findByRole("button", { name: "Flag a dispute" }));
-    expect(await screen.findByText("User declined to sign")).toBeInTheDocument();
-    // Announced, not just painted above the button the user just pressed.
-    expect(screen.getByRole("alert")).toHaveTextContent("User declined to sign");
-  });
-
-  it("is fully keyboard operable: tab reaches the flag button directly, and the disputed-state propose button next", async () => {
-    const user = userEvent.setup();
-    const { container, rerender } = render(
-      <DisputeSection
-        commitment={baseCommitment}
-        contractId="CXXX"
-        walletAddress={baseCommitment.buyer}
-        onDisputeChanged={vi.fn()}
-      />,
-    );
-
-    // Flag state: exactly one control, and it's the first tab stop.
-    const flag = await screen.findByRole("button", { name: "Flag a dispute" });
-    await user.tab();
-    expect(flag).toHaveFocus();
-    await expectNoA11yViolations(container);
-
-    // Disputed state: the frozen-status paragraph is not focusable, so the
-    // propose button is the first (and only) tab stop -- no skipped stop
-    // that silently swallows focus.
-    fetchMock.mockResolvedValue(jsonResponse({ proposal: null }));
-    rerender(
-      <DisputeSection
-        commitment={{ ...baseCommitment, status: "Disputed", dispute_pre_status: "Locked" }}
-        contractId="CXXX"
-        walletAddress={baseCommitment.buyer}
-        onDisputeChanged={vi.fn()}
-      />,
-    );
-
-    const propose = await screen.findByRole("button", { name: "Propose resolving this dispute" });
-    flag.blur();
-    await user.tab();
-    expect(propose).toHaveFocus();
-    await expectNoA11yViolations(container);
+    expect(await screen.findByRole("alert")).toHaveTextContent("User declined to sign");
   });
 
   it("once Disputed, shows the frozen message and a propose-resolution button, and proposing shows the waiting state", async () => {

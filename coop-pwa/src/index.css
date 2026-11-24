@@ -279,6 +279,11 @@ main {
   margin-bottom: 20px;
 }
 
+:is(.dispute-section, .reassign-section) :focus-visible {
+  outline: 3px solid var(--gold-bright);
+  outline-offset: 3px;
+}
+
 .reassign-form {
   display: flex;
   flex-direction: column;
@@ -300,6 +305,11 @@ main {
   font-size: 0.85rem;
   padding: 8px 10px;
   border-radius: 6px;
+}
+
+.reassign-form input::placeholder {
+  color: var(--bone-dim);
+  opacity: 1;
 }
 
 .allocation-section {
