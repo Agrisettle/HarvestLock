@@ -128,9 +128,6 @@ export function ReassignBuyerSection({
 
   return (
     <div className="reassign-section">
-      {/* `role="alert"` so a keyboard/screen-reader user hears why the
-          action failed -- the banner replaces nothing they were focused
-          on, so without it the failure is silent. */}
       {error && <div className="error-banner" role="alert">{error}</div>}
 
       {!proposal && isCurrentBuyer && (
