@@ -9,6 +9,7 @@ on:
     types: [opened, reopened, ready_for_review]
 
 permissions:
+  contents: read
   pull-requests: write
   issues: read
 
@@ -35,6 +36,12 @@ jobs:
       PR_BODY: ${{ github.event.pull_request.body }}
       PR_DRAFT: ${{ github.event.pull_request.draft }}
     steps:
+      # Base branch only (pull_request_target): this job never runs PR code.
+      - name: Checkout base branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 1
       - name: Verify PR author is assigned to linked issue
         shell: bash
         run: |
@@ -43,62 +50,39 @@ jobs:
           REPO="${GITHUB_REPOSITORY}"
           PR="${PR_NUMBER}"
           AUTHOR="${PR_AUTHOR}"
-          BODY="${PR_BODY}"
-
-          # Bot-authored PRs are exempt (contributors bot, dependabot)
-          if [[ "${AUTHOR}" == "github-actions[bot]" ]] || [[ "${AUTHOR}" == "app/dependabot" ]] || [[ "${AUTHOR}" == "@dependabot" ]] || [[ "${AUTHOR}" == *"[bot]" ]]; then
-            echo "Bot PR — skipping assignment check"
-            exit 0
-          fi
 
           # Draft PRs are exempt (not ready for merge anyway)
-          IS_DRAFT="${PR_DRAFT}"
-          if [ "${IS_DRAFT}" = "true" ]; then
+          if [ "${PR_DRAFT}" = "true" ]; then
             echo "Draft PR — skipping assignment check"
             exit 0
           fi
 
-          # Extract linked issue number from PR body
-          LINKED_ISSUE="$(printf '%s' "${BODY}" \
-            | grep -oE '(Closes|Fixes|close[s]?|fixes) #?[0-9]+' \
-            | head -1 | grep -oE '[0-9]+' || true)"
+          # Rules: .github/scripts/check_assignment.sh (shared with the
+          # auto-merge bot). Bots and maintainers are exempt; every linked
+          # issue is checked; a link to a missing issue falls back to any
+          # open assignment; an API failure never fails the check.
+          read -r VERDICT ISSUE < <(printf '%s' "${PR_BODY}" \
+            | bash .github/scripts/check_assignment.sh "${REPO}" "${AUTHOR}") \
+            || { VERDICT=unknown; ISSUE=-; }
+          echo "PR #${PR} by ${AUTHOR}: ${VERDICT} ${ISSUE}"
 
-          if [ -z "${LINKED_ISSUE}" ]; then
-            echo "No linked issue found — skipping assignment check"
-            exit 0
-          fi
+          case "${VERDICT}" in
+            assigned|fallback|exempt|unknown)
+              gh pr edit "${PR}" --repo "${REPO}" --remove-label "needs-assignment" 2>/dev/null || true
+              exit 0 ;;
+          esac
 
-          echo "PR #${PR} by ${AUTHOR} links to issue #${LINKED_ISSUE}"
-
-          # Check if author is assigned to the issue
-          IS_ASSIGNED="$(gh issue view "${LINKED_ISSUE}" --repo "${REPO}" \
-            --json assignees \
-            --jq "[.assignees[] | select(.login == \"${AUTHOR}\")] | length" \
-            2>/dev/null || echo 0)"
-
-          if [ "${IS_ASSIGNED}" -eq 0 ]; then
-            echo "❌ ${AUTHOR} is NOT assigned to #${LINKED_ISSUE}"
-
-            COMMENT_BODY="$(cat <<'MSG'
+          COMMENT_BODY="$(cat <<'MSG'
           🤖 **Assignment check** — ⚠️ You are not assigned to the linked issue.
 
           **To get your PR reviewed and merged:**
           1. Comment on the issue requesting assignment
           2. Wait for a maintainer to assign you
-          3. The auto-merge bot will then evaluate your PR
+          3. Link it in the PR description with "Closes #N"
 
           Maintainers assign issues to avoid duplicate work and ensure quality review. Unassigned PRs will not be auto-merged.
           MSG
-            )"
-            gh pr comment "${PR}" --repo "${REPO}" --body "${COMMENT_BODY}" 2>/dev/null || true
-
-            # Add a label to mark the PR as unassigned
-            gh pr edit "${PR}" --repo "${REPO}" --add-label "needs-assignment" 2>/dev/null || true
-
-            exit 1
-          fi
-
-          echo "✅ ${AUTHOR} is assigned to #${LINKED_ISSUE}"
-
-          # Remove the label if it was previously added
-          gh pr edit "${PR}" --repo "${REPO}" --remove-label "needs-assignment" 2>/dev/null || true
+          )"
+          gh pr comment "${PR}" --repo "${REPO}" --body "${COMMENT_BODY}" 2>/dev/null || true
+          gh pr edit "${PR}" --repo "${REPO}" --add-label "needs-assignment" 2>/dev/null || true
+          exit 1

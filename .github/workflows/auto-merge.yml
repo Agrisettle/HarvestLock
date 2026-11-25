@@ -327,35 +327,45 @@ jobs:
             # after a maintainer assigns the issue is welcome: the bot
             # re-evaluates on reopened/synchronize events and the hourly
             # sweep, and a properly assigned PR proceeds normally.
+            # The rules live in .github/scripts/check_assignment.sh (shared
+            # with require-assignment.yml): every linked issue is checked,
+            # case-insensitively; a link to an issue that does not exist
+            # falls back to "is the author assigned to any open issue"; and
+            # an API failure never closes a PR.
             if [ "${SELF}" != "true" ]; then
-              LINKED_ISSUE="$(printf '%s' "${PR_BODY}" \
-                | grep -oE '(Closes|Fixes|close[s]?|fixes) #?[0-9]+' \
-                | head -1 | grep -oE '[0-9]+' || true)"
-              if [ -n "${LINKED_ISSUE}" ]; then
-                IS_ASSIGNED="$(gh issue view "${LINKED_ISSUE}" --repo "${REPO}" \
-                  --json assignees \
-                  --jq '[.assignees[] | select(.login == "'"${AUTHOR}"'")] | length' \
-                  2>/dev/null || echo 0)"
-                if [ "${IS_ASSIGNED}" -eq 0 ]; then
-                  echo "  🚫 ${AUTHOR} is not assigned to #${LINKED_ISSUE} — closing"
+              read -r VERDICT LINKED_ISSUE < <(printf '%s' "${PR_BODY}" \
+                | bash .github/scripts/check_assignment.sh "${REPO}" "${AUTHOR}") \
+                || { VERDICT=unknown; LINKED_ISSUE=-; }
+              case "${VERDICT}" in
+                assigned) echo "  ✅ ${AUTHOR} is assigned to #${LINKED_ISSUE}" ;;
+                fallback) echo "  ✅ linked issue not found; ${AUTHOR} is assigned to #${LINKED_ISSUE}" ;;
+                exempt)   echo "  ℹ️ ${AUTHOR} is exempt from the assignment check" ;;
+                unknown)  echo "  ⚠️ assignment lookup failed — will retry"; continue ;;
+              esac
+              if [ "${VERDICT}" = "unassigned" ] || [ "${VERDICT}" = "none" ]; then
+                {
+                  if [ "${VERDICT}" = "none" ]; then
+                    echo "  🚫 ${AUTHOR} links no issue here and holds no assignment — closing"
+                    ASSIGN_ON="the issue you are working on"
+                  else
+                    echo "  🚫 ${AUTHOR} is not assigned to #${LINKED_ISSUE} — closing"
+                    ASSIGN_ON="#${LINKED_ISSUE}"
+                  fi
                   MARKER_ASSIGN="<!-- BOT-ASSIGN-CLOSE sha=${SHA} -->"
                   ALREADY_ASSIGN="$(gh pr view "${PR}" --repo "${REPO}" \
-                    --json reviews \
-                    --jq "[.reviews[] | select(.author.login == \"${BOT_LOGIN}\")
+                    --json comments \
+                    --jq "[.comments[] | select(.author.login == \"${BOT_LOGIN}\")
                       | select(.body | contains(\"${MARKER_ASSIGN}\"))] | length" \
                     2>/dev/null || echo 0)"
                   if [ "${ALREADY_ASSIGN}" -eq 0 ]; then
-                    ASSIGN_MSG="Closing for now — please ask to be assigned on #${LINKED_ISSUE} first. Once you're assigned, reopen this PR and it will be picked up again."
+                    ASSIGN_MSG="Closing for now — please ask to be assigned on ${ASSIGN_ON} first and link it with \"Closes #N\". Once you're assigned, reopen this PR and it will be picked up again."
                     ASSIGN_MSG+=$'\n\n'
                     ASSIGN_MSG+="${MARKER_ASSIGN}"
                     gh pr comment "${PR}" --repo "${REPO}" --body "${ASSIGN_MSG}" 2>/dev/null || true
                   fi
                   gh pr close "${PR}" --repo "${REPO}" 2>/dev/null || true
-                  continue
-                fi
-                echo "  ✅ ${AUTHOR} is assigned to #${LINKED_ISSUE}"
-              else
-                echo "  ℹ️ No linked issue found in PR body — skipping assignment check"
+                }
+                continue
               fi
             fi
 
