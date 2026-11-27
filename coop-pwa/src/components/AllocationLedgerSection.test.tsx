@@ -244,6 +244,24 @@ describe("AllocationLedgerSection", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("rejects a share outside the 0-10000 basis-point range before touching the network", async () => {
+    fetchMock.mockResolvedValueOnce(allocationNotSetResponse());
+    const user = userEvent.setup();
+    render(
+      <AllocationLedgerSection commitment={baseCommitment} contractId="CXXX" walletAddress={baseCommitment.cooperative} />,
+    );
+    await screen.findByText("Record member allocation");
+
+    await user.type(screen.getByLabelText("Member 1 phone number"), "+2348000000001");
+    await user.type(screen.getByLabelText("Member 1 share (basis points)"), "10001");
+
+    await user.click(screen.getByRole("button", { name: "Record allocation" }));
+
+    expect(await screen.findByText(/share must be a whole number between 0 and 10000 basis points/i)).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+
   it("builds, signs, and submits set_allocation, then reloads the recorded ledger", async () => {
     fetchMock.mockResolvedValueOnce(allocationNotSetResponse()); // initial read
     fetchMock.mockResolvedValueOnce(
