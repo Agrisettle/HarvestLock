@@ -45,6 +45,12 @@ export function ConfirmDeliveryForm({
 
   const parsedQuantity = Number(deliveredQuantity);
   const quantityValid = Number.isInteger(parsedQuantity) && parsedQuantity >= 0;
+  // Mirrors api/src/server.ts's confirm-delivery guard; a negative or
+  // non-integer attestation must fail fast instead of sliding through the
+  // disabled button with no explanation.
+  const quantityError = quantityValid
+    ? null
+    : `Delivered quantity must be a non-negative integer.`;
 
   return (
     <form
@@ -81,6 +87,7 @@ export function ConfirmDeliveryForm({
       </select>
 
       {submitError && <div className="error-banner" role="alert">{submitError}</div>}
+      {quantityError && <div className="error-banner" role="alert">{quantityError}</div>}
 
       <button type="submit" disabled={submitting || !quantityValid} aria-busy={submitting}>
         {submitting ? "Confirming…" : "Confirm delivery"}
